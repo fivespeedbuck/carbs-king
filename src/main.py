@@ -10,7 +10,7 @@ from datetime import date
 import flet as ft
 
 APP_NAME = "碳水大王"
-APP_VERSION = "1.0.15"
+APP_VERSION = "1.0.16"
 MEALS = ["早餐", "午餐", "晚餐", "练后", "偷吃"]
 
 DAY_TYPES = {
@@ -177,17 +177,31 @@ for _name, _aliases in {
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+DATA_FILENAMES = [
+    "food_library.json",
+    "supplement_library.json",
+    "daily_records.json",
+    "user_profile.json",
+]
+
 def get_app_dir() -> Path:
-    try:
-        if sys.platform.startswith("win"):
-            root = Path(os.environ.get("APPDATA", str(Path.home())))
-            app_dir = root / "CarbCycleRecorderMobile"
-        else:
-            app_dir = Path.home() / ".carb_cycle_recorder_mobile"
-        app_dir.mkdir(parents=True, exist_ok=True)
-        return app_dir
-    except Exception:
-        return SCRIPT_DIR
+    """Use Flet's update-safe data directory, with source-run fallbacks."""
+    candidates = []
+    flet_storage = os.environ.get("FLET_APP_STORAGE_DATA", "").strip()
+    if flet_storage:
+        candidates.append(Path(flet_storage))
+    if sys.platform.startswith("win"):
+        candidates.append(Path(os.environ.get("APPDATA", str(Path.home()))) / "CarbCycleRecorderMobile")
+    else:
+        candidates.append(Path.home() / ".carb_cycle_recorder_mobile")
+
+    for app_dir in candidates:
+        try:
+            app_dir.mkdir(parents=True, exist_ok=True)
+            return app_dir
+        except Exception:
+            continue
+    return SCRIPT_DIR
 
 APP_DIR = get_app_dir()
 FOOD_FILE = APP_DIR / "food_library.json"
@@ -196,16 +210,35 @@ RECORD_FILE = APP_DIR / "daily_records.json"
 PROFILE_FILE = APP_DIR / "user_profile.json"
 
 def migrate_legacy_data():
-    if APP_DIR == SCRIPT_DIR:
-        return
-    for filename in ["food_library.json", "supplement_library.json", "daily_records.json"]:
-        old_path = SCRIPT_DIR / filename
-        new_path = APP_DIR / filename
+    """Move older-build data into Flet's persistent directory once."""
+    legacy_dirs = [SCRIPT_DIR]
+    try:
+        legacy_dirs.append(Path.home() / ".carb_cycle_recorder_mobile")
+    except Exception:
+        pass
+    if sys.platform.startswith("win"):
         try:
-            if old_path.exists() and not new_path.exists():
-                shutil.copy2(old_path, new_path)
+            legacy_dirs.append(Path(os.environ.get("APPDATA", str(Path.home()))) / "CarbCycleRecorderMobile")
         except Exception:
             pass
+
+    seen = set()
+    for old_dir in legacy_dirs:
+        try:
+            old_dir = old_dir.resolve()
+        except Exception:
+            pass
+        if old_dir == APP_DIR or str(old_dir) in seen:
+            continue
+        seen.add(str(old_dir))
+        for filename in DATA_FILENAMES:
+            old_path = old_dir / filename
+            new_path = APP_DIR / filename
+            try:
+                if old_path.exists() and not new_path.exists():
+                    shutil.copy2(old_path, new_path)
+            except Exception:
+                pass
 
 migrate_legacy_data()
 
@@ -575,6 +608,18 @@ def main(page: ft.Page):
             content_width = 640
 
         return content_width
+
+    def page_is_mobile():
+        """Flet mobile save paths are document URIs, not Python file paths."""
+        try:
+            platform = getattr(page, "platform", None)
+            is_mobile = getattr(platform, "is_mobile", None)
+            if callable(is_mobile):
+                return bool(is_mobile())
+            platform_name = str(getattr(platform, "value", platform) or "").lower()
+            return platform_name in ["android", "ios"]
+        except Exception:
+            return False
 
     # State
     foods = load_json(FOOD_FILE, DEFAULT_FOODS)
@@ -2349,8 +2394,11 @@ def main(page: ft.Page):
                     file_name=file_name,
                     src_bytes=raw,
                 )
-                # Desktop returns a path but does not write the bytes itself.
-                if selected_path and "://" not in str(selected_path):
+                # Desktop only returns a path, so Python must write the bytes.
+                # Android/iOS already saved src_bytes and may return a document
+                # URI such as /document/primary:Download/..., which pathlib
+                # cannot open as a normal filesystem path.
+                if selected_path and not page_is_mobile() and not getattr(page, "web", False):
                     output_path = Path(str(selected_path))
                     if not output_path.exists() or output_path.stat().st_size == 0:
                         output_path.write_bytes(raw)
