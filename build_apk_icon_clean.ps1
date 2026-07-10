@@ -12,4 +12,4 @@ if (Test-Path ".\build\flutter") {
     Remove-Item ".\build\flutter" -Recurse -Force
 }
 
-flet build apk --no-rich-output -vv
+& "$PSScriptRoot\build_apk_update.ps1"
