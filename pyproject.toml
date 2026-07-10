@@ -1,6 +1,6 @@
 [project]
 name = "carbs_king"
-version = "1.0.12"
+version = "1.0.13"
 description = "Carb cycle recorder"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,7 +13,7 @@ product = "碳水大王"
 org = "com.chenyang"
 bundle_id = "com.chenyang.carbs_king"
 artifact = "carbs_king"
-build_number = 43
+build_number = 44
 company = "chenyang"
 
 [tool.flet.app]
