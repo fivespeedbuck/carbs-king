@@ -40,6 +40,16 @@ if (Test-Path $debugKeyBackup) {
 
 $pyprojectPath = Join-Path $PSScriptRoot "pyproject.toml"
 $projectText = Get-Content $pyprojectPath -Raw -Encoding UTF8
+$utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
+if ($projectText.Length -gt 0 -and [int]$projectText[0] -eq 0xFEFF) {
+    $projectText = $projectText.Substring(1)
+}
+
+# Python 3.12 tomllib rejects a UTF-8 BOM at line 1. Normalize the project
+# file before every build because Windows PowerShell 5.1 normally writes a BOM
+# when Set-Content -Encoding UTF8 is used.
+[System.IO.File]::WriteAllText($pyprojectPath, $projectText, $utf8NoBom)
+
 $numberMatch = [regex]::Match($projectText, '(?m)^build_number\s*=\s*(\d+)\s*$')
 if (-not $numberMatch.Success) {
     throw "build_number was not found in pyproject.toml"
@@ -95,6 +105,6 @@ $nextProjectText = [regex]::Replace(
     '(?m)^build_number\s*=\s*\d+\s*$',
     "build_number = $nextBuildNumber"
 )
-Set-Content $pyprojectPath -Value $nextProjectText -Encoding UTF8
+[System.IO.File]::WriteAllText($pyprojectPath, $nextProjectText, $utf8NoBom)
 
 Write-Host "APK complete. Next build number prepared: $nextBuildNumber"
