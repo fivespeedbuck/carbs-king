@@ -10,6 +10,7 @@ from datetime import date
 import flet as ft
 
 APP_NAME = "碳水大王"
+APP_VERSION = "1.0.12"
 MEALS = ["早餐", "午餐", "晚餐", "练后", "偷吃"]
 
 DAY_TYPES = {
@@ -18,6 +19,14 @@ DAY_TYPES = {
     "高碳日": {"calorie_factor": 0.80, "carb_gkg": 2.90, "carb_interval": 15, "fat_gkg_min": 0.70, "fat_gkg_max": 0.85},
     "中碳日": {"calorie_factor": 0.72, "carb_gkg": 2.30, "carb_interval": 12, "fat_gkg_min": 0.80, "fat_gkg_max": 0.95},
     "低碳日": {"calorie_factor": 0.65, "carb_gkg": 1.40, "carb_interval": 10, "fat_gkg_min": 0.95, "fat_gkg_max": 1.10},
+}
+
+# 自定义模式使用一个中心倍数，仍沿用自动模式的合理上下浮动范围：
+# 碳水、脂肪按当前体重计算，蛋白质按去脂体重计算。
+DEFAULT_MACRO_MULTIPLIERS = {
+    "高碳日": {"carb": 2.90, "protein": 2.15, "fat": 0.78},
+    "中碳日": {"carb": 2.30, "protein": 2.15, "fat": 0.88},
+    "低碳日": {"carb": 1.40, "protein": 2.15, "fat": 1.02},
 }
 
 TRAINING_TARGETS = ["胸", "背", "肩", "腿", "手臂", "腹", "爬坡", "跑步", "徒步", "游泳", "骑行", "打球", "休息", "其他"]
@@ -218,12 +227,17 @@ def save_json(path: Path, data):
 
 def load_user_profile():
     default = {
+        "weight": "62.5",
+        "bodyfat": "13",
         "height": "170",
         "age": "30",
         "sex": "男",
         "activity_habit": "规律训练",
         "waist_cm": "",
         "arm_cm": "",
+        "macro_mode": "auto",
+        "macro_multipliers": DEFAULT_MACRO_MULTIPLIERS,
+        "body_updated_at": "",
         "profile_inited": False,
     }
     data = load_json(PROFILE_FILE, default)
@@ -231,6 +245,21 @@ def load_user_profile():
         data = default
     for k, v in default.items():
         data.setdefault(k, v)
+    normalized = {}
+    stored_multipliers = data.get("macro_multipliers", {})
+    if not isinstance(stored_multipliers, dict):
+        stored_multipliers = {}
+    for day_type, defaults in DEFAULT_MACRO_MULTIPLIERS.items():
+        saved_day = stored_multipliers.get(day_type, {})
+        if not isinstance(saved_day, dict):
+            saved_day = {}
+        normalized[day_type] = {
+            macro: to_float(saved_day.get(macro), default_value)
+            for macro, default_value in defaults.items()
+        }
+    data["macro_multipliers"] = normalized
+    if data.get("macro_mode") not in ["auto", "custom"]:
+        data["macro_mode"] = "auto"
     return data
 
 def save_user_profile(data):
@@ -465,6 +494,16 @@ def main(page: ft.Page):
     except Exception:
         pass
 
+    # FilePicker is a Service in Flet 0.85.x. Android export uses src_bytes,
+    # so the system file chooser can write into shared storage safely.
+    file_picker = ft.FilePicker()
+    try:
+        page.services.append(file_picker)
+    except Exception:
+        # Compatibility fallback for builds where services still live in overlay.
+        if file_picker not in page.overlay:
+            page.overlay.append(file_picker)
+
     def open_control(control):
         if control not in page.overlay:
             page.overlay.append(control)
@@ -527,6 +566,23 @@ def main(page: ft.Page):
     supplements = load_json(SUPP_FILE, DEFAULT_SUPPLEMENTS)
     records = load_json(RECORD_FILE, {})
 
+    def latest_record_body(target_date=None):
+        candidates = []
+        for record_date, record in records.items():
+            if target_date and record_date > target_date:
+                continue
+            profile = record.get("profile", {}) if isinstance(record, dict) else {}
+            weight = to_float(profile.get("weight_kg"), None)
+            bodyfat = to_float(profile.get("bodyfat_percent"), None)
+            if weight is not None or bodyfat is not None:
+                candidates.append((record_date, weight, bodyfat))
+        if not candidates and target_date:
+            return latest_record_body()
+        if not candidates:
+            return None
+        record_date, weight, bodyfat = sorted(candidates, key=lambda item: item[0])[-1]
+        return {"date": record_date, "weight": weight, "bodyfat": bodyfat}
+
     state = {
         "date": date.today().isoformat(),
         "weight": "62.5",
@@ -537,6 +593,8 @@ def main(page: ft.Page):
         "activity_habit": "规律训练",
         "waist_cm": "",
         "arm_cm": "",
+        "macro_mode": "auto",
+        "macro_multipliers": json.loads(json.dumps(DEFAULT_MACRO_MULTIPLIERS)),
         "profile_inited": False,
         "day_type": "高碳日",
         "meals": {m: [] for m in MEALS},
@@ -555,13 +613,40 @@ def main(page: ft.Page):
     }
 
     saved_profile = load_user_profile()
+    latest_body = latest_record_body()
+    if saved_profile.get("body_updated_at") or not latest_body:
+        state["weight"] = str(saved_profile.get("weight", state["weight"]))
+        state["bodyfat"] = str(saved_profile.get("bodyfat", state["bodyfat"]))
+    else:
+        if latest_body.get("weight") is not None:
+            state["weight"] = f"{latest_body['weight']:g}"
+        if latest_body.get("bodyfat") is not None:
+            state["bodyfat"] = f"{latest_body['bodyfat']:g}"
     state["height"] = str(saved_profile.get("height", state["height"]))
     state["age"] = str(saved_profile.get("age", state["age"]))
     state["sex"] = str(saved_profile.get("sex", state["sex"]))
     state["activity_habit"] = str(saved_profile.get("activity_habit", state["activity_habit"]))
     state["waist_cm"] = str(saved_profile.get("waist_cm", state.get("waist_cm", "")))
     state["arm_cm"] = str(saved_profile.get("arm_cm", state.get("arm_cm", "")))
+    state["macro_mode"] = saved_profile.get("macro_mode", "auto")
+    state["macro_multipliers"] = json.loads(json.dumps(saved_profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS)))
     state["profile_inited"] = bool(saved_profile.get("profile_inited", False))
+
+    def save_profile_from_state():
+        save_user_profile({
+            "weight": state.get("weight", "62.5"),
+            "bodyfat": state.get("bodyfat", "13"),
+            "height": state.get("height", "170"),
+            "age": state.get("age", "30"),
+            "sex": state.get("sex", "男"),
+            "activity_habit": state.get("activity_habit", "规律训练"),
+            "waist_cm": state.get("waist_cm", ""),
+            "arm_cm": state.get("arm_cm", ""),
+            "macro_mode": state.get("macro_mode", "auto"),
+            "macro_multipliers": json.loads(json.dumps(state.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))),
+            "body_updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "profile_inited": bool(state.get("profile_inited", False)),
+        })
 
     def body_composition():
         weight = to_float(state["weight"], 62.5)
@@ -619,46 +704,66 @@ def main(page: ft.Page):
 
         calorie_target = round(comp["tdee"] * cfg["calorie_factor"], 0)
 
-        # 蛋白：按去脂体重区间估算，2.0-2.3g/kg LBM。
-        protein_min = round(lean_mass * 2.0, 1)
-        protein_max = round(lean_mass * 2.3, 1)
+        macro_mode = state.get("macro_mode", "auto")
+        if macro_mode == "custom":
+            day_multipliers = state.get("macro_multipliers", {}).get(state["day_type"], {})
+            defaults = DEFAULT_MACRO_MULTIPLIERS[state["day_type"]]
+            carb_gkg = to_float(day_multipliers.get("carb"), defaults["carb"])
+            protein_gkg = to_float(day_multipliers.get("protein"), defaults["protein"])
+            fat_gkg = to_float(day_multipliers.get("fat"), defaults["fat"])
 
-        # 脂肪：高碳低脂，低碳略高脂；按体重估算。
-        fat_min = round(weight * cfg["fat_gkg_min"], 1)
-        fat_max = round(weight * cfg["fat_gkg_max"], 1)
-
-        # 碳水：高/中/低碳日 g/kg 核心值 + 合理容差。
-        carb_gkg = cfg["carb_gkg"]
-        if sex == "男":
-            if bodyfat >= 18:
-                carb_gkg -= 0.15
-            elif bodyfat <= 12:
-                carb_gkg += 0.10
+            # 自定义值是区间中心：蛋白按去脂体重，其余按当前体重。
+            protein_center = lean_mass * protein_gkg
+            protein_min = round(max(0, protein_center - lean_mass * 0.15), 1)
+            protein_max = round(protein_center + lean_mass * 0.15, 1)
+            fat_center = weight * fat_gkg
+            fat_min = round(max(0, fat_center - weight * 0.075), 1)
+            fat_max = round(fat_center + weight * 0.075, 1)
+            carb_center = max(30, round(weight * carb_gkg, 1))
+            carb_interval = cfg["carb_interval"]
+            carb_min = max(30, round(carb_center - carb_interval, 1))
+            carb_max = round(carb_center + carb_interval, 1)
         else:
-            if bodyfat >= 28:
-                carb_gkg -= 0.15
-            elif bodyfat <= 20:
-                carb_gkg += 0.10
+            # 蛋白：按去脂体重区间估算，2.0-2.3g/kg LBM。
+            protein_min = round(lean_mass * 2.0, 1)
+            protein_max = round(lean_mass * 2.3, 1)
 
-        if age >= 45:
-            carb_gkg -= 0.10
-        elif age <= 25:
-            carb_gkg += 0.05
+            # 脂肪：高碳低脂，低碳略高脂；按体重估算。
+            fat_min = round(weight * cfg["fat_gkg_min"], 1)
+            fat_max = round(weight * cfg["fat_gkg_max"], 1)
 
-        carb_center = max(30, round(weight * carb_gkg, 1))
-        carb_interval = cfg["carb_interval"]
-        carb_min = max(30, round(carb_center - carb_interval, 1))
-        carb_max = round(carb_center + carb_interval, 1)
+            # 碳水：高/中/低碳日 g/kg 核心值 + 体脂、年龄修正。
+            carb_gkg = cfg["carb_gkg"]
+            if sex == "男":
+                if bodyfat >= 18:
+                    carb_gkg -= 0.15
+                elif bodyfat <= 12:
+                    carb_gkg += 0.10
+            else:
+                if bodyfat >= 28:
+                    carb_gkg -= 0.15
+                elif bodyfat <= 20:
+                    carb_gkg += 0.10
 
-        if state["day_type"] == "高碳日":
-            carb_min = max(carb_min, round(weight * 2.5, 1))
-            carb_max = min(carb_max, round(weight * 3.4, 1))
-        elif state["day_type"] == "中碳日":
-            carb_min = max(carb_min, round(weight * 1.8, 1))
-            carb_max = min(carb_max, round(weight * 2.7, 1))
-        else:
-            carb_min = max(carb_min, round(weight * 0.9, 1))
-            carb_max = min(carb_max, round(weight * 1.7, 1))
+            if age >= 45:
+                carb_gkg -= 0.10
+            elif age <= 25:
+                carb_gkg += 0.05
+
+            carb_center = max(30, round(weight * carb_gkg, 1))
+            carb_interval = cfg["carb_interval"]
+            carb_min = max(30, round(carb_center - carb_interval, 1))
+            carb_max = round(carb_center + carb_interval, 1)
+
+            if state["day_type"] == "高碳日":
+                carb_min = max(carb_min, round(weight * 2.5, 1))
+                carb_max = min(carb_max, round(weight * 3.4, 1))
+            elif state["day_type"] == "中碳日":
+                carb_min = max(carb_min, round(weight * 1.8, 1))
+                carb_max = min(carb_max, round(weight * 2.7, 1))
+            else:
+                carb_min = max(carb_min, round(weight * 0.9, 1))
+                carb_max = min(carb_max, round(weight * 1.7, 1))
 
         if carb_max < carb_min:
             carb_max = carb_min + 10
@@ -683,6 +788,7 @@ def main(page: ft.Page):
             "calorie_target": calorie_target,
             "activity_habit": comp["activity_habit"],
             "activity_factor": comp["activity_factor"],
+            "macro_mode": macro_mode,
         }
 
     def daily_total():
@@ -817,6 +923,8 @@ def main(page: ft.Page):
                 "activity_habit": state.get("activity_habit", "规律训练"),
                 "waist_cm": state.get("waist_cm", ""),
                 "arm_cm": state.get("arm_cm", ""),
+                "macro_mode": state.get("macro_mode", "auto"),
+                "macro_multipliers": json.loads(json.dumps(state.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))),
                 "day_type": state["day_type"],
                 "targets": targets,
                 "compliance": eva,
@@ -858,8 +966,13 @@ def main(page: ft.Page):
         rec = records.get(target_date)
         if rec:
             p = rec.get("profile", {})
-            state["weight"] = str(p.get("weight_kg", state["weight"]))
-            state["bodyfat"] = str(p.get("bodyfat_percent", state["bodyfat"]))
+            current_profile = load_user_profile()
+            if target_date == date.today().isoformat() and current_profile.get("body_updated_at"):
+                state["weight"] = str(current_profile.get("weight", p.get("weight_kg", state["weight"])))
+                state["bodyfat"] = str(current_profile.get("bodyfat", p.get("bodyfat_percent", state["bodyfat"])))
+            else:
+                state["weight"] = str(p.get("weight_kg", state["weight"]))
+                state["bodyfat"] = str(p.get("bodyfat_percent", state["bodyfat"]))
             if not state.get("profile_inited"):
                 state["height"] = str(p.get("height_cm", state.get("height", "170")))
                 state["age"] = str(p.get("age", state.get("age", "30")))
@@ -901,6 +1014,16 @@ def main(page: ft.Page):
             else:
                 state["sleep"] = {"bed_time": "", "wake_time": "", "naps": []}
         else:
+            previous_body = latest_record_body(target_date)
+            current_profile = load_user_profile()
+            if current_profile.get("body_updated_at"):
+                state["weight"] = str(current_profile.get("weight", state["weight"]))
+                state["bodyfat"] = str(current_profile.get("bodyfat", state["bodyfat"]))
+            elif previous_body:
+                if previous_body.get("weight") is not None:
+                    state["weight"] = f"{previous_body['weight']:g}"
+                if previous_body.get("bodyfat") is not None:
+                    state["bodyfat"] = f"{previous_body['bodyfat']:g}"
             state["day_type"] = "高碳日"
             state["meals"] = {m: [] for m in MEALS}
             state["training"] = {"total_duration_min": "", "total_calories_kcal": "", "fatigue_status": "状态一般", "summary_note": "", "targets": []}
@@ -1328,7 +1451,13 @@ def main(page: ft.Page):
             return
         text = format_record_detail(rec)
         dlg = None
-        content = ft.Container(ft.Text(text, size=13, selectable=True), height=500, width=340)
+        content = ft.Column(
+            [ft.Text(text, size=13, selectable=True)],
+            height=500,
+            width=340,
+            scroll=_SCROLL_AUTO,
+            spacing=0,
+        )
         dlg = dialog_base(
             f"{record_date} 详情",
             content,
@@ -1473,6 +1602,18 @@ def main(page: ft.Page):
             refresh()
 
     def set_view(name):
+        if name == "me":
+            current_profile = load_user_profile()
+            state["weight"] = str(current_profile.get("weight", state.get("weight", "62.5")))
+            state["bodyfat"] = str(current_profile.get("bodyfat", state.get("bodyfat", "13")))
+            state["height"] = str(current_profile.get("height", state.get("height", "170")))
+            state["age"] = str(current_profile.get("age", state.get("age", "30")))
+            state["sex"] = str(current_profile.get("sex", state.get("sex", "男")))
+            state["activity_habit"] = str(current_profile.get("activity_habit", state.get("activity_habit", "规律训练")))
+            state["waist_cm"] = str(current_profile.get("waist_cm", state.get("waist_cm", "")))
+            state["arm_cm"] = str(current_profile.get("arm_cm", state.get("arm_cm", "")))
+            state["macro_mode"] = current_profile.get("macro_mode", state.get("macro_mode", "auto"))
+            state["macro_multipliers"] = json.loads(json.dumps(current_profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS)))
         state["current_view"] = name
         refresh()
 
@@ -1530,6 +1671,8 @@ def main(page: ft.Page):
         def apply_profile(e=None):
             state["weight"] = weight_field.value or state["weight"]
             state["bodyfat"] = bodyfat_field.value or state["bodyfat"]
+            state["profile_inited"] = True
+            save_profile_from_state()
             save_current()
             refresh()
             snack("已更新基础信息")
@@ -1763,11 +1906,6 @@ def main(page: ft.Page):
     def render_sleep():
         sl = state.setdefault("sleep", {"bed_time": "", "wake_time": "", "naps": []})
 
-        nap_temp = state.setdefault("sleep_temp", {
-            "nap_start": "13:00",
-            "nap_end": "14:00",
-        })
-
         def save_bed(value):
             sl["bed_time"] = value
             save_current()
@@ -1778,16 +1916,62 @@ def main(page: ft.Page):
             save_current()
             refresh()
 
-        def set_nap_start(value):
-            nap_temp["nap_start"] = value
-            refresh()
+        def open_add_nap_dialog(e=None):
+            selected = {"start": "13:00", "end": "14:00"}
+            dlg = None
 
-        def set_nap_end(value):
-            nap_temp["nap_end"] = value
-            refresh()
+            def set_start(value):
+                selected["start"] = value
+                start_button.content.value = value
+                page.update()
 
-        def add_nap_from_current(e=None):
-            add_nap(nap_temp.get("nap_start", "13:00"), nap_temp.get("nap_end", "14:00"))
+            def set_end(value):
+                selected["end"] = value
+                end_button.content.value = value
+                page.update()
+
+            start_button = time_display_button(
+                selected["start"],
+                lambda event: open_time_wheel("选择小睡开始", selected["start"], "13", "00", set_start),
+            )
+            end_button = time_display_button(
+                selected["end"],
+                lambda event: open_time_wheel("选择小睡结束", selected["end"], "14", "00", set_end),
+            )
+
+            def nap_time_line(label, button):
+                return ft.Container(
+                    content=ft.Row([
+                        ft.Text(label, size=13, color=TEXT, weight="bold"),
+                        ft.Container(content=button, expand=True),
+                    ], spacing=12, vertical_alignment="center"),
+                    bgcolor="#FFFFFF",
+                    border_radius=8,
+                    padding=6,
+                )
+
+            def confirm(e=None):
+                if duration_between(selected["start"], selected["end"]) <= 0:
+                    snack("请填写正确的小睡时间")
+                    return
+                sl.setdefault("naps", []).append({"start": selected["start"], "end": selected["end"]})
+                save_current()
+                close_control(dlg)
+                refresh()
+                snack("已添加小睡")
+
+            content = ft.Column([
+                small_text("点击时间进行选择"),
+                nap_time_line("开始", start_button),
+                nap_time_line("结束", end_button),
+            ], width=340, height=175, spacing=10)
+            dlg = dialog_base(
+                "添加小睡",
+                content,
+                [ft.Container(content=make_button("保存小睡", on_click=confirm, expand=True), width=340)],
+                on_close=lambda event: close_control(dlg),
+            )
+            open_control(dlg)
 
         nap_rows = []
         for idx, nap in enumerate(sl.get("naps", [])):
@@ -1811,10 +1995,7 @@ def main(page: ft.Page):
             small_text("夜间睡眠"),
             time_line("入睡", sl.get("bed_time", "") or "23:00", lambda e: open_time_wheel("选择入睡时间", sl.get("bed_time", "23:00"), "23", "00", save_bed)),
             time_line("起床", sl.get("wake_time", "") or "07:00", lambda e: open_time_wheel("选择起床时间", sl.get("wake_time", "07:00"), "07", "00", save_wake)),
-            small_text("小睡时间"),
-            time_line("开始", nap_temp.get("nap_start", "13:00"), lambda e: open_time_wheel("选择小睡开始", nap_temp.get("nap_start", "13:00"), "13", "00", set_nap_start)),
-            time_line("结束", nap_temp.get("nap_end", "14:00"), lambda e: open_time_wheel("选择小睡结束", nap_temp.get("nap_end", "14:00"), "14", "00", set_nap_end)),
-            make_button("添加小睡", on_click=add_nap_from_current, expand=True),
+            make_button("添加小睡", on_click=open_add_nap_dialog, icon=ft.Icons.ADD, expand=True),
             ft.Column(nap_rows, spacing=0),
         ], spacing=10))
 
@@ -1924,6 +2105,54 @@ def main(page: ft.Page):
             ft.Column(controls, spacing=0),
         ])
 
+    def export_handler(export_kind):
+        async def handler(e=None):
+            exported_at = datetime.datetime.now().isoformat(timespec="seconds")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            common = {
+                "format": "carbs_king_backup",
+                "backup_version": 1,
+                "app_version": APP_VERSION,
+                "exported_at": exported_at,
+            }
+            export_map = {
+                "all": (
+                    "完整备份",
+                    "full_backup",
+                    {
+                        **common,
+                        "daily_records": load_json(RECORD_FILE, {}),
+                        "food_library": load_json(FOOD_FILE, DEFAULT_FOODS),
+                        "supplement_library": load_json(SUPP_FILE, DEFAULT_SUPPLEMENTS),
+                        "user_profile": load_user_profile(),
+                    },
+                ),
+                "records": ("历史记录", "daily_records", {**common, "daily_records": load_json(RECORD_FILE, {})}),
+                "foods": ("食物库", "food_library", {**common, "food_library": load_json(FOOD_FILE, DEFAULT_FOODS)}),
+                "supplements": ("补剂库", "supplement_library", {**common, "supplement_library": load_json(SUPP_FILE, DEFAULT_SUPPLEMENTS)}),
+                "profile": ("个人资料", "user_profile", {**common, "user_profile": load_user_profile()}),
+            }
+            label, file_part, payload = export_map.get(export_kind, export_map["all"])
+            file_name = f"carbs_king_{file_part}_{timestamp}.json"
+            raw = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8-sig")
+            try:
+                selected_path = await file_picker.save_file(
+                    dialog_title=f"导出{label}",
+                    file_name=file_name,
+                    src_bytes=raw,
+                )
+                # Desktop returns a path but does not write the bytes itself.
+                if selected_path and "://" not in str(selected_path):
+                    output_path = Path(str(selected_path))
+                    if not output_path.exists() or output_path.stat().st_size == 0:
+                        output_path.write_bytes(raw)
+                if selected_path:
+                    snack(f"{label}已导出")
+            except Exception as ex:
+                snack(f"导出失败：{str(ex)[:60]}")
+
+        return handler
+
     def render_me():
         targets = get_targets()
 
@@ -1944,15 +2173,7 @@ def main(page: ft.Page):
             state["waist_cm"] = waist_value if waist_value is not None else state.get("waist_cm", "")
             state["arm_cm"] = arm_value if arm_value is not None else state.get("arm_cm", "")
             state["profile_inited"] = True
-            save_user_profile({
-                "height": state["height"],
-                "age": state["age"],
-                "sex": state["sex"],
-                "activity_habit": state["activity_habit"],
-                "waist_cm": state["waist_cm"],
-                "arm_cm": state["arm_cm"],
-                "profile_inited": True,
-            })
+            save_profile_from_state()
             save_current()
 
         def save_profile_fields(e=None):
@@ -1995,6 +2216,109 @@ def main(page: ft.Page):
             selected = current == label
             return make_button(label, on_click=lambda e, v=label: setter(v), bgcolor=PRIMARY if selected else "#E8F5E9", color="#FFFFFF" if selected else GREEN, expand=True)
 
+        def set_macro_mode(mode):
+            state["macro_mode"] = mode
+            save_profile_from_state()
+            save_current()
+            refresh()
+            snack("已切换为自动计算" if mode == "auto" else "已切换为自定义倍数")
+
+        def open_macro_settings_dialog(e=None):
+            dialog_width = 350
+            fields = {}
+            rows = []
+            multipliers = state.setdefault("macro_multipliers", json.loads(json.dumps(DEFAULT_MACRO_MULTIPLIERS)))
+
+            for day_type in ["高碳日", "中碳日", "低碳日"]:
+                current = multipliers.setdefault(day_type, dict(DEFAULT_MACRO_MULTIPLIERS[day_type]))
+                carb_box, carb_field = labeled_plain_field("碳水×体重", f"{to_float(current.get('carb'), DEFAULT_MACRO_MULTIPLIERS[day_type]['carb']):g}", keyboard_type=_KEYBOARD_NUMBER, expand=True)
+                protein_box, protein_field = labeled_plain_field("蛋白×去脂体重", f"{to_float(current.get('protein'), DEFAULT_MACRO_MULTIPLIERS[day_type]['protein']):g}", keyboard_type=_KEYBOARD_NUMBER, expand=True)
+                fat_box, fat_field = labeled_plain_field("脂肪×体重", f"{to_float(current.get('fat'), DEFAULT_MACRO_MULTIPLIERS[day_type]['fat']):g}", keyboard_type=_KEYBOARD_NUMBER, expand=True)
+                fields[day_type] = {"carb": carb_field, "protein": protein_field, "fat": fat_field}
+                rows.extend([
+                    ft.Text(day_type, size=14, weight="bold", color=PRIMARY),
+                    ft.Row([carb_box, protein_box, fat_box], spacing=6),
+                ])
+
+            dlg = None
+
+            def confirm(event=None):
+                updated = {}
+                for day_type, macro_fields in fields.items():
+                    values = {macro: to_float(field.value, 0) for macro, field in macro_fields.items()}
+                    if any(value <= 0 or value > 10 for value in values.values()):
+                        snack("倍数需大于 0 且不超过 10")
+                        return
+                    updated[day_type] = values
+                state["macro_multipliers"] = updated
+                state["macro_mode"] = "custom"
+                save_profile_from_state()
+                save_current()
+                close_control(dlg)
+                refresh()
+                snack("自定义倍数已保存")
+
+            content = ft.Column([
+                small_text("自定义值为目标区间中心；碳水、脂肪按体重计算，蛋白质按去脂体重计算。"),
+                *rows,
+            ], width=dialog_width, height=430, spacing=9, scroll=_SCROLL_AUTO)
+            dlg = dialog_base(
+                "自定义高中低碳倍数",
+                content,
+                [ft.Container(content=make_button("保存并启用", on_click=confirm, expand=True), width=dialog_width)],
+                on_close=lambda event: close_control(dlg),
+            )
+            open_control(dlg)
+
+        multiplier_rows = []
+        for day_type in ["高碳日", "中碳日", "低碳日"]:
+            values = state.get("macro_multipliers", {}).get(day_type, DEFAULT_MACRO_MULTIPLIERS[day_type])
+            multiplier_rows.append(ft.Row([
+                small_text(day_type),
+                ft.Text(
+                    f"碳 {to_float(values.get('carb')):g}｜蛋 {to_float(values.get('protein')):g}｜脂 {to_float(values.get('fat')):g}",
+                    size=12,
+                    weight="bold",
+                    color=TEXT,
+                ),
+            ], alignment="spaceBetween"))
+
+        auto_selected = state.get("macro_mode", "auto") == "auto"
+        custom_selected = not auto_selected
+        macro_box = ft.Container(
+            content=ft.Column([
+                ft.Row([section_title("宏量目标计算"), make_button("编辑倍数", on_click=open_macro_settings_dialog, bgcolor="#E8F5E9", color=GREEN)], alignment="spaceBetween"),
+                ft.Row([
+                    make_button("自动计算", on_click=lambda e: set_macro_mode("auto"), bgcolor=PRIMARY if auto_selected else "#E8F5E9", color="#FFFFFF" if auto_selected else GREEN, expand=True),
+                    make_button("自定义", on_click=lambda e: set_macro_mode("custom"), bgcolor=PRIMARY if custom_selected else "#E8F5E9", color="#FFFFFF" if custom_selected else GREEN, expand=True),
+                ], spacing=8),
+                *multiplier_rows,
+                small_text("自动模式会结合体重、体脂、年龄修正；自定义模式使用上面的个人倍数。"),
+            ], spacing=7),
+            bgcolor="#F8FAFC",
+            border_radius=8,
+            padding=12,
+        )
+
+        export_box = ft.Container(
+            content=ft.Column([
+                ft.Row([section_title("备份与导出"), small_text("JSON 格式")], alignment="spaceBetween"),
+                make_button("导出完整备份", on_click=export_handler("all"), icon=ft.Icons.DOWNLOAD, expand=True),
+                ft.Row([
+                    make_button("历史记录", on_click=export_handler("records"), bgcolor="#E8F5E9", color=GREEN, expand=True),
+                    make_button("个人资料", on_click=export_handler("profile"), bgcolor="#E8F5E9", color=GREEN, expand=True),
+                ], spacing=8),
+                ft.Row([
+                    make_button("食物库", on_click=export_handler("foods"), bgcolor="#E8F5E9", color=GREEN, expand=True),
+                    make_button("补剂库", on_click=export_handler("supplements"), bgcolor="#E8F5E9", color=GREEN, expand=True),
+                ], spacing=8),
+                small_text("完整备份包含历史、食物、补剂和个人设置，请保存到手机外部目录。"),
+            ], spacing=8),
+            bgcolor="#F8FAFC",
+            border_radius=8,
+            padding=12,
+        )
+
         info_box = ft.Container(
             content=ft.Column([
                 ft.Row([small_text("去脂体重"), ft.Text(f"{targets['lean_mass']} kg", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
@@ -2028,6 +2352,8 @@ def main(page: ft.Page):
                 option_button("高频训练", state.get("activity_habit", "规律训练"), set_activity),
             ], spacing=8),
             info_box,
+            macro_box,
+            export_box,
             ft.Container(content=small_text("腰围、臂围只做记录，不参与碳循环公式。今日页仍保留体重、体脂，方便每日更新。"), bgcolor="#FAFAFA", border_radius=8, padding=10),
         ], spacing=10))
 
@@ -2194,15 +2520,7 @@ def main(page: ft.Page):
             state["sex"] = selected["sex"]
             state["activity_habit"] = selected["activity_habit"]
             state["profile_inited"] = True
-            save_user_profile({
-                "height": state["height"],
-                "age": state["age"],
-                "sex": state["sex"],
-                "activity_habit": state["activity_habit"],
-                "waist_cm": state["waist_cm"],
-                "arm_cm": state["arm_cm"],
-                "profile_inited": True,
-            })
+            save_profile_from_state()
             save_current()
             close_control(dlg)
             refresh()
