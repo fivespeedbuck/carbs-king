@@ -10,7 +10,7 @@ from datetime import date
 import flet as ft
 
 APP_NAME = "碳水大王"
-APP_VERSION = "1.0.12"
+APP_VERSION = "1.0.13"
 MEALS = ["早餐", "午餐", "晚餐", "练后", "偷吃"]
 
 DAY_TYPES = {
@@ -2105,6 +2105,205 @@ def main(page: ft.Page):
             ft.Column(controls, spacing=0),
         ])
 
+    def make_full_backup_payload():
+        return {
+            "format": "carbs_king_backup",
+            "backup_version": 1,
+            "app_version": APP_VERSION,
+            "exported_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "daily_records": load_json(RECORD_FILE, {}),
+            "food_library": load_json(FOOD_FILE, DEFAULT_FOODS),
+            "supplement_library": load_json(SUPP_FILE, DEFAULT_SUPPLEMENTS),
+            "user_profile": load_user_profile(),
+        }
+
+    def normalize_import_payload(payload):
+        """Accept v43+ exported backups and simple raw JSON library files."""
+        normalized = {}
+        if isinstance(payload, dict):
+            expected_types = {
+                "daily_records": dict,
+                "food_library": list,
+                "supplement_library": list,
+                "user_profile": dict,
+            }
+            for key, expected_type in expected_types.items():
+                if key in payload:
+                    if not isinstance(payload[key], expected_type):
+                        raise ValueError(f"{key} 数据格式不正确")
+                    normalized[key] = payload[key]
+
+            # Also support a directly copied internal JSON database.
+            if not normalized:
+                date_keys = [key for key in payload if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(key))]
+                if date_keys and len(date_keys) == len(payload):
+                    normalized["daily_records"] = payload
+                elif any(key in payload for key in ["profile_inited", "height", "activity_habit", "macro_mode"]):
+                    normalized["user_profile"] = payload
+        elif isinstance(payload, list):
+            if not payload:
+                raise ValueError("空列表无法判断是食物库还是补剂库")
+            if all(isinstance(item, dict) and "base_qty" in item for item in payload):
+                normalized["food_library"] = payload
+            elif all(isinstance(item, dict) and "default_amount" in item for item in payload):
+                normalized["supplement_library"] = payload
+
+        if not normalized:
+            raise ValueError("未识别到可导入的碳水大王备份数据")
+        return normalized
+
+    def import_summary(import_data):
+        parts = []
+        if "daily_records" in import_data:
+            parts.append(f"历史记录 {len(import_data['daily_records'])} 天")
+        if "food_library" in import_data:
+            parts.append(f"食物库 {len(import_data['food_library'])} 项")
+        if "supplement_library" in import_data:
+            parts.append(f"补剂库 {len(import_data['supplement_library'])} 项")
+        if "user_profile" in import_data:
+            parts.append("个人资料")
+        return "、".join(parts)
+
+    def merge_named_items(current_items, imported_items):
+        result = [dict(item) for item in current_items if isinstance(item, dict)]
+        positions = {
+            str(item.get("name", "")).strip(): index
+            for index, item in enumerate(result)
+            if str(item.get("name", "")).strip()
+        }
+        for item in imported_items:
+            if not isinstance(item, dict):
+                continue
+            copied = dict(item)
+            name = str(copied.get("name", "")).strip()
+            if name and name in positions:
+                result[positions[name]] = copied
+            else:
+                if name:
+                    positions[name] = len(result)
+                result.append(copied)
+        return result
+
+    def save_pre_import_snapshot():
+        backup_dir = APP_DIR / "import_safety_backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_json(backup_dir / f"before_import_{stamp}.json", make_full_backup_payload())
+
+    def apply_import_data(import_data, mode):
+        save_pre_import_snapshot()
+
+        if "daily_records" in import_data:
+            incoming = import_data["daily_records"]
+            if mode == "merge":
+                merged_records = dict(records)
+                merged_records.update(incoming)
+                records.clear()
+                records.update(merged_records)
+            else:
+                records.clear()
+                records.update(incoming)
+            save_json(RECORD_FILE, records)
+
+        if "food_library" in import_data:
+            incoming = import_data["food_library"]
+            restored_foods = merge_named_items(foods, incoming) if mode == "merge" else list(incoming)
+            foods.clear()
+            foods.extend(restored_foods)
+            save_json(FOOD_FILE, foods)
+
+        if "supplement_library" in import_data:
+            incoming = import_data["supplement_library"]
+            restored_supplements = merge_named_items(supplements, incoming) if mode == "merge" else list(incoming)
+            supplements.clear()
+            supplements.extend(restored_supplements)
+            save_json(SUPP_FILE, supplements)
+
+        if "user_profile" in import_data:
+            incoming = dict(import_data["user_profile"])
+            if mode == "merge":
+                restored_profile = load_user_profile()
+                restored_profile.update(incoming)
+            else:
+                restored_profile = incoming
+            save_user_profile(restored_profile)
+
+            current_profile = load_user_profile()
+            state["weight"] = str(current_profile.get("weight", state.get("weight", "62.5")))
+            state["bodyfat"] = str(current_profile.get("bodyfat", state.get("bodyfat", "13")))
+            state["height"] = str(current_profile.get("height", state.get("height", "170")))
+            state["age"] = str(current_profile.get("age", state.get("age", "30")))
+            state["sex"] = str(current_profile.get("sex", state.get("sex", "男")))
+            state["activity_habit"] = str(current_profile.get("activity_habit", state.get("activity_habit", "规律训练")))
+            state["waist_cm"] = str(current_profile.get("waist_cm", state.get("waist_cm", "")))
+            state["arm_cm"] = str(current_profile.get("arm_cm", state.get("arm_cm", "")))
+            state["macro_mode"] = current_profile.get("macro_mode", state.get("macro_mode", "auto"))
+            state["macro_multipliers"] = json.loads(json.dumps(current_profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS)))
+            state["profile_inited"] = bool(current_profile.get("profile_inited", state.get("profile_inited", False)))
+
+        load_record_for_date(state.get("date", date.today().isoformat()), autosave=False, show=False)
+
+    def open_import_confirmation(file_name, import_data):
+        dlg = None
+        summary = import_summary(import_data)
+
+        def confirm(mode):
+            try:
+                close_control(dlg)
+                apply_import_data(import_data, mode)
+                snack(f"已{('合并' if mode == 'merge' else '覆盖')}导入：{summary}")
+            except Exception as ex:
+                snack(f"导入失败：{str(ex)[:60]}")
+
+        content = ft.Column([
+            ft.Text(file_name, size=13, weight="bold", color=TEXT),
+            small_text(f"识别到：{summary}"),
+            ft.Container(
+                content=small_text("合并：保留现有数据，同日期或同名称以备份为准。\n覆盖：只替换该文件中包含的数据分类。", color=ORANGE),
+                bgcolor="#FFF7ED",
+                border_radius=8,
+                padding=10,
+            ),
+            small_text("导入前会自动生成一份本地安全快照。"),
+        ], width=350, height=190, spacing=10)
+        action_row = ft.Row([
+            make_button("取消", on_click=lambda e: close_control(dlg), bgcolor="#F1F1F1", color=SUB, expand=True),
+            make_button("合并导入", on_click=lambda e: confirm("merge"), bgcolor="#E8F5E9", color=GREEN, expand=True),
+            make_button("覆盖导入", on_click=lambda e: confirm("replace"), bgcolor="#FDECEC", color=RED, expand=True),
+        ], spacing=6)
+        dlg = dialog_base(
+            "确认导入备份",
+            content,
+            [ft.Container(content=action_row, width=350)],
+            on_close=lambda e: close_control(dlg),
+        )
+        open_control(dlg)
+
+    async def import_backup_handler(e=None):
+        try:
+            selected_files = await file_picker.pick_files(
+                dialog_title="选择碳水大王备份",
+                allow_multiple=False,
+                with_data=True,
+            )
+            if not selected_files:
+                return
+            selected = selected_files[0]
+            raw = getattr(selected, "bytes", None)
+            if not raw:
+                selected_path = getattr(selected, "path", None)
+                if selected_path and "://" not in str(selected_path):
+                    raw = Path(str(selected_path)).read_bytes()
+            if not raw:
+                raise ValueError("无法读取所选文件")
+            payload = json.loads(raw.decode("utf-8-sig"))
+            import_data = normalize_import_payload(payload)
+            open_import_confirmation(getattr(selected, "name", "备份文件"), import_data)
+        except json.JSONDecodeError:
+            snack("导入失败：所选文件不是有效的 JSON 备份")
+        except Exception as ex:
+            snack(f"导入失败：{str(ex)[:60]}")
+
     def export_handler(export_kind):
         async def handler(e=None):
             exported_at = datetime.datetime.now().isoformat(timespec="seconds")
@@ -2119,13 +2318,7 @@ def main(page: ft.Page):
                 "all": (
                     "完整备份",
                     "full_backup",
-                    {
-                        **common,
-                        "daily_records": load_json(RECORD_FILE, {}),
-                        "food_library": load_json(FOOD_FILE, DEFAULT_FOODS),
-                        "supplement_library": load_json(SUPP_FILE, DEFAULT_SUPPLEMENTS),
-                        "user_profile": load_user_profile(),
-                    },
+                    make_full_backup_payload(),
                 ),
                 "records": ("历史记录", "daily_records", {**common, "daily_records": load_json(RECORD_FILE, {})}),
                 "foods": ("食物库", "food_library", {**common, "food_library": load_json(FOOD_FILE, DEFAULT_FOODS)}),
@@ -2304,6 +2497,7 @@ def main(page: ft.Page):
             content=ft.Column([
                 ft.Row([section_title("备份与导出"), small_text("JSON 格式")], alignment="spaceBetween"),
                 make_button("导出完整备份", on_click=export_handler("all"), icon=ft.Icons.DOWNLOAD, expand=True),
+                make_button("导入备份", on_click=import_backup_handler, icon=ft.Icons.UPLOAD_FILE, bgcolor="#E8F5E9", color=GREEN, expand=True),
                 ft.Row([
                     make_button("历史记录", on_click=export_handler("records"), bgcolor="#E8F5E9", color=GREEN, expand=True),
                     make_button("个人资料", on_click=export_handler("profile"), bgcolor="#E8F5E9", color=GREEN, expand=True),
@@ -2312,7 +2506,7 @@ def main(page: ft.Page):
                     make_button("食物库", on_click=export_handler("foods"), bgcolor="#E8F5E9", color=GREEN, expand=True),
                     make_button("补剂库", on_click=export_handler("supplements"), bgcolor="#E8F5E9", color=GREEN, expand=True),
                 ], spacing=8),
-                small_text("完整备份包含历史、食物、补剂和个人设置，请保存到手机外部目录。"),
+                small_text("可导入完整或分类 JSON；导入前会确认合并或覆盖，并自动保留安全快照。"),
             ], spacing=8),
             bgcolor="#F8FAFC",
             border_radius=8,
