@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "carbs_king"
 version = "1.0.16"
 description = "Carb cycle recorder"
@@ -13,7 +13,7 @@ product = "碳水大王"
 org = "com.chenyang"
 bundle_id = "com.chenyang.carbs_king"
 artifact = "carbs_king"
-build_number = 47
+build_number = 48
 company = "chenyang"
 
 [tool.flet.app]
