@@ -10,7 +10,7 @@ from datetime import date
 import flet as ft
 
 APP_NAME = "碳水大王"
-APP_VERSION = "1.0.13"
+APP_VERSION = "1.0.14"
 MEALS = ["早餐", "午餐", "晚餐", "练后", "偷吃"]
 
 DAY_TYPES = {
@@ -2422,11 +2422,25 @@ def main(page: ft.Page):
             rows = []
             multipliers = state.setdefault("macro_multipliers", json.loads(json.dumps(DEFAULT_MACRO_MULTIPLIERS)))
 
+            def macro_multiplier_field(label, value):
+                field = plain_number_field(value=value, keyboard_type=_KEYBOARD_NUMBER, expand=True)
+                label_text = small_text(label)
+                try:
+                    label_text.no_wrap = True
+                except Exception:
+                    pass
+                box = ft.Column([
+                    ft.Container(content=label_text, height=28),
+                    field,
+                ], spacing=3)
+                box.expand = True
+                return box, field
+
             for day_type in ["高碳日", "中碳日", "低碳日"]:
                 current = multipliers.setdefault(day_type, dict(DEFAULT_MACRO_MULTIPLIERS[day_type]))
-                carb_box, carb_field = labeled_plain_field("碳水×体重", f"{to_float(current.get('carb'), DEFAULT_MACRO_MULTIPLIERS[day_type]['carb']):g}", keyboard_type=_KEYBOARD_NUMBER, expand=True)
-                protein_box, protein_field = labeled_plain_field("蛋白×去脂体重", f"{to_float(current.get('protein'), DEFAULT_MACRO_MULTIPLIERS[day_type]['protein']):g}", keyboard_type=_KEYBOARD_NUMBER, expand=True)
-                fat_box, fat_field = labeled_plain_field("脂肪×体重", f"{to_float(current.get('fat'), DEFAULT_MACRO_MULTIPLIERS[day_type]['fat']):g}", keyboard_type=_KEYBOARD_NUMBER, expand=True)
+                carb_box, carb_field = macro_multiplier_field("碳水×体重", f"{to_float(current.get('carb'), DEFAULT_MACRO_MULTIPLIERS[day_type]['carb']):g}")
+                protein_box, protein_field = macro_multiplier_field("蛋白×去脂", f"{to_float(current.get('protein'), DEFAULT_MACRO_MULTIPLIERS[day_type]['protein']):g}")
+                fat_box, fat_field = macro_multiplier_field("脂肪×体重", f"{to_float(current.get('fat'), DEFAULT_MACRO_MULTIPLIERS[day_type]['fat']):g}")
                 fields[day_type] = {"carb": carb_field, "protein": protein_field, "fat": fat_field}
                 rows.extend([
                     ft.Text(day_type, size=14, weight="bold", color=PRIMARY),

@@ -2,8 +2,10 @@
 
 基于 Flet 开发的 Android 碳循环饮食、训练与身体数据记录 APP。
 
-当前版本：**v44.1**  
-Flet：**0.85.3**  
+当前版本：**v45**
+
+Flet：**0.85.3**
+
 Android 包名：`com.chenyang.carbs_king`
 
 ## 主要功能
@@ -47,6 +49,6 @@ flet run
 
 ## 版本管理
 
-仓库已包含以下历史标签：`v42`、`v43`、`v44`、`v44.1`。旧版本无需作为 ZIP 放进源码目录，可通过 Git 历史或 GitHub Release 获取。
+仓库已包含以下历史标签：`v42`、`v43`、`v44`、`v44.1`、`v45`。旧版本无需作为 ZIP 放进源码目录，可通过 Git 历史或 GitHub Release 获取。
 
 第一次上传请阅读：[GITHUB_新手上传指南.md](GITHUB_新手上传指南.md)。

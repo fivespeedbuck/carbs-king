@@ -18,7 +18,7 @@
 D:\carbs-king
 ```
 
-不要只复制 `src` 文件夹，压缩包里的隐藏 `.git` 目录保存着 v42 到 v44.1 的版本历史。
+不要只复制 `src` 文件夹，压缩包里的隐藏 `.git` 目录保存着完整版本历史。
 
 ### 3. 添加本地仓库
 
@@ -40,9 +40,9 @@ D:\carbs-king
 
 ### 5. 上传已有版本标签
 
-发布仓库后，双击项目里的 `上传版本标签.bat`。看到 `Version tags uploaded successfully` 表示完成。
+发布仓库后，双击项目里的 `upload_version_tags.bat`。看到 `Version tags uploaded successfully` 表示完成。
 
-随后 GitHub 的 Tags 页面会显示：`v42`、`v43`、`v44`、`v44.1`。
+随后 GitHub 的 Tags 页面会显示已经创建的全部版本标签。
 
 ## 以后怎样提交新版本
 
@@ -61,7 +61,7 @@ GitHub Desktop 默认会将新建标签与对应提交一起上传。
 
 1. 打开 GitHub 仓库网页。
 2. 点击右侧 `Releases` → `Draft a new release`。
-3. 选择对应版本标签，例如 `v44.1`。
+3. 选择对应版本标签，例如 `v45`。
 4. 上传 `carbs_king.apk`。
 5. 点击 `Publish release`。
 

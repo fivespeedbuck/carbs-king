@@ -29,4 +29,4 @@ if ($LASTEXITCODE -ne 0) {
     throw "Tag upload failed. Open GitHub Desktop and confirm that the repository is published."
 }
 
-Write-Host "Version tags uploaded successfully: v42, v43, v44, v44.1"
+Write-Host "All local version tags uploaded successfully."
