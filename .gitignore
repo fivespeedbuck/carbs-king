@@ -1,0 +1,42 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Flet / Flutter build output
+build/
+dist/
+.dart_tool/
+.flet/
+*.apk
+*.aab
+*.so
+*.dill
+
+# Local environments and editors
+.venv/
+venv/
+.idea/
+.vscode/
+
+# Secrets and Android signing keys
+.env
+.env.*
+*.jks
+*.keystore
+key.properties
+
+# User records and local backups
+daily_records.json
+food_library.json
+supplement_library.json
+user_profile.json
+import_safety_backups/
+
+# Version packages are attached to GitHub Releases, not committed
+*.zip
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini

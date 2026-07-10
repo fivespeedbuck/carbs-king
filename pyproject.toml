@@ -1,0 +1,22 @@
+[project]
+name = "carbs_king"
+version = "1.0.11"
+description = "Carb cycle recorder"
+requires-python = ">=3.12"
+dependencies = [
+    "flet==0.85.3"
+]
+
+[tool.flet]
+icon = "assets/icon.png"
+product = "碳水大王"
+org = "com.chenyang"
+company = "chenyang"
+
+[tool.flet.app]
+path = "src"
+module = "main"
+
+[tool.flet.android]
+adaptive_icon_foreground = "assets/icon.png"
+adaptive_icon_background = "#42D0A3"
