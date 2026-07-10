@@ -8,8 +8,20 @@ $env:NO_PROXY = "localhost,127.0.0.1,::1"
 Set-Location $PSScriptRoot
 
 # Android 只有在包名、签名证书相同且版本号不降低时，才会显示“更新”。
-$debugKey = Join-Path $env:USERPROFILE ".android\debug.keystore"
-$keyBackupDir = Join-Path $env:USERPROFILE ".carbs_king_signing"
+$userHome = $env:USERPROFILE
+if ([string]::IsNullOrWhiteSpace($userHome)) {
+    $userHome = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+}
+if ([string]::IsNullOrWhiteSpace($userHome)) {
+    $userHome = $HOME
+}
+if ([string]::IsNullOrWhiteSpace($userHome)) {
+    $userHome = $PSScriptRoot
+    Write-Warning "User home directory was not detected; signing key backup will be kept beside the project."
+}
+
+$debugKey = Join-Path $userHome ".android\debug.keystore"
+$keyBackupDir = Join-Path $userHome ".carbs_king_signing"
 $debugKeyBackup = Join-Path $keyBackupDir "debug.keystore"
 
 if (-not (Test-Path $debugKeyBackup) -and (Test-Path $debugKey)) {
