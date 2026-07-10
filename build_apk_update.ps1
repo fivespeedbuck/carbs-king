@@ -52,11 +52,27 @@ if (-not $versionMatch.Success) {
 $buildVersion = $versionMatch.Groups[1].Value
 
 Write-Host "Building com.chenyang.carbs_king, build number $buildNumber..."
-flet build apk --no-rich-output `
-    --project carbs_king `
-    --bundle-id com.chenyang.carbs_king `
-    --build-version $buildVersion `
-    --build-number $buildNumber
+$buildArgs = @(
+    "build", "apk",
+    "--no-rich-output",
+    "--project", "carbs_king",
+    "--bundle-id", "com.chenyang.carbs_king",
+    "--build-version", $buildVersion,
+    "--build-number", $buildNumber
+)
+
+# Pass the fixed key explicitly so a cache/global debug-key change cannot
+# silently produce an APK that Android treats as another installation.
+if (Test-Path $debugKeyBackup) {
+    $buildArgs += @(
+        "--android-signing-key-store", $debugKeyBackup,
+        "--android-signing-key-alias", "androiddebugkey",
+        "--android-signing-key-store-password", "android",
+        "--android-signing-key-password", "android"
+    )
+}
+
+& flet @buildArgs
 
 if ($LASTEXITCODE -ne 0) {
     throw "APK build failed with exit code $LASTEXITCODE"
