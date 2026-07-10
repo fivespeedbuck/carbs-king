@@ -1,6 +1,6 @@
-﻿[project]
+[project]
 name = "carbs_king"
-version = "1.0.14"
+version = "1.0.15"
 description = "Carb cycle recorder"
 requires-python = ">=3.12"
 dependencies = [
@@ -23,4 +23,3 @@ module = "main"
 [tool.flet.android]
 adaptive_icon_foreground = "assets/icon.png"
 adaptive_icon_background = "#42D0A3"
-

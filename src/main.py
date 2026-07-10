@@ -10,7 +10,7 @@ from datetime import date
 import flet as ft
 
 APP_NAME = "碳水大王"
-APP_VERSION = "1.0.14"
+APP_VERSION = "1.0.15"
 MEALS = ["早餐", "午餐", "晚餐", "练后", "偷吃"]
 
 DAY_TYPES = {
@@ -514,20 +514,35 @@ def main(page: ft.Page):
         control.open = False
         page.update()
 
+    active_snack = {"control": None}
+
     def snack(message):
         # Flet 0.85.3 compatibility:
-        # page.snack_bar may not visibly open in this build, so put SnackBar in overlay.
+        # Keep only one SnackBar in overlay. Accumulated/overlapping SnackBars can
+        # make repeated save/update prompts appear intermittently on Android.
+        previous = active_snack.get("control")
+        if previous is not None:
+            try:
+                previous.open = False
+            except Exception:
+                pass
+            try:
+                if previous in page.overlay:
+                    page.overlay.remove(previous)
+            except Exception:
+                pass
+
         sb = ft.SnackBar(content=ft.Text(message, size=13, color="#FFFFFF"))
         try:
-            sb.duration = 1600
+            sb.duration = 2200
         except Exception:
             pass
         try:
             sb.bgcolor = PRIMARY
         except Exception:
             pass
-        if sb not in page.overlay:
-            page.overlay.append(sb)
+        page.overlay.append(sb)
+        active_snack["control"] = sb
         sb.open = True
         page.update()
 
