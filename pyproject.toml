@@ -1,4 +1,4 @@
-[project]
+﻿[project]
 name = "carbs_king"
 version = "1.0.15"
 description = "Carb cycle recorder"
@@ -13,7 +13,7 @@ product = "碳水大王"
 org = "com.chenyang"
 bundle_id = "com.chenyang.carbs_king"
 artifact = "carbs_king"
-build_number = 46
+build_number = 47
 company = "chenyang"
 
 [tool.flet.app]
@@ -23,3 +23,4 @@ module = "main"
 [tool.flet.android]
 adaptive_icon_foreground = "assets/icon.png"
 adaptive_icon_background = "#42D0A3"
+
