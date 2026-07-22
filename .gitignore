@@ -14,7 +14,7 @@ dist/
 .codex-*.jpg
 flet-*.log
 test-results/
-screenshots/
+/screenshots/
 *.apk
 *.aab
 *.so
