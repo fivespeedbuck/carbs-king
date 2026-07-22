@@ -1,0 +1,19 @@
+name: carbs_king_rest_alarm
+description: Native Android receiver for Carb King's rest timer alarms.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.1.5 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.chenyang.carbs_king.restalarm
+        pluginClass: CarbsKingRestAlarmPlugin

@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".RestAlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.chenyang.carbs_king.REST_ALARM" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

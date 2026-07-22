@@ -1,10 +1,11 @@
 [project]
 name = "carbs_king"
-version = "1.0.16"
+version = "1.2.0"
 description = "Carb cycle recorder"
 requires-python = ">=3.12"
 dependencies = [
-    "flet==0.85.3"
+    "flet==0.85.3",
+    "flet-audio==0.85.3"
 ]
 
 [tool.flet]
@@ -13,7 +14,7 @@ product = "碳水大王"
 org = "com.chenyang"
 bundle_id = "com.chenyang.carbs_king"
 artifact = "carbs_king"
-build_number = 48
+build_number = 50
 company = "chenyang"
 
 [tool.flet.app]
@@ -23,3 +24,15 @@ module = "main"
 [tool.flet.android]
 adaptive_icon_foreground = "assets/icon.png"
 adaptive_icon_background = "#42D0A3"
+dependencies = [
+    "pyjnius"
+]
+
+[tool.flet.flutter.pubspec.dependencies.carbs_king_rest_alarm]
+path = "../../android/rest_alarm_plugin"
+
+[tool.flet.android.permission]
+"android.permission.POST_NOTIFICATIONS" = true
+"android.permission.VIBRATE" = true
+"android.permission.WAKE_LOCK" = true
+"android.permission.USE_EXACT_ALARM" = true
