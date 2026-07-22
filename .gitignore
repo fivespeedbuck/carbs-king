@@ -8,10 +8,20 @@ build/
 dist/
 .dart_tool/
 .flet/
+.codex-*/
+.codex-*.log
+.codex-*.png
+.codex-*.jpg
+flet-*.log
+test-results/
+screenshots/
 *.apk
 *.aab
 *.so
 *.dill
+
+# Local product references (never ship)
+1/
 
 # Local environments and editors
 .venv/
