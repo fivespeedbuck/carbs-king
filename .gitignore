@@ -12,6 +12,10 @@ dist/
 .codex-*.log
 .codex-*.png
 .codex-*.jpg
+.qa-*/
+.qa-*.log
+.qa-*.png
+.qa-*.jpg
 flet-*.log
 test-results/
 /screenshots/
@@ -45,6 +49,7 @@ import_safety_backups/
 
 # Version packages are attached to GitHub Releases, not committed
 *.zip
+release_candidates/*
 
 # Operating system files
 .DS_Store

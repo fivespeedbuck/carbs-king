@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 
 class RestAlarmReceiver : BroadcastReceiver() {
@@ -28,7 +29,7 @@ class RestAlarmReceiver : BroadcastReceiver() {
             val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { DEFAULT_TITLE }
             val body = intent.getStringExtra(EXTRA_BODY).orEmpty().ifBlank { DEFAULT_BODY }
             val manager = context.getSystemService(NotificationManager::class.java)
-            ensureChannel(manager)
+            ensureChannel(context, manager)
 
             val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
             val contentIntent = launchIntent?.let {
@@ -70,9 +71,9 @@ class RestAlarmReceiver : BroadcastReceiver() {
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun ensureChannel(manager: NotificationManager) {
+    private fun ensureChannel(context: Context, manager: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val sound = Uri.parse("android.resource://${context.packageName}/raw/rest_coin")
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -101,7 +102,8 @@ class RestAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_TITLE = "rest_notification_title"
         private const val EXTRA_BODY = "rest_notification_body"
         private const val PREFS_NAME = "carbs_king_rest_alarm_deliveries"
-        private const val CHANNEL_ID = "rest_cycle_alerts"
+        // Android 8+ channel sound is immutable after creation, so v50.1 uses a new ID.
+        private const val CHANNEL_ID = "rest_cycle_alerts_v2"
         private const val CHANNEL_NAME = "Rest cycle alerts"
         private const val DEFAULT_TITLE = "组间休息结束"
         private const val DEFAULT_BODY = "下一组可以开始了"

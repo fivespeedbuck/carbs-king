@@ -244,7 +244,7 @@ class PeriodSeriesTests(unittest.TestCase):
 class CalendarTests(unittest.TestCase):
     def test_training_has_priority_and_compacts_three_parts(self):
         record = {
-            "profile": {"day_type": "高碳日"},
+            "profile": {"day_type": "高碳日", "targets": {"calorie_target": 2100}},
             "calendar_event": {"type": "custom", "text": "公司加班"},
             "training": {"session": session("mixed", [
                 exercise("卧推", "胸", [completed_set()]),
@@ -257,7 +257,13 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(result["day_type"], "高碳日")
         self.assertEqual(result["activity_type"], "training")
         self.assertEqual(result["activity"], "胸+三头+1")
+        self.assertEqual(result["calorie_target"], 2100)
         self.assertEqual(result["event_text"], "公司加班")
+
+    def test_calendar_target_rejects_missing_non_numeric_and_non_positive_values(self):
+        for value in (None, "", "invalid", 0, -100, float("nan"), float("inf")):
+            result = calendar_day_summary({"profile": {"targets": {"calorie_target": value}}})
+            self.assertIsNone(result["calorie_target"])
 
     def test_explicit_rest_and_custom_event_are_distinct_from_empty(self):
         rest = calendar_day_summary({"profile": {"day_type": "低碳日"}, "calendar_event": {"type": "rest"}})

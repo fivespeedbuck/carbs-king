@@ -9,12 +9,13 @@ from typing import Any
 import flet as ft
 
 from diet_service import DIET_VIEW_LABELS, DIET_VIEWS, DietView, DietViewState, normalize_diet_view
+from ui_components import INPUT_FIELD_HEIGHT, INPUT_LABEL_HEIGHT, INPUT_LABEL_SPACING, LabeledInput
 
 
 DIET_TAB_HEIGHT = 48
-DIET_INPUT_LABEL_HEIGHT = 18
-DIET_INPUT_FIELD_HEIGHT = 52
-DIET_INPUT_SPACING = 4
+DIET_INPUT_LABEL_HEIGHT = INPUT_LABEL_HEIGHT
+DIET_INPUT_FIELD_HEIGHT = INPUT_FIELD_HEIGHT
+DIET_INPUT_SPACING = INPUT_LABEL_SPACING
 
 PRIMARY = "#116E59"
 PRIMARY_SOFT = "#F1F7F5"
@@ -27,13 +28,11 @@ SUB = "#4F5D58"
 class DietShellRenderers:
     today_diet: Callable[[], Any]
     food_library: Callable[[], Any]
-    supplement_library: Callable[[], Any]
 
     def render(self, view: DietView) -> Any:
         return {
             "today_diet": self.today_diet,
             "food_library": self.food_library,
-            "supplement_library": self.supplement_library,
         }[view]()
 
 
@@ -86,23 +85,21 @@ def fixed_labeled_input(label: str, field: Any, *, width: int | None = None, exp
     except Exception:
         pass
 
-    return ft.Column(
-        [
-            ft.Container(
-                content=ft.Text(label, size=12, color=SUB, weight="bold", max_lines=1, overflow="ellipsis"),
-                height=DIET_INPUT_LABEL_HEIGHT,
-                alignment=ft.Alignment.CENTER_LEFT,
-            ),
-            field,
-        ],
-        spacing=DIET_INPUT_SPACING,
-        width=width,
-        expand=expand,
-    )
+    return LabeledInput(label, field, width=width, expand=expand)
 
 
 def aligned_input_row(controls: list[Any], *, spacing: int = 8) -> ft.Row:
     return ft.Row(controls, spacing=spacing, vertical_alignment="start")
+
+
+def diet_shortcut_panel(tabs: Any, shortcut_list: Any) -> ft.Column:
+    """Keep shortcut navigation and its results together at the top of food entry."""
+    return ft.Column(
+        [tabs, shortcut_list],
+        spacing=8,
+        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        tight=True,
+    )
 
 
 def build_diet_shell(

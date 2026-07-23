@@ -7,12 +7,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from training_experience_service import (  # noqa: E402
+    adjust_weight_kg,
     adjust_rest_cycle,
     copy_whole_session,
+    create_exercise_group,
     exercise_usage_stats,
     finish_rest_cycle,
+    format_weight_kg,
     history_training_cards,
+    normalize_weight_input,
+    normalize_exercise_groups,
+    next_group_work,
     pause_rest_cycle,
+    preview_session_exercise_block_order,
+    reorder_session_exercise_blocks,
+    reorder_session_exercises,
     rest_remaining_seconds,
     resume_rest_cycle,
     skip_rest_cycle,
@@ -88,6 +97,31 @@ class WholeSessionCopyTests(unittest.TestCase):
         self.assertEqual([item["body_part"] for item in copied["exercises"]], ["肩", "胸", "三头", "腹"])
         self.assertEqual(source["exercises"][0]["sets"][0]["completed"], True)
 
+    def test_copy_rebuilds_group_and_member_ids_and_keeps_cardio_parameters(self):
+        source = session("source", "2026-07-10", ["胸", "有氧"])
+        source["exercises"][1].update({
+            "recording_mode": "cardio", "sets": [], "duration_seconds": 1200,
+            "distance_km": 5, "cardio_metrics": {"resistance_level": 8}, "completed": True,
+        })
+        source["exercise_groups"] = [{
+            "id": "old-group", "group_type": "superset", "order": 1,
+            "exercise_ids": [item["id"] for item in source["exercises"]],
+        }]
+        counters = {}
+
+        def factory(prefix):
+            counters[prefix] = counters.get(prefix, 0) + 1
+            return f"new-{prefix}-{counters[prefix]}"
+
+        copied = copy_whole_session(source, mode="replace", id_factory=factory)
+
+        self.assertNotEqual(copied["exercise_groups"][0]["id"], "old-group")
+        self.assertEqual(copied["exercise_groups"][0]["exercise_ids"], [item["id"] for item in copied["exercises"]])
+        self.assertEqual(copied["exercises"][1]["sets"], [])
+        self.assertEqual(copied["exercises"][1]["duration_seconds"], 1200)
+        self.assertEqual(copied["exercises"][1]["cardio_metrics"]["resistance_level"], 8)
+        self.assertFalse(copied["exercises"][1]["completed"])
+
 
 class ExerciseRankingTests(unittest.TestCase):
     def test_counts_once_per_effective_session_and_sorts(self):
@@ -123,6 +157,117 @@ class ExerciseRankingTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in frequent], ["Gamma", "Alpha", "Beta"])
         self.assertEqual([item["name"] for item in recent], ["Beta", "Gamma", "Alpha"])
         self.assertEqual(library, [{"name": "Alpha"}, {"name": "Beta"}, {"name": "Gamma"}])
+
+
+class WeightEditingTests(unittest.TestCase):
+    def test_step_is_exactly_one_point_two_five_and_clamped(self):
+        self.assertEqual(adjust_weight_kg(70, 1), 71.25)
+        self.assertEqual(adjust_weight_kg(71.25, -1), 70.0)
+        self.assertEqual(adjust_weight_kg(0, -1), 0.0)
+        self.assertEqual(adjust_weight_kg(999.5, 1), 1000.0)
+
+    def test_direct_input_accepts_dot_and_comma_and_rejects_invalid_values(self):
+        self.assertEqual(normalize_weight_input("71,25"), 71.25)
+        self.assertEqual(normalize_weight_input(" 70.5 "), 70.5)
+        self.assertEqual(normalize_weight_input("0"), 0.0)
+        for value in ("", "abc", "-1", "1000.01"):
+            with self.assertRaises(ValueError):
+                normalize_weight_input(value)
+
+    def test_weight_format_removes_float_noise_and_trailing_zero(self):
+        self.assertEqual(format_weight_kg(70.0), "70")
+        self.assertEqual(format_weight_kg(71.25), "71.25")
+        self.assertEqual(format_weight_kg(70.5), "70.5")
+
+
+class ExerciseReorderTests(unittest.TestCase):
+    def setUp(self):
+        self.items = [
+            {"id": "a", "name": "卧推", "sets": [{"id": "a1", "weight_kg": 80, "completed": True}], "note": "保留"},
+            {"id": "b", "name": "划船", "sets": [{"id": "b1", "reps": 10}]},
+            {"id": "c", "name": "深蹲", "sets": [{"id": "c1", "weight_kg": 100}]},
+        ]
+
+    def test_move_first_to_last_preserves_nested_data(self):
+        result = reorder_session_exercises(self.items, "a", "c")
+        self.assertEqual([item["id"] for item in result], ["b", "c", "a"])
+        self.assertEqual(result[-1]["sets"][0]["weight_kg"], 80)
+        self.assertEqual(result[-1]["note"], "保留")
+        self.assertEqual([item["order"] for item in result], [1, 2, 3])
+
+    def test_move_last_to_first_and_middle(self):
+        self.assertEqual([item["id"] for item in reorder_session_exercises(self.items, "c", "a")], ["c", "a", "b"])
+        self.assertEqual([item["id"] for item in reorder_session_exercises(self.items, "a", "b")], ["b", "a", "c"])
+
+    def test_unknown_or_same_id_is_safe_copy(self):
+        self.assertEqual(reorder_session_exercises(self.items, "missing", "a"), self.items)
+        self.assertIsNot(reorder_session_exercises(self.items, "a", "a"), self.items)
+
+    def test_group_order_tracks_dragged_stable_ids(self):
+        groups = create_exercise_group(
+            self.items, [], ["a", "c"], "superset", id_factory=lambda prefix: "group-stable"
+        )
+        reordered = reorder_session_exercises(self.items, "c", "a")
+        normalized = normalize_exercise_groups(reordered, groups)
+
+        self.assertEqual(normalized[0]["id"], "group-stable")
+        self.assertEqual(normalized[0]["exercise_ids"], ["c", "a"])
+        self.assertEqual(reordered[0]["group_id"], "group-stable")
+        self.assertEqual(reordered[0]["group_order"], 1)
+        self.assertEqual(reordered[1]["group_order"], 2)
+
+    def test_group_reorder_moves_whole_visible_block(self):
+        groups = create_exercise_group(
+            self.items, [], ["a", "c"], "superset", id_factory=lambda prefix: "group-stable"
+        )
+        moved_after_middle = reorder_session_exercise_blocks(self.items, groups, "a", "b")
+        self.assertEqual([item["id"] for item in moved_after_middle], ["b", "a", "c"])
+
+        moved_before_group = reorder_session_exercise_blocks(self.items, groups, "b", "c")
+        self.assertEqual([item["id"] for item in moved_before_group], ["b", "a", "c"])
+
+    def test_drag_preview_matches_final_drop_order_and_keeps_group_as_one_block(self):
+        groups = create_exercise_group(
+            self.items, [], ["a", "c"], "compound", id_factory=lambda prefix: "group-stable"
+        )
+
+        self.assertEqual(
+            preview_session_exercise_block_order(self.items, groups, "a", "b"),
+            ["b", "a"],
+        )
+        self.assertEqual(
+            preview_session_exercise_block_order(self.items, groups, "b", "c"),
+            ["b", "a"],
+        )
+        self.assertEqual([item["id"] for item in self.items], ["a", "b", "c"])
+
+    def test_group_requires_two_valid_unique_members_and_one_membership_each(self):
+        with self.assertRaises(ValueError):
+            create_exercise_group(self.items, [], ["a", "a"], "superset")
+        with self.assertRaises(ValueError):
+            create_exercise_group(self.items, [], ["a", "missing"], "compound")
+        with self.assertRaises(ValueError):
+            create_exercise_group(self.items, [], ["a", "b"], "invalid")
+
+    def test_group_work_runs_members_in_order_and_rests_after_each_full_round(self):
+        exercises = [
+            {"id": "a", "recording_mode": "strength", "group_id": "g", "sets": [{"completed": True}, {"completed": False}]},
+            {"id": "b", "recording_mode": "strength", "group_id": "g", "sets": [{"completed": False}, {"completed": False}]},
+        ]
+        grouped = {"exercises": exercises, "exercise_groups": [{"id": "g", "group_type": "superset", "exercise_ids": ["a", "b"]}]}
+
+        first = next_group_work(grouped, "a", 0)
+        self.assertEqual((first["exercise_id"], first["set_index"], first["grouped_round_complete"]), ("b", 0, False))
+        exercises[1]["sets"][0]["completed"] = True
+        second = next_group_work(grouped, "b", 0)
+        self.assertEqual((second["exercise_id"], second["set_index"], second["grouped_round_complete"]), ("a", 1, True))
+        exercises[0]["sets"][1]["completed"] = True
+        third = next_group_work(grouped, "a", 1)
+        self.assertEqual((third["exercise_id"], third["set_index"], third["grouped_round_complete"]), ("b", 1, False))
+        exercises[1]["sets"][1]["completed"] = True
+        final = next_group_work(grouped, "b", 1)
+        self.assertTrue(final["grouped_round_complete"])
+        self.assertTrue(final["group_complete"])
 
 
 class RestCycleTests(unittest.TestCase):

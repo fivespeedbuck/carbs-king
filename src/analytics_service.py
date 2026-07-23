@@ -7,8 +7,12 @@ state.  They accept JSON-compatible mappings and return JSON-compatible values.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+import math
 from typing import Any
+
+from training_clock_service import session_elapsed_seconds
+from training_models import normalize_recording_mode
 
 
 BODY_PART_ORDER = ("胸", "背", "肩", "腿", "二头", "三头", "腹", "有氧")
@@ -91,6 +95,8 @@ def _raw_sessions(training: Any) -> list[dict[str, Any]]:
 
 
 def _completed_formal_sets(exercise: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    if normalize_recording_mode(exercise.get("recording_mode")) != "strength":
+        return []
     return [
         item for item in _list(exercise.get("sets"))
         if isinstance(item, Mapping)
@@ -103,15 +109,24 @@ def _completed_formal_sets(exercise: Mapping[str, Any]) -> list[Mapping[str, Any
 def _structured_session_summary(session: Mapping[str, Any]) -> dict[str, Any] | None:
     exercises = [item for item in _list(session.get("exercises")) if isinstance(item, Mapping)]
     duration = _number(session.get("total_duration_min"))
+    if str(session.get("status") or "").strip().lower() == "active":
+        duration = round(session_elapsed_seconds(session, datetime.now()) / 60, 2)
     completed_sets: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+    completed_cardio: list[Mapping[str, Any]] = []
+    completed_timed: list[Mapping[str, Any]] = []
     meaningful_exercises: list[Mapping[str, Any]] = []
     for exercise in exercises:
         if str(exercise.get("name") or "").strip() or str(exercise.get("body_part") or "").strip():
             meaningful_exercises.append(exercise)
         completed_sets.extend((exercise, item) for item in _completed_formal_sets(exercise))
+        mode = normalize_recording_mode(exercise.get("recording_mode"))
+        if bool(exercise.get("completed")) and mode == "cardio":
+            completed_cardio.append(exercise)
+        elif bool(exercise.get("completed")) and mode == "timed":
+            completed_timed.append(exercise)
 
     status = str(session.get("status") or "").strip().lower()
-    has_completed_work = bool(completed_sets)
+    has_completed_work = bool(completed_sets or completed_cardio or completed_timed)
     has_timed_work = duration is not None and duration > 0
     is_legacy = any(
         str(item.get("legacy_detail") or "").strip() or str(item.get("legacy_intensity") or "").strip()
@@ -140,6 +155,10 @@ def _structured_session_summary(session: Mapping[str, Any]) -> dict[str, Any] | 
         if weight is not None and reps is not None:
             volume += max(0.0, weight) * max(0.0, reps)
 
+    cardio_duration = sum(max(0.0, _number(item.get("duration_seconds")) or 0.0) for item in completed_cardio) / 60
+    timed_duration = sum(max(0.0, _number(item.get("duration_seconds")) or 0.0) for item in completed_timed) / 60
+    cardio_distance = sum(max(0.0, _number(item.get("distance_km")) or 0.0) for item in completed_cardio)
+
     return {
         "id": str(session.get("id") or ""),
         "status": status or "completed",
@@ -148,6 +167,11 @@ def _structured_session_summary(session: Mapping[str, Any]) -> dict[str, Any] | 
         "formal_sets": len(completed_sets),
         "volume_kg": round(volume, 2),
         "duration_min": round(max(0.0, duration or 0.0), 2),
+        "cardio_duration_min": round(cardio_duration, 2),
+        "timed_duration_min": round(timed_duration, 2),
+        "distance_km": round(cardio_distance, 2),
+        "cardio_exercises": len(completed_cardio),
+        "timed_exercises": len(completed_timed),
         "structured": not is_legacy,
     }
 
@@ -189,6 +213,11 @@ def _legacy_training_summary(training: Any) -> dict[str, Any] | None:
         "formal_sets": 0,
         "volume_kg": 0.0,
         "duration_min": round(max(0.0, duration or 0.0), 2),
+        "cardio_duration_min": 0.0,
+        "timed_duration_min": 0.0,
+        "distance_km": 0.0,
+        "cardio_exercises": 0,
+        "timed_exercises": 0,
         "structured": False,
     }
 
@@ -235,6 +264,11 @@ def summarize_daily_training(record_or_training: Any, record_date: str = "") -> 
         "formal_sets": sum(item["formal_sets"] for item in sessions),
         "volume_kg": round(sum(item["volume_kg"] for item in sessions), 2),
         "duration_min": round(sum(item["duration_min"] for item in sessions), 2),
+        "cardio_duration_min": round(sum(item["cardio_duration_min"] for item in sessions), 2),
+        "timed_duration_min": round(sum(item["timed_duration_min"] for item in sessions), 2),
+        "distance_km": round(sum(item["distance_km"] for item in sessions), 2),
+        "cardio_exercises": sum(item["cardio_exercises"] for item in sessions),
+        "timed_exercises": sum(item["timed_exercises"] for item in sessions),
         "sessions": sessions,
     }
 
@@ -403,7 +437,7 @@ def build_period_series(records: Any, *, end_date: str | date, days: int) -> lis
         raw = source.get(key)
         record = raw if isinstance(raw, Mapping) else None
         if record is None:
-            result.append({"date": key, "body": None, "diet": None, "training": None, "recovery": None})
+            result.append({"date": key, "body": None, "diet": None, "training": None, "recovery": None, "targets": None})
             continue
 
         measurement = normalize_body_measurement(record, key)
@@ -432,10 +466,12 @@ def build_period_series(records: Any, *, end_date: str | date, days: int) -> lis
             training_data = _mapping(record.get("training"))
             fatigue_text = str(training_data.get("fatigue_status") or "").strip()
             fatigue = fatigue_text or None
-        recovery = {"water_ml": water, "sleep_minutes": sleep, "fatigue": fatigue}
+        water_target = _number(_mapping(record.get("water")).get("target_ml"))
+        recovery = {"water_ml": water, "water_target_ml": water_target, "sleep_minutes": sleep, "fatigue": fatigue}
         if water is None and sleep is None and fatigue is None:
             recovery = None
-        result.append({"date": key, "body": body, "diet": diet, "training": training, "recovery": recovery})
+        targets = dict(_mapping(profile.get("targets"))) or None
+        result.append({"date": key, "body": body, "diet": diet, "training": training, "recovery": recovery, "targets": targets})
     return result
 
 
@@ -443,6 +479,9 @@ def calendar_day_summary(record: Any, record_date: str = "") -> dict[str, Any]:
     """Return the three-line calendar-cell data for one date."""
     rec = record if isinstance(record, Mapping) else {}
     profile = _mapping(rec.get("profile"))
+    calorie_target = _number(_mapping(profile.get("targets")).get("calorie_target"))
+    if calorie_target is not None and (not math.isfinite(calorie_target) or calorie_target <= 0):
+        calorie_target = None
     day_type = str(profile.get("day_type") or "").strip()
     day_type = day_type if day_type in DAY_TYPES else None
     training = summarize_daily_training(rec, record_date)
@@ -470,6 +509,7 @@ def calendar_day_summary(record: Any, record_date: str = "") -> dict[str, Any]:
         "activity": activity,
         "body_parts": training["body_parts"],
         "session_count": training["session_count"],
+        "calorie_target": calorie_target,
         "event_text": event_text or None,
         "lines": [item for item in (day_type, activity) if item],
     }

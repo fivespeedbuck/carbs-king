@@ -7,8 +7,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from achievement_definitions import HIDDEN_ACHIEVEMENTS, LADDER_ACHIEVEMENTS, achievement_definitions  # noqa: E402
-from achievement_service import achievement_metric_snapshot, evaluate_achievements  # noqa: E402
-from achievement_views import HIDDEN_LOCKED_TITLE, achievement_view_model  # noqa: E402
+from achievement_service import (  # noqa: E402
+    acknowledge_achievement_celebration,
+    achievement_metric_snapshot,
+    achievement_unlock_times,
+    evaluate_achievements,
+    normalize_achievement_unlock_state,
+    pending_achievement_results,
+    register_achievement_unlocks,
+)
+from achievement_views import (  # noqa: E402
+    HIDDEN_LOCKED_TITLE,
+    achievement_view_model,
+    build_achievement_celebration,
+    sort_achievement_views,
+)
 
 
 ENGLISH_SENTENCE_RE = re.compile(r"[A-Za-z][A-Za-z\s,'-]{3,}[.!?]")
@@ -216,6 +229,125 @@ class AchievementProgressTests(unittest.TestCase):
         self.assertFalse(locked_view["revealed"])
         self.assertEqual(unlocked_view["title"], "一日两练")
         self.assertTrue(unlocked_view["revealed"])
+
+    def test_attention_sort_groups_progress_completed_and_zero_stably(self):
+        items = [
+            {"id": "zero", "current": 0, "target": 10, "unlocked": False},
+            {"id": "half-more-left", "current": 50, "target": 100, "unlocked": False},
+            {"id": "done-old", "current": 10, "target": 10, "unlocked": True},
+            {"id": "near", "current": 9, "target": 10, "unlocked": False},
+            {"id": "half-less-left", "current": 5, "target": 10, "unlocked": False},
+            {"id": "done-new", "current": 20, "target": 10, "unlocked": True},
+            {"id": "zero-2", "current": 0, "target": 20, "unlocked": False},
+        ]
+        ranked = sort_achievement_views(
+            items,
+            {"done-old": "2026-07-01T10:00:00", "done-new": "2026-07-22T10:00:00"},
+        )
+        self.assertEqual(
+            [item["id"] for item in ranked],
+            ["near", "half-less-left", "half-more-left", "done-new", "done-old", "zero", "zero-2"],
+        )
+
+    def test_unlocked_without_timestamp_and_hidden_entries_remain_stable_and_masked(self):
+        items = [
+            {"id": "done-a", "title": "A", "description": "A", "current": 1, "target": 1, "unlocked": True},
+            {"id": "done-b", "title": "B", "description": "B", "current": 2, "target": 1, "unlocked": True},
+            {"id": "secret", "title": "秘密条件", "description": "不能泄露", "current": 0, "target": 1, "unlocked": False, "hidden": True},
+        ]
+        ranked = sort_achievement_views(items)
+
+        self.assertEqual([item["id"] for item in ranked], ["done-a", "done-b", "secret"])
+        self.assertEqual(ranked[-1]["title"], HIDDEN_LOCKED_TITLE)
+        self.assertEqual(ranked[-1]["description"], "达成条件后揭晓")
+
+
+class AchievementCelebrationTests(unittest.TestCase):
+    def setUp(self):
+        self.results = [
+            {
+                "id": "training_days_bronze",
+                "title": "训练天数·铜",
+                "description": "在不同日期完成真实训练。",
+                "unlocked": True,
+            },
+            {
+                "id": "nutrition_logged_days_bronze",
+                "title": "饮食记录·铜",
+                "description": "记录餐食或每日营养总量。",
+                "unlocked": True,
+            },
+        ]
+
+    def test_legacy_unlocks_migrate_as_already_celebrated(self):
+        legacy = {"training_days_bronze": "2026-07-20T08:00:00"}
+        updated = register_achievement_unlocks(self.results[:1], legacy, "2026-07-23T09:00:00")
+        state = normalize_achievement_unlock_state(updated)
+
+        self.assertEqual(state["celebrated"], ["training_days_bronze"])
+        self.assertEqual(state["pending"], [])
+        self.assertEqual(pending_achievement_results(self.results, updated), [])
+
+    def test_multiple_new_unlocks_are_queued_once_in_result_order(self):
+        updated = register_achievement_unlocks(self.results, {}, "2026-07-23T09:00:00")
+        repeated = register_achievement_unlocks(self.results, updated, "2026-07-23T09:01:00")
+
+        self.assertEqual(
+            normalize_achievement_unlock_state(repeated)["pending"],
+            ["training_days_bronze", "nutrition_logged_days_bronze"],
+        )
+        self.assertEqual(
+            [item["id"] for item in pending_achievement_results(self.results, repeated)],
+            ["training_days_bronze", "nutrition_logged_days_bronze"],
+        )
+
+    def test_acknowledgement_never_drops_the_remaining_queue_or_repeats(self):
+        stored = register_achievement_unlocks(self.results, {}, "2026-07-23T09:00:00")
+        after_first = acknowledge_achievement_celebration(stored, "training_days_bronze")
+
+        self.assertEqual(
+            [item["id"] for item in pending_achievement_results(self.results, after_first)],
+            ["nutrition_logged_days_bronze"],
+        )
+        after_second = acknowledge_achievement_celebration(after_first, "nutrition_logged_days_bronze")
+        revisited = register_achievement_unlocks(self.results, after_second, "2026-07-23T10:00:00")
+        self.assertEqual(pending_achievement_results(self.results, revisited), [])
+        self.assertEqual(set(achievement_unlock_times(revisited)), {
+            "training_days_bronze", "nutrition_logged_days_bronze",
+        })
+
+    def test_invalid_old_state_defaults_safely(self):
+        self.assertEqual(
+            normalize_achievement_unlock_state({"_pending": "bad", "_celebrated": None})["pending"],
+            [],
+        )
+        self.assertEqual(normalize_achievement_unlock_state(None)["unlock_times"], {})
+
+    def test_celebration_card_contains_required_copy_and_confirmation(self):
+        confirmed = []
+        dialog = build_achievement_celebration(self.results[0], on_confirm=lambda event: confirmed.append(True))
+
+        def walk(control):
+            if control is None:
+                return []
+            items = [control]
+            for attribute in ("title", "content"):
+                child = getattr(control, attribute, None)
+                if child is not None and child is not control:
+                    items.extend(walk(child))
+            for child in getattr(control, "controls", []) or []:
+                items.extend(walk(child))
+            return items
+
+        controls = walk(dialog)
+        text = " ".join(str(getattr(item, "value", "")) for item in controls)
+        self.assertTrue(dialog.modal)
+        self.assertIn("训练天数·铜", text)
+        self.assertIn("在不同日期完成真实训练。", text)
+        self.assertIn("继续保持", text)
+        confirm = next(item for item in controls if getattr(item, "on_click", None) is not None)
+        confirm.on_click(None)
+        self.assertEqual(confirmed, [True])
 
 
 if __name__ == "__main__":

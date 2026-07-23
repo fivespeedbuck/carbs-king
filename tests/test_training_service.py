@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from training_models import (  # noqa: E402
     Exercise,
+    ExerciseGroup,
     SessionExercise,
     SetPlan,
     TemplateExercise,
@@ -20,6 +21,7 @@ from training_service import (  # noqa: E402
     append_session_once,
     assess_training_carb_linkage,
     completed_set_count,
+    completed_work_count,
     estimated_one_rep_max,
     find_active_daily_session,
     is_rapid_repeat,
@@ -29,12 +31,16 @@ from training_service import (  # noqa: E402
     migrate_legacy_training,
     normalize_body_measurement,
     normalize_training_data,
+    normalize_session_payload,
     personal_bests,
     planned_set_count,
+    planned_work_count,
     recommend_carb_day,
     session_completion_state,
     raw_training_sessions,
     session_progress,
+    session_work_progress,
+    rest_required_after_work,
     session_summary_title,
     session_volume,
 )
@@ -73,6 +79,29 @@ class TrainingModelTests(unittest.TestCase):
         self.assertEqual(restored.templates[0].exercises[0].sets[0].target_reps, 8)
         self.assertEqual(restored.sessions[0].exercises[0].sets[0].weight_kg, 80)
 
+    def test_cardio_metrics_and_exercise_groups_round_trip_without_fake_sets(self):
+        run = SessionExercise(
+            id="run", name="跑步机爬坡", body_part="有氧", order=1,
+            recording_mode="cardio", duration_seconds=1800, distance_km=3.2,
+            cardio_metric_fields=["speed_kph", "incline_percent"],
+            cardio_metrics={"speed_kph": 6.5, "incline_percent": 12}, completed=True,
+        )
+        bike = SessionExercise(
+            id="bike", name="动感单车", body_part="有氧", order=2,
+            recording_mode="cardio", duration_seconds=1200,
+        )
+        session = TrainingSession(
+            id="mixed", date="2026-07-22", exercises=[run, bike],
+            exercise_groups=[ExerciseGroup(id="group-1", group_type="compound", order=1, exercise_ids=["run", "bike"])],
+        )
+
+        restored = TrainingSession.from_dict(json.loads(json.dumps(session.to_dict(), ensure_ascii=False)))
+
+        self.assertEqual(restored.exercises[0].sets, [])
+        self.assertEqual(restored.exercises[0].duration_seconds, 1800)
+        self.assertEqual(restored.exercises[0].cardio_metrics["incline_percent"], 12)
+        self.assertEqual(restored.exercise_groups[0].exercise_ids, ["run", "bike"])
+
 
 class TrainingCalculationTests(unittest.TestCase):
     def test_volume_counts_and_progress(self):
@@ -89,6 +118,23 @@ class TrainingCalculationTests(unittest.TestCase):
         self.assertEqual(planned_set_count(session), 3)
         self.assertEqual(completed_set_count(session), 2)
         self.assertEqual(session_progress(session), 0.6667)
+
+    def test_timed_and_cardio_are_work_items_not_strength_sets(self):
+        session = TrainingSession(date="2026-07-22", exercises=[
+            SessionExercise(name="卧推", body_part="胸", order=1, sets=[TrainingSet(order=1, completed=True)]),
+            SessionExercise(name="平板支撑", body_part="腹", order=2, recording_mode="timed", duration_seconds=60, completed=True),
+            SessionExercise(name="跑步", body_part="有氧", order=3, recording_mode="cardio", duration_seconds=1200, completed=False),
+        ])
+
+        self.assertEqual(planned_set_count(session), 1)
+        self.assertEqual(completed_set_count(session), 1)
+        self.assertEqual(planned_work_count(session), 3)
+        self.assertEqual(completed_work_count(session), 2)
+        self.assertEqual(session_work_progress(session), 0.6667)
+        self.assertFalse(rest_required_after_work("cardio"))
+        self.assertFalse(rest_required_after_work("timed"))
+        self.assertTrue(rest_required_after_work("strength"))
+        self.assertTrue(rest_required_after_work("cardio", grouped_round_complete=True))
 
     def test_estimated_one_rep_max(self):
         self.assertEqual(estimated_one_rep_max(100, 1), 100)
@@ -196,8 +242,35 @@ class LegacyMigrationTests(unittest.TestCase):
         payload = {"schema_version": 1, "exercises": [], "templates": [], "sessions": []}
         normalized = normalize_training_data(payload)
 
-        self.assertEqual(normalized.to_dict(), payload)
+        self.assertEqual(normalized.schema_version, 2)
+        self.assertEqual(normalized.exercises, [])
+        self.assertEqual(normalized.templates, [])
+        self.assertEqual(normalized.sessions, [])
         self.assertEqual(payload, {"schema_version": 1, "exercises": [], "templates": [], "sessions": []})
+
+    def test_missing_mode_defaults_to_strength_and_explicit_cardio_drops_stale_sets(self):
+        legacy = {
+            "id": "legacy", "date": "2026-07-22", "status": "completed",
+            "exercises": [
+                {"id": "old", "name": "旧卧推", "body_part": "胸", "sets": [{"reps": 8}]},
+                {
+                    "id": "run", "name": "跑步机爬坡", "body_part": "有氧", "recording_mode": "cardio",
+                    "duration_seconds": "1800", "distance_km": "3.5", "completed": True,
+                    "sets": [{"weight_kg": 0, "reps": 0, "completed": True}],
+                    "cardio_metrics": {"speed_kph": "6.2", "incline_percent": "10"},
+                },
+            ],
+        }
+        original = json.loads(json.dumps(legacy, ensure_ascii=False))
+
+        normalized, changed = normalize_session_payload(legacy)
+
+        self.assertTrue(changed)
+        self.assertEqual(normalized["exercises"][0]["recording_mode"], "strength")
+        self.assertEqual(normalized["exercises"][1]["sets"], [])
+        self.assertEqual(normalized["exercises"][1]["duration_seconds"], 1800)
+        self.assertEqual(normalized["exercises"][1]["cardio_metrics"]["incline_percent"], 10)
+        self.assertEqual(legacy, original)
 
 
 class DailySessionIntegrationTests(unittest.TestCase):
