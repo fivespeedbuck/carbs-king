@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+from storage_service import TRAINING_FILE, load_json, save_json
 
 
 _MOVEMENT_GUIDES = {
@@ -219,6 +222,37 @@ _EXERCISE_SPECS = {
 
 EXERCISE_CATEGORIES = tuple(_EXERCISE_SPECS)
 
+_TIMED_EXERCISES = {"平板支撑", "侧平板支撑", "战绳"}
+_CARDIO_EXERCISES = {
+    "跑步机快走", "跑步机慢跑", "跑步机爬坡", "动感单车", "椭圆机", "划船机",
+    "登阶机", "户外跑步", "户外骑行", "游泳", "跳绳",
+}
+_DISTANCE_EXERCISES = {
+    "跑步机快走", "跑步机慢跑", "跑步机爬坡", "动感单车", "椭圆机", "划船机",
+    "户外跑步", "户外骑行", "游泳",
+}
+
+_CARDIO_METRIC_FIELDS = {
+    "跑步机快走": ["speed_kph", "incline_percent"],
+    "跑步机慢跑": ["speed_kph", "incline_percent"],
+    "跑步机爬坡": ["speed_kph", "incline_percent"],
+    "动感单车": ["resistance_level", "cadence_rpm"],
+    "椭圆机": ["resistance_level", "strides_per_minute"],
+    "划船机": ["resistance_level", "stroke_rate_spm"],
+    "登阶机": ["resistance_level", "steps_per_minute"],
+}
+
+_EXERCISE_ALIASES = {"登阶机": ["爬楼机", "楼梯机"]}
+_TIMED_DEFAULT_SECONDS = {"平板支撑": 45, "侧平板支撑": 30, "战绳": 30}
+
+
+def _recording_mode(name: str) -> str:
+    if name in _CARDIO_EXERCISES:
+        return "cardio"
+    if name in _TIMED_EXERCISES:
+        return "timed"
+    return "strength"
+
 EXERCISE_LIBRARY: list[dict[str, Any]] = [
     {
         "name": name,
@@ -230,6 +264,11 @@ EXERCISE_LIBRARY: list[dict[str, Any]] = [
         "default_weight_kg": default_weight_kg,
         "default_reps": default_reps,
         "default_sets": default_sets,
+        "recording_mode": _recording_mode(name),
+        "distance_enabled": name in _DISTANCE_EXERCISES,
+        "cardio_metric_fields": list(_CARDIO_METRIC_FIELDS.get(name, [])),
+        "aliases": list(_EXERCISE_ALIASES.get(name, [])),
+        "default_duration_seconds": _TIMED_DEFAULT_SECONDS.get(name, 1200 if name in _CARDIO_EXERCISES else None),
     }
     for category, specs in _EXERCISE_SPECS.items()
     for name, equipment, target_muscles, guide, default_weight_kg, default_reps, default_sets in specs
@@ -242,17 +281,87 @@ def _normalized(value: str) -> str:
     return "".join(value.split()).casefold()
 
 
-def search_exercises(query: str, category: str | None = None) -> list[dict[str, Any]]:
+def normalize_custom_exercise(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    name = str(value.get("name", "")).strip()
+    if not name:
+        return None
+    mode = str(value.get("recording_mode", "strength"))
+    if mode not in {"strength", "timed", "cardio"}:
+        mode = "strength"
+
+    def text_list(key: str) -> list[str]:
+        raw = value.get(key, [])
+        if not isinstance(raw, list):
+            return []
+        return [str(item).strip() for item in raw if str(item).strip()]
+
+    return {
+        "name": name,
+        "category": "自定义",
+        "equipment": "其他",
+        "target_muscles": text_list("target_muscles"),
+        "cues": text_list("cues"),
+        "mistakes": text_list("mistakes"),
+        "default_weight_kg": value.get("default_weight_kg"),
+        "default_reps": value.get("default_reps", 10),
+        "default_sets": value.get("default_sets", 4),
+        "recording_mode": mode,
+        "distance_enabled": bool(value.get("distance_enabled", mode == "cardio")),
+        "cardio_metric_fields": text_list("cardio_metric_fields"),
+        "aliases": text_list("aliases"),
+        "default_duration_seconds": value.get("default_duration_seconds"),
+    }
+
+
+def load_custom_exercises(path: Path = TRAINING_FILE) -> list[dict[str, Any]]:
+    payload = load_json(path, {})
+    values = payload.get("custom_exercises", []) if isinstance(payload, dict) else []
+    normalized = [normalize_custom_exercise(item) for item in values] if isinstance(values, list) else []
+    return [item for item in normalized if item is not None]
+
+
+def save_custom_exercise(exercise: dict[str, Any], path: Path = TRAINING_FILE) -> dict[str, Any]:
+    normalized = normalize_custom_exercise(exercise)
+    if normalized is None:
+        raise ValueError("请填写动作名称")
+    name_key = normalized["name"].casefold()
+    if name_key in _EXERCISES_BY_NAME:
+        raise ValueError("动作名称已存在")
+
+    payload = load_json(path, {})
+    if not isinstance(payload, dict):
+        payload = {}
+    existing = load_custom_exercises(path)
+    if any(item["name"].casefold() == name_key for item in existing):
+        raise ValueError("动作名称已存在")
+    payload["custom_exercises"] = [*existing, normalized]
+    save_json(path, payload)
+    return normalized
+
+
+def exercise_catalog(custom_exercises: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    custom = load_custom_exercises() if custom_exercises is None else custom_exercises
+    return [*EXERCISE_LIBRARY, *custom]
+
+
+def search_exercises(
+    query: str,
+    category: str | None = None,
+    exercises: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """Search names, equipment and target muscles, optionally within one category."""
     needle = _normalized(query or "")
     return [
         exercise
-        for exercise in EXERCISE_LIBRARY
+        for exercise in (EXERCISE_LIBRARY if exercises is None else exercises)
         if (category is None or exercise["category"] == category)
         and needle in _normalized(" ".join([
             exercise["name"],
             exercise["category"],
             exercise["equipment"],
+            *exercise.get("aliases", []),
             *exercise["target_muscles"],
         ]))
     ]

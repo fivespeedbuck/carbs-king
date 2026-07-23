@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import sys
 import unittest
 from pathlib import Path
@@ -93,6 +94,7 @@ class FakeAlarmScheduler:
         self.exact = exact
         self.schedules = []
         self.cancels = []
+        self.delivered = []
 
     def schedule(self, *, cycle_id, delay_seconds, request_code, title, body):
         self.schedules.append(
@@ -116,6 +118,10 @@ class FakeAlarmScheduler:
 
     def cancel(self, *, cycle_id, request_code):
         self.cancels.append({"cycle_id": cycle_id, "request_code": request_code})
+        return True
+
+    def mark_delivered(self, *, cycle_id):
+        self.delivered.append(cycle_id)
         return True
 
 
@@ -191,14 +197,36 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(notifier.haptic.vibrate_count, 0)
         self.assertEqual(
             system.posts,
-            [
-                {
-                    "notification_id": _stable_notification_id("rest-native"),
-                    "title": "Rest done",
-                    "body": "Next set",
-                }
-            ],
+            [{
+                "notification_id": _stable_notification_id("rest-native"),
+                "title": "Rest done",
+                "body": "Next set",
+            }],
         )
+
+    async def test_foreground_expiry_always_plays_bundled_audio_without_notification(self):
+        page = FakePage()
+        system = FakeSystemNotifier()
+        alarm = FakeAlarmScheduler()
+        notifier = RestNotifier(
+            page,
+            audio_factory=FakeAudio,
+            haptic_factory=FakeHaptic,
+            system_factory=lambda: system,
+            alarm_scheduler_factory=lambda: alarm,
+        )
+        notifier.trigger_after("rest-visible", 90)
+
+        future = notifier.trigger_foreground("rest-visible")
+        duplicate = notifier.trigger_foreground("rest-visible")
+        result = await future
+
+        self.assertIsNone(duplicate)
+        self.assertTrue(result.sound_played)
+        self.assertEqual(notifier.audio.play_count, 1)
+        self.assertEqual(system.posts, [])
+        self.assertEqual(alarm.delivered, ["rest-visible"])
+        self.assertEqual(len(alarm.cancels), 1)
 
     async def test_system_notification_failure_falls_back_to_flet_alerts(self):
         notifier = RestNotifier(
@@ -480,6 +508,18 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("setBypassDnd(false)", receiver)
         self.assertIn("setOnlyAlertOnce(true)", receiver)
         self.assertIn("getBoolean(cycleId, false)", receiver)
+        self.assertIn('CHANNEL_ID = "rest_cycle_alerts_v2"', receiver)
+        self.assertIn('android.resource://${context.packageName}/raw/rest_coin', receiver)
+        native_sound = root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
+        foreground_sound = root / "src/assets/rest_coin.mp3"
+        self.assertTrue(native_sound.is_file())
+        self.assertTrue(foreground_sound.is_file())
+        self.assertEqual(native_sound.read_bytes(), foreground_sound.read_bytes())
+        self.assertEqual(len(native_sound.read_bytes()), 81546)
+        self.assertEqual(
+            hashlib.sha256(native_sound.read_bytes()).hexdigest().upper(),
+            "8E943111B1F3AF5AC259EFD3B42148526505365273E97974AAC7A562CE354E5A",
+        )
 
 
 if __name__ == "__main__":

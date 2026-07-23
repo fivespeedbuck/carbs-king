@@ -13,7 +13,98 @@ from training_models import (
     TrainingData,
     TrainingSession,
     TrainingSet,
+    normalize_recording_mode,
+    normalize_group_type,
 )
+
+
+def normalize_session_payload(session: Any) -> tuple[dict[str, Any], bool]:
+    """Normalize a persisted session while preserving controller-owned runtime fields."""
+    if not isinstance(session, Mapping):
+        return {}, False
+    result = copy.deepcopy(dict(session))
+    changed = False
+    raw_exercises = result.get("exercises", [])
+    exercises = raw_exercises if isinstance(raw_exercises, list) else []
+    if exercises is not raw_exercises:
+        result["exercises"] = exercises
+        changed = True
+    valid_ids: list[str] = []
+    for index, exercise in enumerate(exercises, 1):
+        if not isinstance(exercise, dict):
+            continue
+        exercise_id = str(exercise.get("id") or _stable_id("session_exercise", result.get("id"), index, exercise.get("name")))
+        if exercise.get("id") != exercise_id:
+            exercise["id"] = exercise_id
+            changed = True
+        valid_ids.append(exercise_id)
+        mode = normalize_recording_mode(exercise.get("recording_mode"))
+        if exercise.get("recording_mode") != mode:
+            exercise["recording_mode"] = mode
+            changed = True
+        if mode != "strength" and exercise.get("sets"):
+            exercise["sets"] = []
+            changed = True
+        if mode != "strength":
+            duration = int(max(0, _number_or_none(exercise.get("duration_seconds")) or 0))
+            if exercise.get("duration_seconds") != duration:
+                exercise["duration_seconds"] = duration
+                changed = True
+            distance = _number_or_none(exercise.get("distance_km"))
+            distance = max(0.0, distance) if distance is not None else None
+            if exercise.get("distance_km") != distance:
+                exercise["distance_km"] = distance
+                changed = True
+            completed = bool(exercise.get("completed", False))
+            if exercise.get("completed") is not completed:
+                exercise["completed"] = completed
+                changed = True
+            raw_metrics = exercise.get("cardio_metrics", {})
+            metrics = {
+                str(key): max(0.0, value)
+                for key, raw_value in raw_metrics.items()
+                if str(key) and (value := _number_or_none(raw_value)) is not None
+            } if isinstance(raw_metrics, Mapping) else {}
+            if raw_metrics != metrics:
+                exercise["cardio_metrics"] = metrics
+                changed = True
+
+    valid_set = set(valid_ids)
+    groups: list[dict[str, Any]] = []
+    claimed: set[str] = set()
+    raw_groups = result.get("exercise_groups", result.get("groups", []))
+    for index, raw_group in enumerate(raw_groups if isinstance(raw_groups, list) else [], 1):
+        if not isinstance(raw_group, Mapping):
+            changed = True
+            continue
+        group_type = normalize_group_type(raw_group.get("group_type", raw_group.get("type")))
+        member_ids = [
+            str(item) for item in raw_group.get("exercise_ids", [])
+            if str(item) in valid_set and str(item) not in claimed
+        ] if isinstance(raw_group.get("exercise_ids"), list) else []
+        member_ids = list(dict.fromkeys(member_ids))
+        if not group_type or len(member_ids) < 2:
+            changed = True
+            continue
+        group_id = str(raw_group.get("id") or _stable_id("exercise_group", result.get("id"), index, *member_ids))
+        groups.append({"id": group_id, "group_type": group_type, "order": len(groups) + 1, "exercise_ids": member_ids})
+        claimed.update(member_ids)
+    if result.get("exercise_groups") != groups:
+        result["exercise_groups"] = groups
+        changed = True
+    by_id = {str(item.get("id") or ""): item for item in exercises if isinstance(item, dict)}
+    membership = {
+        exercise_id: (group["id"], order)
+        for group in groups
+        for order, exercise_id in enumerate(group["exercise_ids"], 1)
+    }
+    for exercise_id, exercise in by_id.items():
+        group_id, group_order = membership.get(exercise_id, ("", None))
+        if exercise.get("group_id", "") != group_id or exercise.get("group_order") != group_order:
+            exercise["group_id"] = group_id
+            exercise["group_order"] = group_order
+            changed = True
+    return result, changed
 
 
 def raw_training_sessions(training: Any) -> list[dict[str, Any]]:
@@ -111,6 +202,33 @@ def completed_set_count(session: TrainingSession, *, include_warmup: bool = True
     )
 
 
+def planned_work_count(session: TrainingSession, *, include_warmup: bool = True) -> int:
+    """Count executable work without representing timed/cardio work as sets."""
+    return planned_set_count(session, include_warmup=include_warmup) + sum(
+        1 for exercise in session.exercises if exercise.recording_mode != "strength"
+    )
+
+
+def completed_work_count(session: TrainingSession, *, include_warmup: bool = True) -> int:
+    return completed_set_count(session, include_warmup=include_warmup) + sum(
+        1
+        for exercise in session.exercises
+        if exercise.recording_mode != "strength" and exercise.completed
+    )
+
+
+def session_work_progress(session: TrainingSession, *, include_warmup: bool = True) -> float:
+    planned = planned_work_count(session, include_warmup=include_warmup)
+    if planned == 0:
+        return 0.0
+    return round(completed_work_count(session, include_warmup=include_warmup) / planned, 4)
+
+
+def rest_required_after_work(recording_mode: Any, *, grouped_round_complete: bool = False) -> bool:
+    """Cardio/timed work rests only when it closes an explicit grouped round."""
+    return bool(grouped_round_complete) or normalize_recording_mode(recording_mode) == "strength"
+
+
 def session_progress(session: TrainingSession, *, include_warmup: bool = True) -> float:
     planned = planned_set_count(session, include_warmup=include_warmup)
     if planned == 0:
@@ -121,16 +239,22 @@ def session_progress(session: TrainingSession, *, include_warmup: bool = True) -
 def session_completion_state(session: TrainingSession | Mapping[str, Any]) -> dict[str, Any]:
     """Return explicit end-state data for finish buttons and anti-repeat guards."""
     model = session if isinstance(session, TrainingSession) else TrainingSession.from_dict(session)
-    planned = planned_set_count(model)
-    completed = completed_set_count(model)
+    planned_sets = planned_set_count(model)
+    completed_sets = completed_set_count(model)
+    planned = planned_work_count(model)
+    completed = completed_work_count(model)
     remaining = max(0, planned - completed)
+    remaining_sets = max(0, planned_sets - completed_sets)
     has_any_set = planned > 0
     all_sets_completed = has_any_set and remaining == 0
     has_completed_work = completed > 0
     return {
-        "planned_sets": planned,
-        "completed_sets": completed,
-        "remaining_sets": remaining,
+        "planned_sets": planned_sets,
+        "completed_sets": completed_sets,
+        "planned_work": planned,
+        "completed_work": completed,
+        "remaining_sets": remaining_sets,
+        "remaining_work": remaining,
         "has_any_set": has_any_set,
         "has_completed_work": has_completed_work,
         "all_sets_completed": all_sets_completed,
@@ -418,8 +542,11 @@ def _stable_id(prefix: str, *parts: Any) -> str:
 def migrate_legacy_training(training: Any, record_date: str) -> TrainingSession | None:
     """Convert the current app's dict/list training record without inventing set data."""
     if isinstance(training, Mapping) and isinstance(training.get("exercises"), list):
-        source = dict(training)
+        source = copy.deepcopy(dict(training))
         source.setdefault("date", record_date)
+        for exercise in source.get("exercises", []):
+            if isinstance(exercise, dict):
+                exercise["recording_mode"] = normalize_recording_mode(exercise.get("recording_mode"))
         session = TrainingSession.from_dict(source)
         has_exercises = any(
             exercise.name.strip() or exercise.body_part.strip() or exercise.sets

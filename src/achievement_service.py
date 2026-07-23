@@ -12,6 +12,12 @@ from analytics_service import normalize_body_measurement, summarize_daily_traini
 from training_service import normalize_training_data
 
 
+ACHIEVEMENT_STATE_VERSION = 2
+_STATE_VERSION_KEY = "_state_version"
+_CELEBRATED_KEY = "_celebrated"
+_PENDING_KEY = "_pending"
+
+
 @dataclass(frozen=True, slots=True)
 class AchievementResult:
     id: str
@@ -325,7 +331,6 @@ def achievement_metric_snapshot(records: Any, training_data: Any = None) -> dict
             body_parts=body_parts,
             exercises=exercises,
         )
-        session_count = int(_number(summary.get("session_count")) or 0)
         parts_today = {_body_part(item) for item in _list(summary.get("body_parts")) if str(item).strip()}
         parts_today.discard("")
         day_parts.setdefault(record_date, set()).update(parts_today)
@@ -501,9 +506,114 @@ def evaluate_achievements(records: Any, training_data: Any = None) -> list[dict[
     return [evaluate_achievement(item, metrics).to_dict() for item in achievement_definitions()]
 
 
+def normalize_achievement_unlock_state(value: Any) -> dict[str, Any]:
+    """Normalize legacy unlock timestamps and the v2 celebration queue."""
+    source = dict(value) if isinstance(value, Mapping) else {}
+    has_v2_metadata = any(key in source for key in (_STATE_VERSION_KEY, _CELEBRATED_KEY, _PENDING_KEY))
+    unlock_times = {
+        str(key): str(item)
+        for key, item in source.items()
+        if not str(key).startswith("_") and item not in (None, "")
+    }
+
+    def unique_ids(raw: Any) -> list[str]:
+        values = raw if isinstance(raw, (list, tuple)) else []
+        result: list[str] = []
+        for item in values:
+            identity = str(item or "").strip()
+            if identity and identity not in result:
+                result.append(identity)
+        return result
+
+    # Legacy files only stored unlock timestamps. Treat those entries as
+    # already acknowledged so an upgrade never floods the user with old wins.
+    celebrated = unique_ids(source.get(_CELEBRATED_KEY)) if has_v2_metadata else list(unlock_times)
+    pending = [
+        identity
+        for identity in unique_ids(source.get(_PENDING_KEY))
+        if identity in unlock_times and identity not in celebrated
+    ]
+    return {
+        "version": ACHIEVEMENT_STATE_VERSION,
+        "unlock_times": unlock_times,
+        "celebrated": celebrated,
+        "pending": pending,
+    }
+
+
+def encode_achievement_unlock_state(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Persist v2 metadata while keeping timestamps readable by old builds."""
+    normalized = normalize_achievement_unlock_state({
+        **dict(state.get("unlock_times") or {}),
+        _STATE_VERSION_KEY: ACHIEVEMENT_STATE_VERSION,
+        _CELEBRATED_KEY: list(state.get("celebrated") or []),
+        _PENDING_KEY: list(state.get("pending") or []),
+    })
+    return {
+        **normalized["unlock_times"],
+        _STATE_VERSION_KEY: ACHIEVEMENT_STATE_VERSION,
+        _CELEBRATED_KEY: normalized["celebrated"],
+        _PENDING_KEY: normalized["pending"],
+    }
+
+
+def register_achievement_unlocks(
+    results: Any,
+    stored: Any,
+    unlocked_at: str,
+) -> dict[str, Any]:
+    """Record newly unlocked achievements and enqueue every unseen celebration."""
+    state = normalize_achievement_unlock_state(stored)
+    valid_results = [item for item in _list(results) if isinstance(item, Mapping)]
+    valid_ids = {str(item.get("id") or "").strip() for item in valid_results}
+    state["pending"] = [identity for identity in state["pending"] if identity in valid_ids]
+
+    for item in valid_results:
+        identity = str(item.get("id") or "").strip()
+        if not identity or not item.get("unlocked"):
+            continue
+        if identity not in state["unlock_times"]:
+            state["unlock_times"][identity] = str(unlocked_at)
+        if identity not in state["celebrated"] and identity not in state["pending"]:
+            state["pending"].append(identity)
+    return encode_achievement_unlock_state(state)
+
+
+def achievement_unlock_times(stored: Any) -> dict[str, str]:
+    return dict(normalize_achievement_unlock_state(stored)["unlock_times"])
+
+
+def pending_achievement_results(results: Any, stored: Any) -> list[dict[str, Any]]:
+    """Return pending unlocked achievements in durable queue order."""
+    state = normalize_achievement_unlock_state(stored)
+    by_id = {
+        str(item.get("id") or "").strip(): dict(item)
+        for item in _list(results)
+        if isinstance(item, Mapping) and item.get("unlocked")
+    }
+    return [by_id[identity] for identity in state["pending"] if identity in by_id]
+
+
+def acknowledge_achievement_celebration(stored: Any, achievement_id: Any) -> dict[str, Any]:
+    """Mark one celebration as shown without discarding the rest of the queue."""
+    identity = str(achievement_id or "").strip()
+    state = normalize_achievement_unlock_state(stored)
+    state["pending"] = [item for item in state["pending"] if item != identity]
+    if identity and identity in state["unlock_times"] and identity not in state["celebrated"]:
+        state["celebrated"].append(identity)
+    return encode_achievement_unlock_state(state)
+
+
 __all__ = [
+    "ACHIEVEMENT_STATE_VERSION",
     "AchievementResult",
+    "acknowledge_achievement_celebration",
     "achievement_metric_snapshot",
+    "achievement_unlock_times",
+    "encode_achievement_unlock_state",
     "evaluate_achievement",
     "evaluate_achievements",
+    "normalize_achievement_unlock_state",
+    "pending_achievement_results",
+    "register_achievement_unlocks",
 ]

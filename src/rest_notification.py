@@ -21,14 +21,14 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable
+from typing import Any, Callable, Iterable
 
 import flet as ft
 import flet_audio as fta
 
 
-DEFAULT_BELL_ASSET = "assets/rest_bell.wav"
-DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts"
+DEFAULT_BELL_ASSET = "assets/rest_coin.mp3"
+DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts_v2"
 DEFAULT_NOTIFICATION_CHANNEL_NAME = "Rest cycle alerts"
 REST_ALARM_ACTION = "com.chenyang.carbs_king.REST_ALARM"
 REST_ALARM_RECEIVER_CLASS = "com.chenyang.carbs_king.restalarm.RestAlarmReceiver"
@@ -128,6 +128,8 @@ class AndroidSystemNotifier:
         self.PendingIntent = autoclass("android.app.PendingIntent")
         self.Intent = autoclass("android.content.Intent")
         self.RingtoneManager = autoclass("android.media.RingtoneManager")
+        self.AudioAttributes = autoclass("android.media.AudioAttributes$Builder")
+        self.Uri = autoclass("android.net.Uri")
         self.channel_id = channel_id
         self.channel_name = channel_name
         self._ensure_channel()
@@ -146,7 +148,17 @@ class AndroidSystemNotifier:
             self.channel_name,
             self.NotificationManager.IMPORTANCE_DEFAULT,
         )
+        sound_uri = self.Uri.parse(
+            f"android.resource://{self.activity.getPackageName()}/raw/rest_coin"
+        )
+        audio_attributes = (
+            self.AudioAttributes()
+            .setUsage(5)  # AudioAttributes.USAGE_NOTIFICATION
+            .setContentType(4)  # AudioAttributes.CONTENT_TYPE_SONIFICATION
+            .build()
+        )
         channel.enableVibration(True)
+        channel.setSound(sound_uri, audio_attributes)
         channel.setBypassDnd(False)
         self._notification_service().createNotificationChannel(channel)
 
@@ -346,6 +358,12 @@ class AndroidAlarmScheduler:
         pending_intent.cancel()
         return True
 
+    def mark_delivered(self, *, cycle_id: str) -> bool:
+        preferences = self.activity.getSharedPreferences(
+            "carbs_king_rest_alarm_deliveries", self.Context.MODE_PRIVATE
+        )
+        return bool(preferences.edit().putBoolean(str(cycle_id), True).commit())
+
 
 def _default_system_notifier() -> Any | None:
     if not _is_android_runtime():
@@ -387,6 +405,7 @@ class RestNotifier:
         self._lock = threading.Lock()
         self._timers: dict[str, threading.Timer] = {}
         self._schedule_tokens: dict[str, object] = {}
+        self._foreground_delivered_ids: set[str] = set()
         self._notified_cycle_ids = {
             str(cycle_id).strip() for cycle_id in notified_cycle_ids if str(cycle_id).strip()
         }
@@ -492,6 +511,56 @@ class RestNotifier:
             vibration_succeeded=vibration_succeeded,
             errors=tuple(errors),
         )
+
+    async def _deliver_foreground(self, cycle_id: str) -> RestNotificationResult:
+        """Play the bundled cue in the foreground without posting a notification."""
+        errors = list(self._setup_errors)
+        sound_played = False
+        vibration_attempted = self.haptic is not None
+        vibration_succeeded = False
+        if self.audio is not None:
+            try:
+                await _await_if_needed(self.audio.play())
+                sound_played = True
+            except Exception as exc:
+                errors.append(f"audio play: {exc}")
+        if self.haptic is not None:
+            try:
+                await _await_if_needed(self.haptic.vibrate())
+                vibration_succeeded = True
+            except Exception as exc:
+                errors.append(f"haptic vibrate: {exc}")
+        return RestNotificationResult(
+            cycle_id=cycle_id,
+            claimed=True,
+            sound_played=sound_played,
+            vibration_attempted=vibration_attempted,
+            vibration_succeeded=vibration_succeeded,
+            errors=tuple(errors),
+        )
+
+    def trigger_foreground(self, cycle_id: str) -> Any | None:
+        """Cancel the native alarm and play the local cue exactly once in-app."""
+        normalized = str(cycle_id or "").strip()
+        if not normalized:
+            return None
+        with self._lock:
+            if normalized in self._foreground_delivered_ids:
+                return None
+            self._foreground_delivered_ids.add(normalized)
+        marker = getattr(self.alarm_scheduler, "mark_delivered", None)
+        if callable(marker):
+            try:
+                marker(cycle_id=normalized)
+            except Exception:
+                pass
+        self.cancel(normalized, release_claim=False)
+        try:
+            return self.page.run_task(self._deliver_foreground, normalized)
+        except Exception:
+            with self._lock:
+                self._foreground_delivered_ids.discard(normalized)
+            return None
 
     async def notify_once(self, cycle_id: str) -> RestNotificationResult:
         normalized, claimed = self._claim(cycle_id)
