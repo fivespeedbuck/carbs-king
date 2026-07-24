@@ -8,7 +8,7 @@ from typing import Any
 import flet as ft
 
 from app_utils import to_float
-from ui_components import GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, SUB, TEXT, make_button, small_text, thin_border
+from ui_components import GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, make_button, small_text, thin_border
 
 
 CUSTOM_CARDIO_METRIC_FIELDS = (
@@ -96,9 +96,11 @@ def bind_training_parameter_mode(
 def bind_dialog_close_button(dialog: ft.AlertDialog, on_close: Callable[[Any], None]) -> ft.IconButton:
     """Bind the title X to an explicit 48dp close target."""
     title_controls = getattr(getattr(dialog, "title", None), "controls", [])
-    if not title_controls or not isinstance(title_controls[-1], ft.IconButton):
+    close_button = title_controls[-1] if title_controls else None
+    # Flet exposes IconButton as a control factory in some runtimes, rather
+    # than a Python class suitable for ``isinstance``.
+    if close_button is None or not hasattr(close_button, "on_click"):
         raise ValueError("dialog title must end with a close IconButton")
-    close_button = title_controls[-1]
     close_button.width = 48
     close_button.height = 48
     close_button.on_click = on_close
@@ -125,6 +127,7 @@ def build_exercise_card(
     on_toggle: Callable[[Any], None],
     *,
     selected: bool = False,
+    on_delete: Callable[[Any], None] | None = None,
 ) -> ft.Control:
     weight = exercise.get("default_weight_kg")
     reps = exercise.get("default_reps")
@@ -142,6 +145,14 @@ def build_exercise_card(
         content=ft.Row([
             ft.Column([ft.Text(exercise["name"], size=14, weight="bold", color=TEXT), small_text(f"{exercise['equipment']} · {default_text}{usage_text}")], expand=True, spacing=2),
             ft.IconButton(icon=ft.Icons.HELP_OUTLINE, tooltip="动作说明", icon_color=GREEN, width=48, height=48, on_click=on_help),
+            *([ft.IconButton(
+                icon=ft.Icons.DELETE_OUTLINE,
+                tooltip="删除自定义动作",
+                icon_color=RED,
+                width=40,
+                height=48,
+                on_click=on_delete,
+            )] if on_delete is not None else []),
             ft.IconButton(
                 icon=ft.Icons.CHECK_CIRCLE if selected else ft.Icons.ADD_CIRCLE_OUTLINE,
                 tooltip="取消选择" if selected else "选择动作",

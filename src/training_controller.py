@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import flet as ft
+import flet_audio as fta
 
 from app_defaults import ABS_ACTIONS, FATIGUE_OPTIONS, INTENSITY_OPTIONS, TRAINING_TARGETS
 from app_state import AppState
@@ -18,7 +19,7 @@ from app_utils import to_float
 from analytics_service import summarize_daily_training
 from controller_runtime import ControllerRuntime
 from exercise_library import (
-    EXERCISE_CATEGORIES, exercise_catalog, load_custom_exercises,
+    EXERCISE_CATEGORIES, delete_custom_exercise, exercise_catalog, load_custom_exercises,
     save_custom_exercise, search_exercises,
 )
 from form_views import FormViewContext, build_dialog, build_full_form_sheet
@@ -123,6 +124,32 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
     completion_prompt = {"key": ""}
     active_cursor = {"session_id": ""}
     workspace_tab = {"value": "current"}
+    completion_audio = {"service": None}
+
+    # Audio services must be attached while the page is being built. Creating one
+    # only at the completion tap races the first play call on Android.
+    try:
+        completion_audio["service"] = fta.Audio(src="assets/training_complete.mp3", volume=1.0)
+        page.services.append(completion_audio["service"])
+    except Exception:
+        completion_audio["service"] = None
+
+    def play_completion_audio():
+        """Play the bundled completion cue without affecting workout persistence."""
+        try:
+            audio = completion_audio["service"]
+            if audio is None:
+                return
+
+            async def play_audio():
+                try:
+                    await audio.play()
+                except Exception:
+                    pass
+
+            page.run_task(play_audio)
+        except Exception:
+            pass
 
     def safe_int(value, default=0):
         try:
@@ -550,6 +577,15 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 min_lines=3,
                 max_lines=3,
             )
+            target_muscles = mobile_text_field(
+                "目标肌群（逗号或每行分隔）",
+                "\n".join(exercise.get("target_muscles", [])),
+                width=dialog_width,
+                height=84,
+                multiline=True,
+                min_lines=2,
+                max_lines=2,
+            )
             mistakes = mobile_text_field(
                 "注意点（每行一条）",
                 "\n".join(exercise.get("mistakes", [])),
@@ -623,11 +659,17 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 ]
                 source_exercise = exercise
                 if is_new_custom:
+                    muscle_text = str(target_muscles.value or "")
+                    parsed_target_muscles = [
+                        item.strip()
+                        for item in muscle_text.replace("，", ",").replace("、", ",").replace("\n", ",").split(",")
+                        if item.strip()
+                    ]
                     custom_spec = {
                         "name": action_name,
                         "category": "自定义",
                         "equipment": "其他",
-                        "target_muscles": [],
+                        "target_muscles": list(dict.fromkeys(parsed_target_muscles)),
                         "cues": [item.strip() for item in str(cues.value or "").splitlines() if item.strip()],
                         "mistakes": [item.strip() for item in str(mistakes.value or "").splitlines() if item.strip()],
                         "default_weight_kg": max(0, to_float(weight.value)) if selected_mode == "strength" else None,
@@ -684,7 +726,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 "新增自定义动作" if is_new_custom else "设置动作",
                 [
                     section_title("动作"), name, mode,
-                    *([section_title("动作说明"), cues, mistakes] if is_new_custom else []),
+                    *([section_title("动作说明"), target_muscles, cues, mistakes] if is_new_custom else []),
                     ft.Container(content=small_text("默认值仅用于首次添加；有历史时使用上次成绩，自重动作的重量可留空。"), bgcolor=SURFACE, border_radius=8, padding=8),
                     section_title("训练参数"),
                     strength_fields, duration_fields, distance_holder, metrics_holder,
@@ -699,6 +741,43 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             else:
                 open_control(setup_dlg)
 
+        def confirm_delete_custom_exercise(exercise):
+            exercise_name = str(exercise.get("name") or "").strip()
+            if not exercise_name:
+                return
+            confirm_dlg = None
+
+            def remove_definition(e=None):
+                if not delete_custom_exercise(exercise_name):
+                    snack("未找到可删除的自定义动作")
+                    return
+                custom_exercises[:] = [
+                    item for item in custom_exercises
+                    if str(item.get("name") or "").casefold() != exercise_name.casefold()
+                ]
+                catalog[:] = exercise_catalog(custom_exercises)
+                if exercise_name in selected_names:
+                    selected_names.remove(exercise_name)
+                selection_status.value = f"已选择 {len(selected_names)} 个动作"
+                close_control(confirm_dlg)
+                rebuild_list()
+                page.update()
+                snack("已删除自定义动作；历史与当前计划不受影响")
+
+            confirm_dlg = dialog_base(
+                "删除自定义动作？",
+                ft.Column([
+                    ft.Text(exercise_name, size=17, weight="bold"),
+                    small_text("仅从动作库移除，不会影响历史训练或当前已加入计划的动作。"),
+                ], spacing=8),
+                [
+                    make_button("取消", on_click=lambda e: close_control(confirm_dlg), expand=True),
+                    make_button("确认删除", on_click=remove_definition, bgcolor="#C73B3B", color="#FFFFFF", expand=True),
+                ],
+                on_close=lambda e: close_control(confirm_dlg),
+            )
+            open_control(confirm_dlg)
+
         def exercise_row(exercise):
             usage = usage_stats.get(str(exercise.get("name", "")).casefold(), {})
             exercise_name = str(exercise.get("name") or "")
@@ -708,6 +787,11 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 lambda e, item=exercise: open_help(item),
                 lambda e, item=exercise: toggle_exercise(item),
                 selected=exercise_name in selected_names,
+                on_delete=(
+                    lambda e, item=exercise: confirm_delete_custom_exercise(item)
+                    if any(str(item.get("name") or "") == exercise_name for item in custom_exercises)
+                    else None
+                ),
             )
 
         def toggle_exercise(exercise):
@@ -953,13 +1037,16 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         def apply_card(card_item, mode):
             current = session_data()
-            copied = copy_whole_session(
-                card_item["session"], current, mode=mode, new_date=state.get("date")
-            )
+            try:
+                copied = copy_whole_session(
+                    card_item["session"], current, mode=mode, new_date=state.get("date")
+                )
+            except ValueError as exc:
+                snack(str(exc))
+                return
             state["training"]["session"] = copied
             state["training_exercise_index"] = 0
             state["training_set_index"] = 0
-            close_control(history_dlg)
             persist_session(copied)
             refresh()
             snack(f"已复用 {card_item['combination']} 训练")
@@ -968,6 +1055,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             current = session_data()
             has_plan = bool(current and current.get("exercises"))
             if not has_plan:
+                close_control(history_dlg)
                 apply_card(card_item, "replace")
                 return
             confirm_dlg = None
@@ -975,9 +1063,11 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             def dismiss_confirm(e=None):
                 if confirm_dlg is not None:
                     close_control(confirm_dlg)
+                open_control(history_dlg)
 
             def apply_confirmed(mode):
-                dismiss_confirm()
+                if confirm_dlg is not None:
+                    close_control(confirm_dlg)
                 apply_card(card_item, mode)
 
             confirm_dlg = dialog_base(
@@ -994,6 +1084,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 on_close=dismiss_confirm,
             )
             bind_dialog_close_button(confirm_dlg, dismiss_confirm)
+            # Keep only one modal open. Nested dialogs intermittently swallow taps on Android.
+            close_control(history_dlg)
             open_control(confirm_dlg)
 
         def rebuild_cards():
@@ -1126,6 +1218,28 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         if 0 <= index < len(exercises):
             exercises.pop(index)
         session["exercise_groups"] = normalize_exercise_groups(exercises, session.get("exercise_groups", []))
+        persist_session(session)
+        refresh()
+
+    def delete_exercise_group(base_exercise_id):
+        session = session_data()
+        if not session or session.get("status") == "active":
+            return
+        groups = session.get("exercise_groups", [])
+        group = next((
+            item for item in groups
+            if isinstance(item, dict) and str(base_exercise_id) in {str(member) for member in item.get("exercise_ids", [])}
+        ), None)
+        if group is None:
+            return
+        group_id = str(group.get("id") or "")
+        session["exercise_groups"] = [
+            item for item in groups
+            if not isinstance(item, dict) or str(item.get("id") or "") != group_id
+        ]
+        session["exercise_groups"] = normalize_exercise_groups(
+            session.get("exercises", []), session["exercise_groups"]
+        )
         persist_session(session)
         refresh()
 
@@ -1299,7 +1413,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
     def open_weight_editor(e=None):
         session, exercise, training_set = current_training_items()
-        if not session or not training_set or training_set.get("completed"):
+        if not session or not training_set:
             return
         field = mobile_text_field(
             "重量（kg）",
@@ -1325,6 +1439,39 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             [ft.Container(content=ft.Row([
                 make_button("取消", on_click=lambda event: close_control(dlg), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
                 make_button("确认", on_click=save_weight, expand=True),
+            ], spacing=8), width=responsive_width())],
+            on_close=lambda event: close_control(dlg),
+        )
+        open_control(dlg)
+
+    def open_reps_editor(e=None):
+        session, exercise, training_set = current_training_items()
+        if not session or not training_set:
+            return
+        field = mobile_text_field(
+            "次数",
+            str(max(0, int(to_float(training_set.get("reps"), 0)))),
+            width=responsive_width(),
+            keyboard_type=_KEYBOARD_NUMBER,
+        )
+        dlg = None
+
+        def save_reps(_=None):
+            reps = max(0, int(to_float(field.field.value, 0)))
+            if reps <= 0:
+                snack("请填写有效次数")
+                return
+            training_set["reps"] = reps
+            persist_session(session)
+            close_control(dlg)
+            refresh()
+
+        dlg = dialog_base(
+            "编辑本组次数",
+            ft.Column([field], width=responsive_width(), spacing=8, tight=True),
+            [ft.Container(content=ft.Row([
+                make_button("取消", on_click=lambda event: close_control(dlg), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                make_button("确认", on_click=save_reps, expand=True),
             ], spacing=8), width=responsive_width())],
             on_close=lambda event: close_control(dlg),
         )
@@ -1427,15 +1574,74 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         refresh()
         snack("已撤销本组完成状态，可重新调整重量和次数")
 
+    def training_cursor_sequence(session):
+        exercises = normalized_session_exercises(session)
+        if not exercises:
+            return []
+        positions = {str(item.get("id") or ""): index for index, item in enumerate(exercises)}
+        groups = {
+            str(item.get("id") or ""): item
+            for item in session.get("exercise_groups", [])
+            if isinstance(item, dict) and str(item.get("id") or "")
+        }
+        visited_groups = set()
+        sequence = []
+
+        def append_exercise(exercise_index, exercise):
+            if normalize_recording_mode(exercise.get("recording_mode")) == "strength":
+                sequence.extend(
+                    (exercise_index, set_index)
+                    for set_index, item in enumerate(exercise.get("sets", []))
+                    if isinstance(item, dict)
+                )
+            else:
+                sequence.append((exercise_index, 0))
+
+        for exercise_index, exercise in enumerate(exercises):
+            group_id = str(exercise.get("group_id") or "")
+            group = groups.get(group_id)
+            if not group:
+                append_exercise(exercise_index, exercise)
+                continue
+            if group_id in visited_groups:
+                continue
+            visited_groups.add(group_id)
+            members = [
+                (positions[member_id], exercises[positions[member_id]])
+                for member_id in (str(item) for item in group.get("exercise_ids", []))
+                if member_id in positions
+            ]
+            max_rounds = max((
+                len(member.get("sets", []))
+                if normalize_recording_mode(member.get("recording_mode")) == "strength" else 1
+                for _, member in members
+            ), default=0)
+            for round_index in range(max_rounds):
+                for member_index, member in members:
+                    if normalize_recording_mode(member.get("recording_mode")) == "strength":
+                        sets = member.get("sets", [])
+                        if round_index < len(sets) and isinstance(sets[round_index], dict):
+                            sequence.append((member_index, round_index))
+                    elif round_index == 0:
+                        sequence.append((member_index, 0))
+        return sequence
+
     def move_training(direction):
         session, exercise, training_set = current_training_items()
-        exercises = session.get("exercises", []) if session else []
-        if not exercises:
+        sequence = training_cursor_sequence(session)
+        if not sequence:
             return
-        index = max(0, min(len(exercises) - 1, safe_int(state.get("training_exercise_index", 0)) + direction))
-        state["training_exercise_index"] = index
-        next_sets = exercises[index].get("sets", [])
-        state["training_set_index"] = next((i for i, item in enumerate(next_sets) if not item.get("completed")), 0)
+        current = (
+            safe_int(state.get("training_exercise_index", 0)),
+            safe_int(state.get("training_set_index", 0)),
+        )
+        try:
+            position = sequence.index(current)
+        except ValueError:
+            position = next((index for index, item in enumerate(sequence) if item[0] == current[0]), 0)
+        target = sequence[max(0, min(len(sequence) - 1, position + int(direction)))]
+        state["training_exercise_index"], state["training_set_index"] = target
+        completion_prompt["key"] = ""
         refresh()
 
     def advance_after_work(session, exercise_index, set_index):
@@ -1594,6 +1800,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         state["training"]["sessions"] = append_session_once(state["training"].get("sessions", []), session)
         persist_session(session)
         refresh()
+        if not incomplete:
+            play_completion_audio()
         snack("未完整训练已保存" if incomplete else "训练完成，成绩已保存")
 
     def finish_session(e=None):
@@ -1721,6 +1929,15 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     group_position_text,
                 )
             current_key = work_key(session, exercise, training_set)
+            cursor_sequence = training_cursor_sequence(session)
+            cursor_position = (
+                safe_int(state.get("training_exercise_index", 0)),
+                safe_int(state.get("training_set_index", 0)),
+            )
+            try:
+                current_work_index = cursor_sequence.index(cursor_position)
+            except ValueError:
+                current_work_index = 0
 
             def select_training_set(index):
                 state["training_set_index"] = index
@@ -1766,10 +1983,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     next_work_text=next_work_text,
                     confirm_complete=bool(current_key and completion_prompt.get("key") == current_key),
                     viewport_height=deps.viewport_height(),
+                    current_work_index=current_work_index,
                 ),
                 ActiveTrainingActions(
                     close=lambda e: set_view("today"),
                     finish=finish_session,
+                    show_help=lambda e: open_planned_exercise_help(str(exercise.get("id") or "")) if exercise else None,
                     select_set=select_training_set,
                     adjust_rest=adjust_rest,
                     toggle_rest=toggle_rest_pause,
@@ -1777,6 +1996,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     adjust_weight=lambda direction: adjust_current("weight_kg", direction),
                     edit_weight=open_weight_editor,
                     adjust_reps=lambda direction: adjust_current("reps", direction),
+                    edit_reps=open_reps_editor,
                     edit_duration=open_duration_editor,
                     edit_distance=open_distance_editor,
                     edit_metric=open_cardio_metric_editor,
@@ -1826,6 +2046,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             reuse_history=reuse_history_session,
             clear=clear_today_training,
             group_exercise=open_exercise_group_dialog,
+            delete_group=delete_exercise_group,
             show_help=open_planned_exercise_help,
             edit_exercise=open_edit_planned_exercise,
             drag_start=lambda exercise_id: exercise_drag_state.update({"id": exercise_id, "active": True}),

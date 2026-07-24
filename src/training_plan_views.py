@@ -57,6 +57,7 @@ class PlannedTrainingActions:
     reuse_history: Callable[[Any], None]
     clear: Callable[[Any], None]
     group_exercise: Callable[[str], None]
+    delete_group: Callable[[str], None]
     show_help: Callable[[str], None]
     edit_exercise: Callable[[str], None]
     drag_start: Callable[[str], None]
@@ -282,7 +283,6 @@ def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingA
                             ft.Text(str(member.get("name", "")), size=15, weight="bold", color=TEXT),
                             small_text(_exercise_detail(member)),
                         ], expand=True, spacing=2),
-                        _fixed_icon_button(ft.Icons.HELP_OUTLINE, "动作技巧", GREEN, lambda e, value=member_id: actions.show_help(value)),
                         _fixed_icon_button(ft.Icons.EDIT_OUTLINED, "编辑参数", GREEN, lambda e, value=member_id: actions.edit_exercise(value)),
                     ], spacing=8),
                     bgcolor=SURFACE,
@@ -298,6 +298,7 @@ def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingA
                         ], spacing=2, expand=True),
                         _drag_handle(exercise_id, title, actions, start_drag, complete_drag),
                         _fixed_icon_button(ft.Icons.ADD, "编辑组合", GREEN, lambda e, value=exercise_id: actions.group_exercise(value)),
+                        _fixed_icon_button(ft.Icons.DELETE_OUTLINE, "删除整个组合", RED, lambda e, value=exercise_id: actions.delete_group(value)),
                     ], spacing=8),
                     *member_rows,
                 ], spacing=8),
@@ -333,12 +334,15 @@ def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingA
                     ft.Text(summary, size=13, color=SUB, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
                     ft.Text(prescription, size=13, color=SUB, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
                 ], expand=True, spacing=1, tight=True),
-                ft.Row([
-                    _fixed_icon_button(ft.Icons.HELP_OUTLINE, "动作技巧", GREEN, lambda e, value=exercise_id: actions.show_help(value), size=36),
-                    _fixed_icon_button(ft.Icons.EDIT_OUTLINED, "编辑参数", GREEN, lambda e, value=exercise_id: actions.edit_exercise(value), size=36),
-                    _fixed_icon_button(ft.Icons.ADD, "组成超级组或复合组", GREEN, lambda e, value=exercise_id: actions.group_exercise(value), size=36),
-                    _drag_handle(exercise_id, str(exercise.get("name", "")), actions, start_drag, complete_drag, size=36),
-                    _fixed_icon_button(ft.Icons.DELETE_OUTLINE, "删除动作", RED, lambda e, value=index: actions.delete_exercise(value), size=36),
+                ft.Column([
+                    ft.Row([
+                        _fixed_icon_button(ft.Icons.EDIT_OUTLINED, "编辑参数", GREEN, lambda e, value=exercise_id: actions.edit_exercise(value), size=32),
+                        _fixed_icon_button(ft.Icons.ADD, "组成超级组或复合组", GREEN, lambda e, value=exercise_id: actions.group_exercise(value), size=32),
+                    ], spacing=0, tight=True),
+                    ft.Row([
+                        _drag_handle(exercise_id, str(exercise.get("name", "")), actions, start_drag, complete_drag, size=32),
+                        _fixed_icon_button(ft.Icons.DELETE_OUTLINE, "删除动作", RED, lambda e, value=index: actions.delete_exercise(value), size=32),
+                    ], spacing=0, tight=True),
                 ], spacing=0, tight=True),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             bgcolor="#FFFFFF",
