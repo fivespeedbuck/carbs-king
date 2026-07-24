@@ -341,6 +341,23 @@ def save_custom_exercise(exercise: dict[str, Any], path: Path = TRAINING_FILE) -
     return normalized
 
 
+def delete_custom_exercise(name: str, path: Path = TRAINING_FILE) -> bool:
+    """Remove only a library definition; sessions retain their copied exercise data."""
+    name_key = str(name or "").strip().casefold()
+    if not name_key or name_key in _EXERCISES_BY_NAME:
+        return False
+    payload = load_json(path, {})
+    if not isinstance(payload, dict):
+        return False
+    existing = load_custom_exercises(path)
+    retained = [item for item in existing if item["name"].casefold() != name_key]
+    if len(retained) == len(existing):
+        return False
+    payload["custom_exercises"] = retained
+    save_json(path, payload)
+    return True
+
+
 def exercise_catalog(custom_exercises: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     custom = load_custom_exercises() if custom_exercises is None else custom_exercises
     return [*EXERCISE_LIBRARY, *custom]

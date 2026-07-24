@@ -211,11 +211,6 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             save_profile_from_state()
             save_current()
 
-        def save_profile_fields(e=None):
-            persist_visible_profile()
-            refresh()
-            snack("资料已保存，未新增围度记录")
-
         def record_current_measurement(e=None):
             current = state.get("circumference")
             circumference = dict(current) if isinstance(current, dict) else {}
@@ -336,7 +331,6 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             [weight_box, bodyfat_box, height_box, age_box, *circumference_boxes],
             sex=state.get("sex", "男"),
             activity_habit=state.get("activity_habit", "规律训练"),
-            on_save=save_profile_fields,
             on_record_measurement=record_current_measurement,
             on_sex_change=set_sex,
             on_activity_change=set_activity,
