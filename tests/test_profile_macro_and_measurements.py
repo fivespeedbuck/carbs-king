@@ -82,8 +82,9 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         macro = (ROOT / "src" / "profile_macro_views.py").read_text(encoding="utf-8-sig")
 
         self.assertIn("def record_current_measurement", controller)
-        self.assertIn('snack("资料已保存，未新增围度记录")', controller)
+        self.assertNotIn('def save_profile_fields', controller)
         self.assertIn('"记录本次测量"', details)
+        self.assertNotIn('make_button("保存", on_click=on_save', details)
         self.assertIn("BMR（基础代谢率）", details)
         self.assertIn("TDEE（每日总能量消耗）", details)
         self.assertIn("if not auto_selected", macro)

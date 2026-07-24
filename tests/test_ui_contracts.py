@@ -189,7 +189,8 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertIn("actions.adjust_rest(-10)", self.training_section)
         self.assertIn("actions.adjust_rest(10)", self.training_section)
         self.assertNotIn("if rest_seconds > 0:", self.training_section)
-        self.assertIn('if is_resting:\n        controls.append(next_work_card)', self.training_section)
+        self.assertIn('data="active-rest-size-reference"', self.training_section)
+        self.assertIn('data="active-rest-size-match"', self.training_section)
         self.assertIn('else:\n        controls.append(work_card)', self.training_section)
         self.assertIn('small_text("下一个训练项"', self.training_section)
 
@@ -220,8 +221,10 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertEqual(progress.height, 8)
         self.assertEqual(progress.clip_behavior.value, "hardEdge")
         self.assertEqual(progress.content.height, 8)
-        self.assertEqual(len(progress.content.controls), 2)
-        divider_row = progress.content.controls[1]
+        self.assertEqual(len(progress.content.controls), 3)
+        marker_row = progress.content.controls[1]
+        self.assertEqual(marker_row.controls[0].bgcolor, "#FFD166")
+        divider_row = progress.content.controls[2]
         self.assertEqual(divider_row.height, 8)
         self.assertEqual(len(divider_row.controls), 4)
         self.assertIn('color="#DCE9E4"', self.training_section)
@@ -459,7 +462,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         def trigger_foreground(self, *args, **kwargs):
             return None
 
-    def build_controller(self, session, exercise_index=0, set_index=0):
+    def build_controller(self, session, exercise_index=0, set_index=0, opened_controls=None):
         state = AppState.default(("早餐", "午餐", "晚餐", "练前", "练后", "偷吃"))
         state["date"] = "2026-07-23"
         state["current_view"] = "training"
@@ -471,7 +474,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
             refresh=lambda: None,
             snack=lambda *args, **kwargs: None,
             navigate=lambda target: None,
-            open_control=lambda control: None,
+            open_control=(opened_controls.append if opened_controls is not None else lambda control: None),
             close_control=lambda control: None,
             responsive_width=lambda *args, **kwargs: 340,
             responsive_bar_width=lambda: 340,
@@ -587,6 +590,23 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         self.assertEqual(state["training_exercise_index"], 1)
         self.assertEqual(state["training_set_index"], 0)
         self.assertEqual(captures[-1][0].exercise_name, "上斜卧推")
+
+    def test_weight_and_reps_taps_open_editors_even_for_a_completed_set(self):
+        bench = self.strength_exercise("bench", "杠铃卧推", [True])
+        opened_controls = []
+        controller, _state = self.build_controller(
+            self.active_session([bench]),
+            opened_controls=opened_controls,
+        )
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            actions = captures[-1][1]
+            actions.edit_weight(None)
+            actions.edit_reps(None)
+
+        self.assertEqual(len(opened_controls), 2)
 
     def test_resuming_active_session_starts_at_first_pending_set(self):
         bench = self.strength_exercise("bench", "杠铃卧推", [True, True, False, False])
@@ -721,6 +741,47 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
 
         self.assertEqual(state["training_exercise_index"], 1)
         self.assertEqual(state["training_set_index"], 0)
+
+    def test_previous_and_next_navigate_each_set_within_one_exercise(self):
+        bench = self.strength_exercise("bench", "杠铃卧推", [False, False, False])
+        controller, state = self.build_controller(self.active_session([bench]), set_index=1)
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            actions = captures[-1][1]
+            actions.move_exercise(-1)
+            self.assertEqual((state["training_exercise_index"], state["training_set_index"]), (0, 0))
+            actions.move_exercise(1)
+            self.assertEqual((state["training_exercise_index"], state["training_set_index"]), (0, 1))
+
+    def test_previous_and_next_follow_superset_round_order(self):
+        first = self.strength_exercise("first", "上斜哑铃卧推", [False, False])
+        second = self.strength_exercise("second", "JM推举", [False, False])
+        first.update({"group_id": "group-1", "group_order": 1})
+        second.update({"group_id": "group-1", "group_order": 2})
+        session = self.active_session([first, second])
+        session["exercise_groups"] = [{
+            "id": "group-1",
+            "group_type": "superset",
+            "order": 1,
+            "exercise_ids": ["first", "second"],
+        }]
+        controller, state = self.build_controller(session, exercise_index=1, set_index=0)
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            actions = captures[-1][1]
+            actions.move_exercise(-1)
+            self.assertEqual((state["training_exercise_index"], state["training_set_index"]), (0, 0))
+            actions.move_exercise(1)
+            self.assertEqual((state["training_exercise_index"], state["training_set_index"]), (1, 0))
+            actions.move_exercise(1)
+            self.assertEqual((state["training_exercise_index"], state["training_set_index"]), (0, 1))
+
+            controller.render_page()
+            self.assertEqual(captures[-1][0].current_work_index, 2)
 
 
 if __name__ == "__main__":

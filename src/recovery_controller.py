@@ -518,28 +518,56 @@ def create_recovery_controller(deps: RecoveryControllerDependencies) -> Recovery
             save_current()
             refresh()
 
-        library_rows = []
-        for index, supplement in enumerate(supplements):
-            library_rows.append(ft.Container(
-                content=ft.Row([
-                    ft.Column([
-                        ft.Text(str(supplement.get("name") or ""), size=13, weight="bold", color=TEXT),
-                        small_text(f"默认 {supplement.get('default_amount', '')}{supplement.get('unit', '')}"),
-                    ], spacing=2, expand=True),
-                    ft.IconButton(icon=ft.Icons.EDIT, tooltip="修改补剂", icon_color=PRIMARY, width=48, height=48, on_click=lambda e, i=index: open_supplement_editor(i)),
-                    ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip="删除补剂", icon_color=RED, width=48, height=48, on_click=lambda e, i=index: delete_supplement(i)),
-                ], spacing=4),
-                bgcolor="#FAFAFA", border_radius=8, padding=8,
-            ))
-        if not library_rows:
-            library_rows.append(ft.Container(content=small_text("暂无补剂库项目"), bgcolor="#FAFAFA", border_radius=8, padding=8))
+        def open_supplement_library(e=None):
+            library_dialog = None
+
+            def close_then_edit(index):
+                close_control(library_dialog)
+                open_supplement_editor(index)
+
+            def close_then_delete(index):
+                close_control(library_dialog)
+                delete_supplement(index)
+
+            library_rows = []
+            for index, supplement in enumerate(supplements):
+                library_rows.append(ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Text(str(supplement.get("name") or ""), size=13, weight="bold", color=TEXT),
+                            small_text(f"默认 {supplement.get('default_amount', '')}{supplement.get('unit', '')}"),
+                        ], spacing=2, expand=True),
+                        ft.IconButton(icon=ft.Icons.EDIT, tooltip="修改补剂", icon_color=PRIMARY, width=48, height=48, on_click=lambda e, i=index: close_then_edit(i)),
+                        ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip="删除补剂", icon_color=RED, width=48, height=48, on_click=lambda e, i=index: close_then_delete(i)),
+                    ], spacing=4),
+                    bgcolor="#FAFAFA", border_radius=8, padding=8,
+                ))
+            if not library_rows:
+                library_rows.append(ft.Container(content=small_text("暂无补剂库项目"), bgcolor="#FAFAFA", border_radius=8, padding=8))
+
+            library_dialog = full_form_sheet(
+                "补剂库",
+                [
+                    ft.Row([
+                        section_title("补剂库"),
+                        make_button("新增补剂", on_click=lambda event: (close_control(library_dialog), open_supplement_editor()), icon=ft.Icons.ADD, bgcolor=PRIMARY_SOFT, color=GREEN),
+                    ], alignment="spaceBetween"),
+                    ft.Column(library_rows, spacing=6),
+                ],
+                lambda event: close_control(library_dialog),
+                save_label="完成",
+            )
+            open_control(library_dialog)
 
         selected_count = len(state["supplements"])
         return card(ft.Column([
-            ft.Row([ft.Text(f"今日补剂 {selected_count}", size=15, weight="bold"), make_button("新增补剂", on_click=lambda e: open_supplement_editor(), icon=ft.Icons.ADD, bgcolor=PRIMARY_SOFT, color=GREEN)], alignment="spaceBetween"),
+            ft.Row([
+                ft.Text(f"今日补剂 {selected_count}", size=15, weight="bold"),
+                ft.Row([
+                    make_button("补剂库", on_click=open_supplement_library, icon=ft.Icons.INVENTORY_2_OUTLINED, bgcolor=PRIMARY_SOFT, color=GREEN),
+                ], spacing=6),
+            ], alignment="spaceBetween"),
             ft.Column(supp_controls, spacing=2),
-            ft.Row([section_title("补剂库"), small_text(f"{len(supplements)} 项")], alignment="spaceBetween"),
-            ft.Column(library_rows, spacing=6),
         ], spacing=8))
 
     return RecoveryController(

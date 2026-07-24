@@ -35,7 +35,6 @@ def build_profile_details(
     *,
     sex: str,
     activity_habit: str,
-    on_save: Callable[[Any], None],
     on_record_measurement: Callable[[Any], None],
     on_sex_change: Callable[[str], None],
     on_activity_change: Callable[[str], None],
@@ -50,7 +49,7 @@ def build_profile_details(
         for index in range(0, len(circumference_boxes), 2)
     ]
     return card(ft.Column([
-        ft.Row([section_title("我"), make_button("保存", on_click=on_save, bgcolor=PRIMARY_SOFT, color=GREEN)], alignment="spaceBetween"),
+        section_title("我"),
         two_field_grid(weight_box, bodyfat_box, viewport_width=viewport_width),
         two_field_grid(height_box, age_box, viewport_width=viewport_width),
         section_title("身体围度（可选）"),

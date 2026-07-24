@@ -32,6 +32,7 @@ from analytics_model import (  # noqa: E402
     CALENDAR_KCAL_RATIO_THRESHOLDS,
 )
 from analytics_trend_views import (  # noqa: E402
+    _InitiallyLatestRow,
     _render_readable_chart,
     _smooth_path_elements,
     _trend_statistics,
@@ -513,6 +514,9 @@ class AnalyticsViewModelTests(unittest.TestCase):
         self.assertTrue(any(getattr(shape, "data", None) == "trend-selection-line" for shape in canvas.shapes))
         self.assertEqual(len(bubbles), 1)
         self.assertEqual([item.value for item in bubbles[0].content.controls], ["2026-07-20", "74.8 kg"])
+        extreme_labels = [item for item in plot.controls if getattr(item, "data", None) == "trend-extreme-label"]
+        self.assertEqual(len(extreme_labels), 2)
+        self.assertIs(plot.controls[-1], bubbles[0])
         hit_target.on_click(None)
         self.assertEqual(selected, ["2026-07-23"])
 
@@ -627,6 +631,7 @@ class AnalyticsViewModelTests(unittest.TestCase):
             self.assertEqual(trend["period_days"], days)
 
     def test_long_period_chart_scrolls_inside_and_keeps_real_date_spacing(self):
+        _InitiallyLatestRow._initial_scroll_keys.clear()
         for days, window_start, minimum_width in (
             (30, "2026-06-24", 1000),
             (90, "2026-04-25", 3500),
@@ -663,6 +668,38 @@ class AnalyticsViewModelTests(unittest.TestCase):
             scroller.scroll_to = capture_scroll
             asyncio.run(scroller._show_latest_once())
             self.assertEqual(scroll_calls, [{"offset": -1, "duration": 0}])
+
+    def test_long_period_chart_only_auto_scrolls_on_its_first_mount(self):
+        _InitiallyLatestRow._initial_scroll_keys.clear()
+        key = "weight:90:2026-04-25:2026-07-23"
+        self.assertTrue(_InitiallyLatestRow.should_auto_scroll(key))
+        self.assertFalse(_InitiallyLatestRow.should_auto_scroll(key))
+        self.assertTrue(_InitiallyLatestRow.should_auto_scroll("bodyfat:90:2026-04-25:2026-07-23"))
+
+    def test_selected_long_period_point_gets_an_explicit_scroll_target(self):
+        records = {
+            "2026-04-25": {"profile": {"measurement": {"weight_kg": 75, "measured_at": "2026-04-25T08:00:00"}}},
+            "2026-05-10": {"profile": {"measurement": {"weight_kg": 74, "measured_at": "2026-05-10T08:00:00"}}},
+            "2026-07-23": {"profile": {"measurement": {"weight_kg": 73, "measured_at": "2026-07-23T08:00:00"}}},
+        }
+        trend = build_data_page_model(
+            records,
+            end_date="2026-07-23",
+            config=DataPageConfig(period_days=90, selected_trend_date="2026-05-10"),
+        )["trend"]
+        chart = _render_readable_chart(trend, None)
+        scroller = chart.content.controls[1]
+        selected_x = scroller.controls[0].data["date_x"]["2026-05-10"]
+
+        self.assertEqual(scroller._selected_scroll_target, selected_x)
+        scroll_calls = []
+
+        async def capture_scroll(**kwargs):
+            scroll_calls.append(kwargs)
+
+        scroller.scroll_to = capture_scroll
+        asyncio.run(scroller._show_selected_target())
+        self.assertEqual(scroll_calls, [{"offset": max(0.0, selected_x - 120.0), "duration": 0}])
 
     def test_seven_day_chart_is_complete_without_horizontal_scroll(self):
         records = {

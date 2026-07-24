@@ -484,7 +484,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             selected = state["day_type"] == day_name
             day_buttons.append(make_button(day_name, on_click=lambda e, d=day_name: set_day(d), bgcolor=PRIMARY if selected else PRIMARY_SOFT, color="#FFFFFF" if selected else GREEN, expand=True))
         summary = card(ft.Column([
-            ft.Row([section_title("饮食总览"), make_button("食物库", on_click=lambda e: set_view("foods"), icon=ft.Icons.RESTAURANT_MENU, bgcolor=PRIMARY_SOFT, color=GREEN)], alignment="spaceBetween"),
+            section_title("饮食总览"),
             ft.Row(day_buttons, spacing=7),
             macro_progress_bar("碳水", total["carb"], target_min=targets["carb_min"], target_max=targets["carb_max"], kind="carb", width=responsive_bar_width()),
             macro_progress_bar("蛋白", total["protein"], target_min=targets["protein_min"], target_max=targets["protein_max"], kind="protein", width=responsive_bar_width()),

@@ -46,6 +46,7 @@ food_library.json
 supplement_library.json
 user_profile.json
 import_safety_backups/
+src/storage/
 
 # Version packages are attached to GitHub Releases, not committed
 *.zip
