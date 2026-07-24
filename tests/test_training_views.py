@@ -27,6 +27,7 @@ def _actions():
     return ActiveTrainingActions(
         close=_noop,
         finish=_noop,
+        show_help=_noop,
         select_set=_noop,
         adjust_rest=_noop,
         toggle_rest=_noop,
@@ -34,6 +35,7 @@ def _actions():
         adjust_weight=_noop,
         edit_weight=_noop,
         adjust_reps=_noop,
+        edit_reps=_noop,
         edit_duration=_noop,
         edit_distance=_noop,
         edit_metric=_noop,
@@ -98,18 +100,21 @@ class ActiveTrainingViewTests(unittest.TestCase):
         self.assertIn("组间休息", texts)
         self.assertIn("下一个训练项", texts)
         self.assertIn("杠铃卧推 · 第 3 组", texts)
-        self.assertNotIn("杠铃卧推", texts)
-        self.assertNotIn("完成本组", texts)
         self.assertTrue(result.control.content.expand)
 
-        rest_card = next(
-            item for item in result.control.content.controls
-            if isinstance(item, ft.Container) and item.data == "active-rest-card"
-        )
-        next_card = result.control.content.controls[-1]
-        self.assertTrue(rest_card.expand)
-        self.assertFalse(bool(next_card.expand))
-        self.assertLess(result.control.content.controls.index(rest_card), result.control.content.controls.index(next_card))
+        rest_wrapper = result.control.content.controls[-1]
+        self.assertEqual(rest_wrapper.data, "active-rest-size-match")
+        self.assertIsInstance(rest_wrapper, ft.Stack)
+        self.assertEqual(rest_wrapper.controls[0].data, "active-rest-size-reference")
+        rest_card = rest_wrapper.controls[-1]
+        self.assertEqual(rest_card.data, "active-rest-card")
+        self.assertIsNone(rest_card.height)
+        self.assertIsInstance(rest_card.content, ft.Column)
+        self.assertTrue(rest_card.content.controls[0].expand)
+        self.assertEqual((rest_card.left, rest_card.top, rest_card.right, rest_card.bottom), (0, 0, 0, 0))
+        bottom_group = rest_card.content.controls[-1]
+        self.assertIsInstance(bottom_group.controls[0], ft.Row)
+        self.assertEqual(bottom_group.controls[-1], next(item for item in _walk(rest_card) if getattr(item, "bgcolor", None) == "#252F2C" and getattr(item, "border", None) is not None))
 
     def test_rest_layout_uses_bounded_412_by_915_focus_viewport(self):
         result = build_active_training(
@@ -123,6 +128,22 @@ class ActiveTrainingViewTests(unittest.TestCase):
         self.assertTrue(result.control.content.expand)
         self.assertIsNone(result.control.content.scroll)
 
+    def test_rest_uses_the_matching_work_card_as_its_natural_size_reference(self):
+        modes = ("strength", "timed", "cardio")
+        for mode in modes:
+            result = build_active_training(_model(recording_mode=mode, viewport_height=915), _actions())
+            work_card = result.control.content.controls[-1]
+            self.assertIsNone(work_card.expand)
+            self.assertIsNone(work_card.height)
+
+            resting = build_active_training(
+                _model(recording_mode=mode, rest_status="running", viewport_height=915),
+                _actions(),
+            )
+            rest_wrapper = resting.control.content.controls[-1]
+            self.assertEqual(rest_wrapper.data, "active-rest-size-match")
+            self.assertEqual(rest_wrapper.controls[0].content.content.__class__, work_card.content.__class__)
+
     def test_short_phone_uses_compact_fixed_focus_layout(self):
         result = build_active_training(
             _model(viewport_height=720),
@@ -133,6 +154,8 @@ class ActiveTrainingViewTests(unittest.TestCase):
         self.assertEqual(result.control.padding, 8)
         self.assertEqual(result.control.content.spacing, 8)
         self.assertIsNone(result.control.content.scroll)
+        self.assertIsNone(result.control.content.controls[-1].expand)
+        self.assertIsNone(result.control.content.controls[-1].height)
 
         action_buttons = [
             item
@@ -165,6 +188,18 @@ class ActiveTrainingViewTests(unittest.TestCase):
         ]
         self.assertEqual(chip_colors[:2], [PRIMARY, "#C78B20"])
 
+    def test_weight_and_reps_values_both_have_direct_edit_tap_targets(self):
+        result = build_active_training(_model(), _actions())
+        source = (SRC / "training_views.py").read_text(encoding="utf-8-sig")
+
+        self.assertIn("on_click=actions.edit_weight", source)
+        self.assertIn("on_click=actions.edit_reps", source)
+        editable_values = [
+            item for item in _walk(result.control)
+            if isinstance(item, ft.Container) and item.ink and item.on_click is not None and item.height == 56
+        ]
+        self.assertGreaterEqual(len(editable_values), 2)
+
     def test_progress_bar_contains_one_separator_per_work_boundary(self):
         result = build_active_training(_model(planned_sets=4), _actions())
         separators = [
@@ -176,6 +211,137 @@ class ActiveTrainingViewTests(unittest.TestCase):
             and getattr(item.border, "right", None) is not None
         ]
         self.assertEqual(len(separators), 3)
+
+    def test_progress_bar_marks_the_current_work_item_in_rest_timer_gold(self):
+        result = build_active_training(
+            _model(planned_sets=4, progress=0.75, current_work_index=1),
+            _actions(),
+        )
+        marker = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-progress-current"
+        )
+        self.assertEqual(marker.bgcolor, "#FFD166")
+
+    def test_active_screen_prioritizes_action_name_and_centers_timer_content(self):
+        source = (SRC / "training_views.py").read_text(encoding="utf-8-sig")
+
+        self.assertIn('size=32 if compact else 36', source)
+        self.assertIn('size=28 if compact else 32', source)
+        self.assertIn('horizontal_alignment=ft.CrossAxisAlignment.CENTER', source)
+        self.assertIn('alignment=ft.MainAxisAlignment.CENTER', source)
+        timer_start = source.index("controls = [")
+        timer_end = source.index("_segmented_progress", timer_start)
+        self.assertNotIn('small_text("训练时长"', source[timer_start:timer_end])
+
+    def test_cardio_metrics_use_compact_natural_order_grid(self):
+        source = (SRC / "training_views.py").read_text(encoding="utf-8-sig")
+        helper_start = source.index("def _build_cardio_metric_grid")
+        helper_end = source.index("\n\ndef build_active_training", helper_start)
+        helper = source[helper_start:helper_end]
+
+        self.assertIn('"时长"', helper)
+        self.assertIn('"距离"', helper)
+        self.assertIn('if total <= 3:', helper)
+        self.assertIn('elif total == 4:', helper)
+        self.assertIn('elif total == 5:', helper)
+        self.assertIn('entries[:2], entries[2:]', helper)
+        self.assertIn('entries[:3], entries[3:6]', helper)
+
+    def test_cardio_grid_uses_the_required_two_to_six_item_row_shapes(self):
+        metrics = (
+            ("speed_kph", "速度", "8.7"),
+            ("incline_percent", "坡度", "1"),
+            ("cadence_rpm", "桨频", "80"),
+            ("resistance_level", "阻力", "5"),
+        )
+        expected_shapes = {
+            2: [2],
+            3: [3],
+            4: [2, 2],
+            5: [2, 3],
+            6: [3, 3],
+        }
+        for item_count, expected in expected_shapes.items():
+            result = build_active_training(
+                _model(
+                    recording_mode="cardio",
+                    distance_enabled=True,
+                    distance_text="6.5",
+                    duration_seconds=2700,
+                    cardio_metrics=metrics[:item_count - 2],
+                ),
+                _actions(),
+            )
+            grid = next(item for item in _walk(result.control) if getattr(item, "data", None) == "active-cardio-metric-grid")
+            self.assertEqual([len(row.controls) for row in grid.controls], expected)
+            self.assertIsNone(result.control.content.scroll)
+
+    def test_strength_superset_does_not_use_cardio_grid_and_keeps_active_help(self):
+        result = build_active_training(
+            _model(
+                group_label="超级组",
+                group_position_text="组内第 1/2 个",
+                group_members=(("卧推", "a", True, False), ("划船", "b", False, False)),
+            ),
+            _actions(),
+        )
+        texts = _texts(result.control)
+        self.assertIn("超级组", texts)
+        self.assertFalse(any(getattr(item, "data", None) == "active-cardio-metric-grid" for item in _walk(result.control)))
+        source = (SRC / "training_views.py").read_text(encoding="utf-8-sig")
+        self.assertIn('tooltip="动作技巧"', source)
+
+
+    def test_selected_completed_set_uses_gold_current_state_after_navigating_back(self):
+        result = build_active_training(
+            _model(
+                sets_completed=(True, True, False, False),
+                selected_set_index=0,
+                selected_set_done=True,
+            ),
+            _actions(),
+        )
+
+        current_chip = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-set-chip-current"
+        )
+        completed_chip = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-set-chip-completed"
+        )
+
+        self.assertEqual(current_chip.bgcolor, "#C78B20")
+        self.assertEqual(current_chip.border.top.color, "#FFD166")
+        self.assertEqual(completed_chip.bgcolor, PRIMARY)
+        self.assertIsNone(completed_chip.border)
+
+    def test_superset_shows_current_member_border_and_gold_current_set_together(self):
+        result = build_active_training(
+            _model(
+                sets_completed=(True, True, False, False),
+                selected_set_index=0,
+                selected_set_done=True,
+                group_label="Superset",
+                group_position_text="1/2",
+                group_members=(("Bench", "a", True, True), ("Row", "b", False, True)),
+            ),
+            _actions(),
+        )
+
+        current_chip = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-set-chip-current"
+        )
+        current_member = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-group-member-current"
+        )
+
+        self.assertEqual(current_chip.bgcolor, "#C78B20")
+        self.assertEqual(current_chip.border.top.color, "#FFD166")
+        self.assertEqual(current_member.border.top.color, "#FFD166")
 
 
 if __name__ == "__main__":

@@ -174,16 +174,50 @@ _EDGE_PADDING = 24.0
 
 
 class _InitiallyLatestRow(ft.Row):
-    """Scrollable row that jumps to the latest edge once after mounting."""
+    """Scrollable row with an explicit target for a selected trend point."""
+
+    _initial_scroll_keys: set[str] = set()
+
+    def __init__(
+        self,
+        *args: Any,
+        initial_scroll_key: str,
+        selected_scroll_target: float | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._initial_scroll_key = initial_scroll_key
+        self._selected_scroll_target = selected_scroll_target
+
+    @classmethod
+    def should_auto_scroll(cls, scroll_key: str) -> bool:
+        if scroll_key in cls._initial_scroll_keys:
+            return False
+        cls._initial_scroll_keys.add(scroll_key)
+        return True
 
     def did_mount(self):
         super().did_mount()
+        if self._selected_scroll_target is not None:
+            self.page.run_task(self._show_selected_target)
+            return
+        if not self.should_auto_scroll(self._initial_scroll_key):
+            return
+        # Mark before scheduling so a point-selection refresh cannot schedule a
+        # second jump while the first mounted control is still being measured.
         self.page.run_task(self._show_latest_once)
 
     async def _show_latest_once(self):
         # Let the browser finish measuring the wide canvas before positioning it.
         await asyncio.sleep(0.05)
         await self.scroll_to(offset=-1, duration=0)
+
+    async def _show_selected_target(self):
+        """Keep the selected date in view after Flet rebuilds the chart row."""
+        await asyncio.sleep(0.05)
+        # A small lead-in keeps the selected point and its tooltip visible rather
+        # than pinning it against the left edge of the viewport.
+        await self.scroll_to(offset=max(0.0, self._selected_scroll_target - 120.0), duration=0)
 
 
 def _chart_date_label(value: Any) -> str:
@@ -558,6 +592,8 @@ def _render_readable_chart(
         (item for item in recorded if str(item[1].get("date")) == selected_date),
         None,
     )
+    selection_bubble: ft.Container | None = None
+    selection_bounds: tuple[float, float, float, float] | None = None
     if selected_record is not None:
         selected_index, selected_point, selected_value = selected_record
         selected_x = x_at(selected_index)
@@ -573,7 +609,8 @@ def _render_readable_chart(
         bubble_width = 112.0
         bubble_left = _clamped_label_left(selected_x, bubble_width, plot_width)
         bubble_top = max(0.0, selected_y - 60.0)
-        plot_controls.append(ft.Container(
+        selection_bounds = (bubble_left, bubble_top, bubble_left + bubble_width, bubble_top + 52.0)
+        selection_bubble = ft.Container(
             content=ft.Column([
                 _text(str(selected_point.get("date")), size=12, color=SUB),
                 _text(str(selected_point.get("label") or _format_tick(selected_value)), size=15, weight="bold"),
@@ -587,7 +624,7 @@ def _render_readable_chart(
             border_radius=7,
             shadow=ft.BoxShadow(blur_radius=8, color="#22000000"),
             data="trend-selection-bubble",
-        ))
+        )
 
     extreme_indices = _extreme_point_indices(recorded)
     maximum_index = max(recorded, key=lambda item: item[2])[0]
@@ -611,8 +648,19 @@ def _render_readable_chart(
             ink=True,
             border_radius=17,
         ))
-        if index in extreme_indices and not selected:
+        if index in extreme_indices:
             label_top = y - _POINT_LABEL_HEIGHT - 5 if index == maximum_index else y + 5
+            label_left = _clamped_label_left(x, _POINT_LABEL_WIDTH, plot_width)
+            overlaps_bubble = selection_bounds is not None and not (
+                label_left + _POINT_LABEL_WIDTH <= selection_bounds[0]
+                or selection_bounds[2] <= label_left
+                or label_top + _POINT_LABEL_HEIGHT <= selection_bounds[1]
+                or selection_bounds[3] <= label_top
+            )
+            # Keep extrema visible unless the selected bubble would physically
+            # cover the label. The bubble remains the readable annotation then.
+            if overlaps_bubble:
+                continue
             plot_controls.append(ft.Container(
                 content=ft.Text(
                     str(point.get("label") or _format_tick(value)),
@@ -623,7 +671,7 @@ def _render_readable_chart(
                     no_wrap=True,
                 ),
                 data="trend-extreme-label",
-                left=_clamped_label_left(x, _POINT_LABEL_WIDTH, plot_width),
+                left=label_left,
                 top=label_top,
                 width=_POINT_LABEL_WIDTH,
                 height=_POINT_LABEL_HEIGHT,
@@ -647,6 +695,11 @@ def _render_readable_chart(
             no_wrap=True,
         ))
 
+    # Stack renders later controls above earlier ones. Keep this after points,
+    # extreme labels and date labels so the selected tooltip is always readable.
+    if selection_bubble is not None:
+        plot_controls.append(selection_bubble)
+
     plot_controls.insert(0, cv.Canvas(shapes=shapes, width=plot_width, height=_CHART_HEIGHT))
     date_positions = {str(point["date"]): x_at(index) for index, point in enumerate(points)}
     plot = ft.Stack(
@@ -655,9 +708,7 @@ def _render_readable_chart(
         height=_CHART_HEIGHT,
         data={"mode": "smooth-area", "date_x": date_positions, "plot_width": plot_width},
     )
-    scroller_type = _InitiallyLatestRow if is_long_period else ft.Row
-    plot_scroller = scroller_type(
-        [plot],
+    scroller_kwargs = dict(
         spacing=0,
         scroll=getattr(getattr(ft, "ScrollMode", object()), "HIDDEN", "hidden") if is_long_period else None,
         auto_scroll=False,
@@ -666,6 +717,24 @@ def _render_readable_chart(
         height=_CHART_HEIGHT,
         data="trend-horizontal-scroll",
     )
+    if is_long_period:
+        # The selected date deliberately is not included: selecting an early
+        # point redraws this chart, but must keep the reader at that position.
+        scroll_key = ":".join((
+            str(trend.get("chart_kind") or "trend"),
+            str(period_days),
+            str(points[0].get("date") if points else ""),
+            str(points[-1].get("date") if points else ""),
+        ))
+        selected_scroll_target = date_positions.get(selected_date)
+        plot_scroller = _InitiallyLatestRow(
+            [plot],
+            initial_scroll_key=scroll_key,
+            selected_scroll_target=selected_scroll_target,
+            **scroller_kwargs,
+        )
+    else:
+        plot_scroller = ft.Row([plot], **scroller_kwargs)
     axis_stack = ft.Stack(axis_controls, width=_Y_AXIS_WIDTH, height=_CHART_HEIGHT, data="trend-y-axis")
     return ft.Container(
         content=ft.Row(

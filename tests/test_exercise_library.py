@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from exercise_library import (  # noqa: E402
     EXERCISE_CATEGORIES,
     EXERCISE_LIBRARY,
+    delete_custom_exercise,
     exercise_catalog,
     get_exercise,
     load_custom_exercises,
@@ -121,6 +122,17 @@ class ExerciseLibraryTests(unittest.TestCase):
         self.assertIn('"注意点（每行一条）"', source)
         self.assertIn("save_custom_exercise(custom_spec)", source)
         self.assertIn('save_label="保存并加入训练" if is_new_custom else "加入训练"', source)
+
+    def test_deleting_custom_definition_keeps_session_payload_and_rejects_builtin(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "training_data.json"
+            save_json(path, {"active_session": {"exercises": [{"name": "自定义跑步"}]}})
+            save_custom_exercise({"name": "自定义跑步"}, path)
+
+            self.assertTrue(delete_custom_exercise("自定义跑步", path))
+            self.assertFalse(load_custom_exercises(path))
+            self.assertEqual(load_json(path, {})["active_session"]["exercises"][0]["name"], "自定义跑步")
+            self.assertFalse(delete_custom_exercise(EXERCISE_LIBRARY[0]["name"], path))
 
 
 if __name__ == "__main__":
