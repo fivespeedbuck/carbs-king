@@ -218,6 +218,7 @@ def mobile_text_field(
     multiline=False,
     min_lines=None,
     max_lines=None,
+    hint_text=None,
 ):
     field = ft.TextField(
         value=value,
@@ -227,6 +228,7 @@ def mobile_text_field(
         multiline=multiline,
         min_lines=min_lines,
         max_lines=max_lines,
+        hint_text=hint_text,
     )
     try:
         field.text_size = 16

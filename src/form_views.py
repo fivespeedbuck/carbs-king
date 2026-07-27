@@ -45,6 +45,7 @@ def build_full_form_sheet(
     controls: Sequence[Any],
     on_save: Callable[[Any], None],
     save_label: str = "保存",
+    header_action: Any | None = None,
 ):
     """Build a keyboard-safe, full-height mobile editing surface."""
     sheet = None
@@ -59,6 +60,7 @@ def build_full_form_sheet(
                     content=ft.Row([
                         ft.IconButton(ft.Icons.ARROW_BACK, tooltip="返回", width=48, height=48, on_click=close_sheet),
                         ft.Text(title, size=19, weight="bold", color=TEXT, expand=True),
+                        *([header_action] if header_action is not None else []),
                         ft.IconButton(ft.Icons.CLOSE, tooltip="关闭", width=48, height=48, on_click=close_sheet),
                     ], spacing=4, vertical_alignment="center"),
                     padding=ft.Padding(left=4, top=4, right=4, bottom=4),

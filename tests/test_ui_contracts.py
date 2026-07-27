@@ -278,7 +278,8 @@ class TrainingUiContractTests(unittest.TestCase):
         section = TRAINING_CONTROLLER_SOURCE[start:end]
         self.assertIn('"sort": "frequent"', section)
         self.assertIn("sort_exercises(results, usage_stats, selected[\"sort\"])", section)
-        self.assertIn('make_button("常练"', TRAINING_PICKER_SOURCE)
+        self.assertIn('make_button("热门"', TRAINING_PICKER_SOURCE)
+        self.assertNotIn('make_button("名称"', TRAINING_PICKER_SOURCE)
         self.assertIn('on_select("frequent")', TRAINING_PICKER_SOURCE)
 
     def test_exercise_picker_supports_multi_select_and_batch_defaults(self):
@@ -311,7 +312,8 @@ class TrainingUiContractTests(unittest.TestCase):
             lambda e: calls.append("toggle"),
             selected=True,
         )
-        help_button, toggle_button = control.content.controls[-2:]
+        action_column = control.content.controls[-1]
+        help_button, toggle_button = action_column.controls[0], action_column.controls[-1]
 
         self.assertEqual(help_button.icon, training_controller_module.ft.Icons.HELP_OUTLINE)
         self.assertEqual(toggle_button.icon, training_controller_module.ft.Icons.CHECK_CIRCLE)

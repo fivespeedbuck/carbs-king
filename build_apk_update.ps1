@@ -7,6 +7,20 @@ $env:NO_PROXY = "localhost,127.0.0.1,::1"
 
 Set-Location $PSScriptRoot
 
+# Flet packages the directory configured by [tool.flet.app]. This project uses
+# `src` as the app path while the canonical media directory lives at root
+# `assets`, so mirror it into src/assets before every Android build.
+$sourceAssets = Join-Path $PSScriptRoot "assets"
+$packageAssets = Join-Path $PSScriptRoot "src\assets"
+if (-not (Test-Path $sourceAssets)) {
+    throw "Required app assets directory was not found: $sourceAssets"
+}
+New-Item -ItemType Directory -Force -Path $packageAssets | Out-Null
+& robocopy $sourceAssets $packageAssets /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+if ($LASTEXITCODE -gt 7) {
+    throw "Could not mirror app assets for APK packaging (robocopy exit code $LASTEXITCODE)"
+}
+
 # Android 只有在包名、签名证书相同且版本号不降低时，才会显示“更新”。
 $userHome = $env:USERPROFILE
 if ([string]::IsNullOrWhiteSpace($userHome)) {

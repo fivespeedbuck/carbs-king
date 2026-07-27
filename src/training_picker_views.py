@@ -111,13 +111,24 @@ def build_exercise_help(exercise: Mapping[str, Any], width: int, scroll_mode: An
     target = " · ".join(exercise.get("target_muscles", []))
     cues = [ft.Text(f"{index}. {text}", size=13, color=TEXT) for index, text in enumerate(exercise.get("cues", []), 1)]
     mistakes = [ft.Text(f"· {text}", size=13, color=SUB) for text in exercise.get("mistakes", [])]
-    return ft.Column([
+    media_src = str(exercise.get("gif") or exercise.get("image") or "")
+    media = ft.Container(
+        content=ft.Image(src=media_src, fit="contain", height=210) if media_src else ft.Icon(ft.Icons.FITNESS_CENTER, size=56, color=GREEN),
+        alignment=ft.Alignment.CENTER,
+        bgcolor="#F5FAF7",
+        border_radius=12,
+        padding=8,
+    )
+    details = [
+        media,
+        ft.Text(f"器械 · {exercise.get('equipment', '其他')}", size=13, color=SUB),
         ft.Container(content=ft.Text(f"目标肌群 · {target}", size=13, color=GREEN, weight="bold"), bgcolor="#EAF7EF", border_radius=10, padding=10),
         ft.Text("动作要点", size=15, weight="bold", color=TEXT),
         *cues,
-        ft.Text("常见错误", size=15, weight="bold", color=ORANGE),
-        *mistakes,
-    ], width=width, height=430, spacing=8, scroll=scroll_mode)
+    ]
+    if mistakes:
+        details.extend([ft.Text("常见错误", size=15, weight="bold", color=ORANGE), *mistakes])
+    return ft.Column(details, width=width, height=430, spacing=8, scroll=scroll_mode)
 
 
 def build_exercise_card(
@@ -140,33 +151,80 @@ def build_exercise_card(
     else:
         default_text = "自重" if weight is None else f"{to_float(weight):g} kg"
         default_text += f" × {reps} 次 / {sets} 组"
-    usage_text = f" · 练过 {usage['session_count']} 次 · 最近 {usage['last_date']}" if usage.get("session_count") else ""
+    usage_text = f"练过 {usage['session_count']} 次" if usage.get("session_count") else ""
     return ft.Container(
         content=ft.Row([
-            ft.Column([ft.Text(exercise["name"], size=14, weight="bold", color=TEXT), small_text(f"{exercise['equipment']} · {default_text}{usage_text}")], expand=True, spacing=2),
-            ft.IconButton(icon=ft.Icons.HELP_OUTLINE, tooltip="动作说明", icon_color=GREEN, width=48, height=48, on_click=on_help),
-            *([ft.IconButton(
-                icon=ft.Icons.DELETE_OUTLINE,
-                tooltip="删除自定义动作",
-                icon_color=RED,
-                width=40,
-                height=48,
-                on_click=on_delete,
-            )] if on_delete is not None else []),
-            ft.IconButton(
-                icon=ft.Icons.CHECK_CIRCLE if selected else ft.Icons.ADD_CIRCLE_OUTLINE,
-                tooltip="取消选择" if selected else "选择动作",
-                icon_color="#FFFFFF" if selected else GREEN,
-                bgcolor=PRIMARY if selected else None,
-                width=48,
-                height=48,
-                on_click=on_toggle,
-            ),
-        ], spacing=4),
+            ft.Column([
+                # Reserve two text lines for every name. This keeps the
+                # equipment and training prescription aligned across the grid.
+                ft.Container(
+                    content=ft.Text(exercise["name"], size=14, weight="bold", color=TEXT, max_lines=2, overflow="ellipsis"),
+                    height=38,
+                    alignment=ft.Alignment(-1, 0),
+                ),
+                ft.Text(str(exercise.get("equipment") or "其他"), size=12, color=SUB, max_lines=1, overflow="ellipsis"),
+                ft.Text(default_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
+                ft.Container(
+                    content=ft.Text(usage_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
+                    height=18,
+                    alignment=ft.Alignment(-1, 0),
+                ),
+            ], expand=True, spacing=1),
+            ft.Column([
+                ft.IconButton(icon=ft.Icons.HELP_OUTLINE, tooltip="动作说明", icon_color=GREEN, width=44, height=44, icon_size=27, on_click=on_help),
+                *([ft.IconButton(
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    tooltip="删除自定义动作",
+                    icon_color=RED,
+                    width=44,
+                    height=44,
+                    icon_size=25,
+                    on_click=on_delete,
+                )] if on_delete is not None else []),
+                ft.IconButton(
+                    icon=ft.Icons.CHECK_CIRCLE if selected else ft.Icons.ADD_CIRCLE_OUTLINE,
+                    tooltip="取消选择" if selected else "选择动作",
+                    icon_color="#FFFFFF" if selected else GREEN,
+                    bgcolor=PRIMARY if selected else None,
+                    width=44,
+                    height=44,
+                    icon_size=27,
+                    on_click=on_toggle,
+                ),
+            ], width=44, spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
         bgcolor=PRIMARY_SOFT if selected else "#FFFFFF",
         border=thin_border(PRIMARY) if selected else thin_border(),
         border_radius=12,
         padding=10,
+        # The final row reserves a stable place for personal training history.
+        height=178 if on_delete is not None else 168,
+        expand=True,
+    )
+
+
+def build_exercise_grid_card(
+    exercise: Mapping[str, Any],
+    on_help: Callable[[Any], None],
+    on_toggle: Callable[[Any], None],
+    *,
+    selected: bool = False,
+) -> ft.Control:
+    """Compact visual card used by the new offline exercise browser."""
+    image_src = str(exercise.get("image") or "")
+    picture = ft.Image(src=image_src, fit="contain", height=112) if image_src else ft.Icon(ft.Icons.FITNESS_CENTER, size=42, color=GREEN)
+    return ft.Container(
+        content=ft.Column([
+            ft.Container(content=picture, height=118, alignment=ft.Alignment.CENTER),
+            ft.Text("讲解", size=11, color=PRIMARY, weight="bold", on_click=on_help),
+            ft.Text(str(exercise.get("name") or ""), size=14, weight="bold", color=TEXT),
+            ft.Text(f"{exercise.get('equipment', '其他')} · {exercise.get('subgroup', '整体')}", size=12, color=SUB),
+            ft.IconButton(icon=ft.Icons.CHECK_CIRCLE if selected else ft.Icons.ADD_CIRCLE_OUTLINE, icon_color="#FFFFFF" if selected else GREEN, bgcolor=PRIMARY if selected else None, width=42, height=42, on_click=on_toggle),
+        ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        expand=True,
+        bgcolor=PRIMARY_SOFT if selected else "#FFFFFF",
+        border=thin_border(PRIMARY) if selected else thin_border(),
+        padding=8,
     )
 
 
@@ -188,11 +246,29 @@ def build_category_rows(
     return [ft.Row(buttons[:4], spacing=6), ft.Row(buttons[4:], spacing=6)]
 
 
-def build_sort_row(on_select: Callable[[str], None]) -> ft.Control:
+def build_category_sidebar(
+    categories: Sequence[str],
+    selected: str,
+    on_select: Callable[[str], None],
+) -> list[ft.Control]:
+    """Left-side category rail for the visual exercise browser."""
+    return [
+        ft.Container(
+            content=ft.Text(category, size=15, weight="bold" if selected == category else None, color="#FFFFFF" if selected == category else SUB),
+            bgcolor=PRIMARY if selected == category else None,
+            border_radius=8,
+            padding=ft.Padding(left=8, top=12, right=8, bottom=12),
+            on_click=lambda e, value=category: on_select(value),
+            ink=True,
+        )
+        for category in categories
+    ]
+
+
+def build_sort_row(on_select: Callable[[str], None], selected: str = "frequent") -> ft.Control:
     return ft.Row([
-        make_button("常练", on_click=lambda e: on_select("frequent"), bgcolor=PRIMARY, color="#FFFFFF", expand=True),
-        make_button("最近", on_click=lambda e: on_select("recent"), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
-        make_button("名称", on_click=lambda e: on_select("name"), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+        make_button("热门", on_click=lambda e: on_select("frequent"), bgcolor=PRIMARY if selected == "frequent" else PRIMARY_SOFT, color="#FFFFFF" if selected == "frequent" else GREEN, expand=True),
+        make_button("最近", on_click=lambda e: on_select("recent"), bgcolor=PRIMARY if selected == "recent" else PRIMARY_SOFT, color="#FFFFFF" if selected == "recent" else GREEN, expand=True),
     ], spacing=6)
 
 
@@ -202,7 +278,9 @@ __all__ = [
     "bind_dialog_close_button",
     "bind_training_parameter_mode",
     "build_category_rows",
+    "build_category_sidebar",
     "build_exercise_card",
+    "build_exercise_grid_card",
     "build_exercise_help",
     "build_sort_row",
     "training_parameter_mode_state",

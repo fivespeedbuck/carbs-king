@@ -93,8 +93,10 @@ class TrainingPlanViewContractsTests(unittest.TestCase):
         add_end = CONTROLLER_SOURCE.index("    def planned_exercise", add_start)
         add_section = CONTROLLER_SOURCE[add_start:add_end]
 
-        self.assertIn('"目标肌群（逗号或每行分隔）"', add_section)
-        self.assertIn('"target_muscles": list(dict.fromkeys(parsed_target_muscles))', add_section)
+        self.assertIn('"训练部位"', add_section)
+        self.assertIn('"目标肌群"', add_section)
+        self.assertIn('"器械"', add_section)
+        self.assertIn('"target_muscles": [str(target_muscle.value or "其他")]', add_section)
 
         history_start = CONTROLLER_SOURCE.index("    def reuse_history_session")
         history_end = CONTROLLER_SOURCE.index("    def open_exercise_group_dialog", history_start)

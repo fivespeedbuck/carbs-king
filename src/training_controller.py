@@ -35,7 +35,7 @@ from training_experience_service import (
 from training_models import TrainingSession, normalize_recording_mode
 from training_picker_views import (
     CUSTOM_CARDIO_METRIC_FIELDS, bind_dialog_close_button, bind_training_parameter_mode,
-    build_category_rows, build_exercise_card, build_exercise_help, build_sort_row,
+    build_category_sidebar, build_exercise_card, build_exercise_help, build_sort_row,
 )
 from training_plan_views import EmptyTrainingActions, PlannedTrainingActions, build_empty_training, build_planned_training
 from training_summary_views import (
@@ -67,6 +67,16 @@ CARDIO_METRIC_LABELS = {
     "stroke_rate_spm": "桨频 spm",
     "steps_per_minute": "爬楼步频 spm",
 }
+
+CUSTOM_MUSCLE_OPTIONS = {
+    "胸": ("胸大肌", "上胸", "中胸", "下胸"), "背": ("背阔肌", "上背", "中背", "下背"),
+    "腿": ("股四头肌", "腘绳肌", "小腿", "内收肌", "外展肌"), "臀部": ("臀大肌", "臀中肌"),
+    "肩": ("三角肌前束", "三角肌中束", "三角肌后束"), "二头": ("肱二头肌", "肱肌"),
+    "三头": ("肱三头肌",), "小臂": ("前臂屈肌", "前臂伸肌"), "腹部": ("上腹", "下腹", "腹斜肌"),
+    "核心稳定": ("腹横肌", "核心稳定"), "颈部": ("颈部肌群",), "有氧": ("心肺系统",),
+    "热身动作": ("全身热身",), "拉伸": ("目标肌群拉伸",), "其他": ("其他",),
+}
+CUSTOM_EQUIPMENT_OPTIONS = ("杠铃", "哑铃", "壶铃", "绳索", "悍马机", "史密斯机", "器械", "TRX&弹力带", "自重", "其他")
 
 
 @dataclass(frozen=True)
@@ -210,13 +220,14 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
     def dialog_base(title, content, actions=None, on_close=None):
         return build_dialog(title, content, actions=actions, on_close=on_close)
 
-    def full_form_sheet(title, controls, on_save, save_label="保存"):
+    def full_form_sheet(title, controls, on_save, save_label="保存", header_action=None):
         return build_full_form_sheet(
             FormViewContext(close_control=close_control, scroll_mode=_SCROLL_HIDDEN),
             title,
             controls,
             on_save,
             save_label,
+            header_action,
         )
 
     def training_signature():
@@ -434,13 +445,47 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
     def open_add_exercise_dialog():
         ensure_session()
         dialog_width = responsive_width()
-        selected = {"category": "胸", "sort": "frequent"}
+        page_size = 24
+        selected = {"category": "胸", "subgroup": "全部", "equipment": "全部", "sort": "frequent", "limit": page_size, "show_more_equipment": False}
         selected_names: list[str] = []
         custom_exercises = load_custom_exercises()
         catalog = exercise_catalog(custom_exercises)
-        categories = (*EXERCISE_CATEGORIES, *(("自定义",) if custom_exercises else ()))
-        list_holder = ft.Column(spacing=8)
-        category_rows = ft.Column(spacing=6)
+        categories = tuple(dict.fromkeys([*EXERCISE_CATEGORIES, *(item.get("category", "其他") for item in custom_exercises)]))
+        # Rendering a whole body-part at once can mean hundreds of cards in
+        # the web canvas. Keep the picker responsive and reveal more on demand.
+        list_holder = ft.GridView(
+            max_extent=280,
+            # Four text rows need a taller virtual-grid cell on Android.
+            child_aspect_ratio=2.0,
+            spacing=8,
+            run_spacing=8,
+            expand=True,
+            build_controls_on_demand=True,
+            cache_extent=180,
+        )
+        load_more_holder = ft.Column(spacing=6)
+        category_rows = ft.Column(spacing=3, width=82, scroll=_SCROLL_HIDDEN)
+        subgroup_rows = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
+        equipment_rows = ft.Column(spacing=6)
+        equipment_scroll = {"offset": 0.0}
+
+        def remember_equipment_scroll(event):
+            equipment_scroll["offset"] = max(0.0, float(getattr(event, "pixels", 0.0) or 0.0))
+
+        equipment_compact_row = ft.Row(
+            spacing=6,
+            scroll=_SCROLL_HIDDEN,
+            on_scroll=remember_equipment_scroll,
+            scroll_interval=80,
+        )
+
+        def restore_equipment_scroll():
+            async def restore():
+                try:
+                    await equipment_compact_row.scroll_to(offset=equipment_scroll["offset"], duration=0)
+                except Exception:
+                    pass
+            page.run_task(restore)
         selection_status = ft.Text("已选择 0 个动作", size=13, color=SUB, weight="bold")
         search = mobile_text_field("搜索动作名称、器械或目标肌群", "", width=dialog_width)
         library_dlg = None
@@ -577,15 +622,38 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 min_lines=3,
                 max_lines=3,
             )
-            target_muscles = mobile_text_field(
-                "目标肌群（逗号或每行分隔）",
-                "\n".join(exercise.get("target_muscles", [])),
-                width=dialog_width,
-                height=84,
-                multiline=True,
-                min_lines=2,
-                max_lines=2,
+            initial_part = str(exercise.get("category") or "胸") if is_new_custom else "胸"
+            if initial_part not in CUSTOM_MUSCLE_OPTIONS:
+                initial_part = "其他"
+            body_part = mobile_dropdown(
+                "训练部位", initial_part,
+                [ft.dropdown.Option(value, value) for value in CUSTOM_MUSCLE_OPTIONS], width=dialog_width,
             )
+            initial_target = next(iter(exercise.get("target_muscles", [])), CUSTOM_MUSCLE_OPTIONS[initial_part][0])
+            if initial_target not in CUSTOM_MUSCLE_OPTIONS[initial_part]:
+                initial_target = CUSTOM_MUSCLE_OPTIONS[initial_part][0]
+            target_muscle = mobile_dropdown(
+                "目标肌群", initial_target,
+                [ft.dropdown.Option(value, value) for value in CUSTOM_MUSCLE_OPTIONS[initial_part]], width=dialog_width,
+            )
+            initial_equipment = str(exercise.get("equipment") or "其他")
+            if initial_equipment not in CUSTOM_EQUIPMENT_OPTIONS:
+                initial_equipment = "其他"
+            equipment = mobile_dropdown(
+                "器械", initial_equipment,
+                [ft.dropdown.Option(value, value) for value in CUSTOM_EQUIPMENT_OPTIONS], width=dialog_width,
+            )
+
+            def refresh_target_options(event=None):
+                part = str(body_part.value or "其他")
+                options = CUSTOM_MUSCLE_OPTIONS.get(part, CUSTOM_MUSCLE_OPTIONS["其他"])
+                target_muscle.field.options = [ft.dropdown.Option(value, value) for value in options]
+                if target_muscle.value not in options:
+                    target_muscle.value = options[0]
+                if event is not None:
+                    page.update()
+
+            body_part.field.on_select = refresh_target_options
             mistakes = mobile_text_field(
                 "注意点（每行一条）",
                 "\n".join(exercise.get("mistakes", [])),
@@ -659,17 +727,11 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 ]
                 source_exercise = exercise
                 if is_new_custom:
-                    muscle_text = str(target_muscles.value or "")
-                    parsed_target_muscles = [
-                        item.strip()
-                        for item in muscle_text.replace("，", ",").replace("、", ",").replace("\n", ",").split(",")
-                        if item.strip()
-                    ]
                     custom_spec = {
                         "name": action_name,
-                        "category": "自定义",
-                        "equipment": "其他",
-                        "target_muscles": list(dict.fromkeys(parsed_target_muscles)),
+                        "category": str(body_part.value or "其他"),
+                        "equipment": str(equipment.value or "其他"),
+                        "target_muscles": [str(target_muscle.value or "其他")],
                         "cues": [item.strip() for item in str(cues.value or "").splitlines() if item.strip()],
                         "mistakes": [item.strip() for item in str(mistakes.value or "").splitlines() if item.strip()],
                         "default_weight_kg": max(0, to_float(weight.value)) if selected_mode == "strength" else None,
@@ -726,7 +788,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 "新增自定义动作" if is_new_custom else "设置动作",
                 [
                     section_title("动作"), name, mode,
-                    *([section_title("动作说明"), target_muscles, cues, mistakes] if is_new_custom else []),
+                    *([section_title("动作说明"), body_part, target_muscle, equipment, cues, mistakes] if is_new_custom else []),
                     ft.Container(content=small_text("默认值仅用于首次添加；有历史时使用上次成绩，自重动作的重量可留空。"), bgcolor=SURFACE, border_radius=8, padding=8),
                     section_title("训练参数"),
                     strength_fields, duration_fields, distance_holder, metrics_holder,
@@ -787,11 +849,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 lambda e, item=exercise: open_help(item),
                 lambda e, item=exercise: toggle_exercise(item),
                 selected=exercise_name in selected_names,
-                on_delete=(
-                    lambda e, item=exercise: confirm_delete_custom_exercise(item)
-                    if any(str(item.get("name") or "") == exercise_name for item in custom_exercises)
-                    else None
-                ),
+                on_delete=None,
             )
 
         def toggle_exercise(exercise):
@@ -837,48 +895,174 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         def rebuild_categories():
             category_rows.controls.clear()
-            category_rows.controls.extend(build_category_rows(categories, selected["category"], choose_category))
+            category_rows.controls.extend(build_category_sidebar(categories, selected["category"], choose_category))
+
+        def rebuild_filters():
+            visible = [item for item in catalog if item.get("category") == selected["category"]]
+            subgroups = list(dict.fromkeys(str(item.get("subgroup") or "整体") for item in visible))
+            if selected["subgroup"] not in subgroups:
+                selected["subgroup"] = "全部"
+            filtered_visible = visible if selected["subgroup"] == "全部" else [
+                item for item in visible
+                if str(item.get("subgroup") or "整体") == selected["subgroup"]
+            ]
+            # Only show equipment that exists for the current body-part and
+            # subgroup; e.g. abductor work does not advertise barbells.
+            equipment = list(dict.fromkeys(str(item.get("equipment") or "其他") for item in filtered_visible))
+            equipment_priority = ("杠铃", "哑铃", "绳索", "史密斯机", "器械", "自重", "壶铃", "弹力带", "健身球", "TRX&弹力带", "其他")
+            priority_index = {value: index for index, value in enumerate(equipment_priority)}
+            equipment.sort(key=lambda value: (priority_index.get(value, len(priority_index)), value))
+            if selected["equipment"] not in equipment:
+                selected["equipment"] = "全部"
+                selected["show_more_equipment"] = False
+            subgroup_rows.controls = [
+                make_button(label, on_click=lambda e, value=label: choose_subgroup(value), bgcolor=PRIMARY if selected["subgroup"] == label else PRIMARY_SOFT, color="#FFFFFF" if selected["subgroup"] == label else GREEN)
+                for label in ["全部", *subgroups]
+            ]
+            common_equipment = [item for item in equipment if item in equipment_priority[:6]]
+            other_equipment = [item for item in equipment if item not in common_equipment]
+
+            def equipment_button(label):
+                return make_button(
+                    label,
+                    on_click=lambda e, value=label: choose_equipment(value),
+                    bgcolor=PRIMARY if selected["equipment"] == label else PRIMARY_SOFT,
+                    color="#FFFFFF" if selected["equipment"] == label else GREEN,
+                )
+
+            if selected["show_more_equipment"]:
+                # Expanded mode deliberately has no horizontal scroller: every
+                # available option is wrapped into visible rows, ending with
+                # the collapse control.
+                expanded_buttons = [equipment_button(label) for label in ["全部", *equipment]]
+                expanded_buttons.append(make_button("收起器械", on_click=lambda e: toggle_more_equipment(), bgcolor=PRIMARY_SOFT, color=GREEN))
+                controls = [
+                    ft.Row(expanded_buttons[index:index + 3], spacing=6)
+                    for index in range(0, len(expanded_buttons), 3)
+                ]
+            else:
+                # A selected non-common tool stays immediately after “全部”,
+                # so a rebuild never makes the user hunt for it at the start
+                # of the horizontal strip again.
+                pinned = [selected["equipment"]] if selected["equipment"] in other_equipment else []
+                compact_buttons = [equipment_button(label) for label in ["全部", *pinned, *common_equipment]]
+                if [item for item in other_equipment if item not in pinned]:
+                    compact_buttons.append(make_button("更多器械", on_click=lambda e: toggle_more_equipment(), bgcolor=PRIMARY_SOFT, color=GREEN))
+                # Keep one Row instance across filter updates. Replacing the
+                # Row is what previously reset a user's horizontal position.
+                equipment_compact_row.controls = compact_buttons
+                controls = [equipment_compact_row]
+            equipment_rows.controls = controls
 
         def choose_category(category):
             selected["category"] = category
+            selected["limit"] = page_size
+            selected["show_more_equipment"] = False
             rebuild_categories()
+            rebuild_filters()
             rebuild_list()
             page.update()
 
-        def choose_sort(mode):
-            selected["sort"] = mode
+        def choose_subgroup(subgroup):
+            selected["subgroup"] = subgroup
+            selected["limit"] = page_size
+            rebuild_filters()
             rebuild_list()
             page.update()
+
+        def choose_equipment(equipment):
+            was_expanded = selected["show_more_equipment"]
+            selected["equipment"] = equipment
+            # Choosing a normal compact option returns the selector to compact
+            # mode, which also releases a previously pinned uncommon option.
+            if equipment == "全部" or equipment in ("杠铃", "哑铃", "绳索", "史密斯机", "器械", "自重"):
+                selected["show_more_equipment"] = False
+            if was_expanded and not selected["show_more_equipment"]:
+                equipment_scroll["offset"] = 0.0
+            selected["limit"] = page_size
+            rebuild_filters()
+            rebuild_list()
+            page.update()
+            if not selected["show_more_equipment"]:
+                restore_equipment_scroll()
+
+        def toggle_more_equipment():
+            selected["show_more_equipment"] = not selected["show_more_equipment"]
+            if not selected["show_more_equipment"]:
+                # Collapsing deliberately starts at “全部”, followed by any
+                # selected pinned uncommon tool.
+                equipment_scroll["offset"] = 0.0
+            rebuild_filters()
+            page.update()
+            if not selected["show_more_equipment"]:
+                restore_equipment_scroll()
+
+        def choose_sort(mode):
+            selected["sort"] = mode
+            selected["limit"] = page_size
+            sort_row.controls = build_sort_row(choose_sort, selected["sort"]).controls
+            rebuild_list()
+            page.update()
+
+        def load_more(e=None):
+            selected["limit"] += page_size
+            rebuild_list()
+            page.update()
+
+        def on_search_change(e=None):
+            selected["limit"] = page_size
+            rebuild_list(e)
 
         def rebuild_list(e=None):
             query = (search.value or "").strip()
             results = search_exercises(query, None if query else selected["category"], catalog)
+            if not query and selected["subgroup"] != "全部":
+                results = [item for item in results if str(item.get("subgroup") or "整体") == selected["subgroup"]]
+            if not query and selected["equipment"] != "全部":
+                results = [item for item in results if str(item.get("equipment") or "其他") == selected["equipment"]]
             results = sort_exercises(results, usage_stats, selected["sort"])
+            total_results = len(results)
+            rendered_results = results[:selected["limit"]]
             list_holder.controls.clear()
-            list_holder.controls.extend(exercise_row(item) for item in results)
+            list_holder.controls.extend(exercise_row(item) for item in rendered_results)
+            load_more_holder.controls.clear()
+            if total_results > len(rendered_results):
+                load_more_holder.controls.append(make_button(
+                    f"加载更多（已显示 {len(rendered_results)}/{total_results}）",
+                    on_click=load_more,
+                    bgcolor=PRIMARY_SOFT,
+                    color=GREEN,
+                    expand=True,
+                ))
             if not results:
                 list_holder.controls.append(ft.Container(content=small_text("没有匹配动作，可使用下方自定义动作"), bgcolor=SURFACE, border_radius=10, padding=12))
             if e is not None:
                 page.update()
 
-        search.on_change = rebuild_list
+        search.on_change = on_search_change
         rebuild_categories()
+        rebuild_filters()
         rebuild_list()
         custom_item = {"name": "", "category": "自定义", "equipment": "其他", "target_muscles": [], "cues": [], "mistakes": [], "default_weight_kg": None, "default_reps": 10, "default_sets": 4, "recording_mode": "strength", "distance_enabled": True}
-        sort_row = build_sort_row(choose_sort)
-        custom_button = make_button(
-            "新建自定义动作",
-            on_click=lambda e: open_setup(custom_item),
-            icon=ft.Icons.ADD,
-            bgcolor=PRIMARY_SOFT,
-            color=GREEN,
-            expand=True,
-        )
+        sort_row = build_sort_row(choose_sort, selected["sort"])
+        browser_panel = ft.Row([
+            ft.Container(content=category_rows, width=88, padding=ft.Padding(left=0, top=0, right=4, bottom=0)),
+            ft.VerticalDivider(width=1, color="#D9E6E1"),
+            ft.Column([subgroup_rows, equipment_rows, sort_row, selection_status, list_holder, load_more_holder], expand=True, spacing=8),
+        ], height=560, spacing=8)
         library_dlg = full_form_sheet(
             f"添加动作 · {len(catalog)} 个",
-            [search, sort_row, category_rows, selection_status, list_holder, custom_button],
+            [search, browser_panel],
             add_selected_exercises,
             save_label="添加已选动作",
+            header_action=ft.IconButton(
+                icon=ft.Icons.ADD,
+                tooltip="新建自定义动作",
+                width=48,
+                height=48,
+                icon_color=PRIMARY,
+                on_click=lambda e: open_setup(custom_item),
+            ),
         )
         library_dlg.on_dismiss = after_library_dismiss
         open_control(library_dlg)
@@ -927,13 +1111,21 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         if not session or not exercise or session.get("status") == "active":
             return
         dialog_width = responsive_width()
+        source_exercise = next(
+            (
+                item for item in exercise_catalog(load_custom_exercises())
+                if str(item.get("id") or "") == str(exercise.get("exercise_id") or "")
+            ),
+            {},
+        )
         mode = normalize_recording_mode(exercise.get("recording_mode"))
         raw_sets = [item for item in exercise.get("sets", []) if isinstance(item, dict)]
         first_set = raw_sets[0] if raw_sets else {}
         weight = mobile_text_field(
-            "重量 kg（自重可留空）",
+            "重量 kg",
             "" if to_float(first_set.get("weight_kg")) <= 0 else f"{to_float(first_set.get('weight_kg')):g}",
             keyboard_type=_KEYBOARD_NUMBER,
+            hint_text="自重（留空）",
             expand=True,
         )
         reps = mobile_text_field(
@@ -983,7 +1175,25 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 controls.append(distance)
             if mode == "cardio" and metric_fields:
                 controls.append(responsive_field_grid(list(metric_fields.values()), columns=2, viewport_width=dialog_width))
-
+        media_src = str(source_exercise.get("gif") or source_exercise.get("image") or "")
+        if media_src:
+            controls.append(ft.Container(
+                content=ft.Image(src=media_src, height=190, fit="contain"),
+                height=206,
+                alignment=ft.Alignment(0, 0),
+                bgcolor="#F5FAF7",
+                border_radius=12,
+                padding=8,
+            ))
+        cues = [str(cue).strip() for cue in source_exercise.get("cues", []) if str(cue).strip()]
+        if cues:
+            controls.extend([
+                section_title("动作要点"),
+                ft.Column(
+                    [ft.Text(f"{index}. {cue}", size=13, color=TEXT) for index, cue in enumerate(cues, 1)],
+                    spacing=5,
+                ),
+            ])
         edit_dlg = None
 
         def save_edit(e=None):

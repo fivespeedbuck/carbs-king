@@ -312,8 +312,31 @@ def sort_exercises(exercises: Sequence[Mapping[str, Any]], stats: Mapping[str, M
     def usage(item: Mapping[str, Any]) -> Mapping[str, Any]:
         return stats.get(str(item.get("name") or "").strip().casefold(), {})
 
+    # A neutral global ordering gives new users useful foundational movements
+    # before they have personal history. Personal frequency and recency still
+    # take precedence below once records exist.
+    popular_terms = (
+        "卧推", "深蹲", "硬拉", "引体向上", "高位下拉", "划船", "腿举",
+        "肩推", "推举", "俯卧撑", "箭步蹲", "侧平举", "二头肌弯举", "三头肌下压", "卷腹", "平板支撑",
+    )
+    variant_terms = (
+        "宽握", "宽距", "窄握", "窄距", "反握", "上斜", "下斜", "暂停", "断头台", "健身球", "弹力带", "跪姿",
+        "单臂", "单腿", "辅助", "地面", "颈后", "后视", "侧视", "第二式", "第三式",
+    )
+
+    def popularity(item: Mapping[str, Any]) -> int:
+        name = str(item.get("name") or "")
+        for index, term in enumerate(popular_terms):
+            if term in name:
+                base = (len(popular_terms) - index) * 10
+                # Variants remain searchable, but basic barbell/dumbbell moves
+                # surface first when the user has no personal history.
+                return max(0, base - 4 * sum(term in name for term in variant_terms))
+        return 0
+
     result.sort(key=lambda item: str(item.get("name") or "").casefold())
     if mode == "frequent":
+        result.sort(key=popularity, reverse=True)
         result.sort(key=lambda item: str(usage(item).get("last_date", "")), reverse=True)
         result.sort(key=lambda item: int(usage(item).get("session_count", 0)), reverse=True)
         return result

@@ -18,6 +18,7 @@ from app_utils import calc_item, to_float
 from controller_runtime import ControllerRuntime
 from diet_service import PersistedSupplementList, DietViewState, diet_route_for_view, normalize_diet_view
 from diet_views import DietShellRenderers, build_diet_shell, diet_shortcut_panel
+from food_library import FOOD_CATEGORIES, food_catalog, search_foods
 from form_views import FormViewContext, build_full_form_sheet
 from repositories import AppRepositories
 from ui_components import (
@@ -106,7 +107,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
     MEALS = deps.meals
     _KEYBOARD_NUMBER = deps.keyboard_number
     _SCROLL_HIDDEN = deps.scroll_hidden
-    foods = repositories.foods.load()
+    foods = food_catalog(repositories.foods.load())
     supplements = PersistedSupplementList(repositories.supplements.load(), repositories.supplements.save)
 
     def full_form_sheet(title, controls, on_save, save_label="保存"):
@@ -199,7 +200,10 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
 
         meal_dd = mobile_dropdown("餐次", default_meal, [ft.dropdown.Option(m) for m in MEALS], expand=True)
         search = mobile_text_field("搜索食物", expand=True)
-        food_dd = mobile_dropdown("食物", None, [ft.dropdown.Option(f["name"]) for f in foods], expand=True)
+        food_dd = mobile_dropdown("食物", None, [ft.dropdown.Option(f["name"]) for f in foods[:24]], expand=True)
+        # Keep the native dropdown on the same baseline and field height as
+        # the search TextField on Android.
+        food_dd.field.height = search.field.height
 
         def current_unit():
             food = next((f for f in foods if f.get("name") == food_dd.value), None)
@@ -207,12 +211,29 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
 
         qty = mobile_text_field(f"数量（{current_unit()}）", keyboard_type=_KEYBOARD_NUMBER, expand=True)
 
+        def choose_portion(grams):
+            # Dishes are recorded by what was actually eaten, not the whole
+            # shared plate. These are intentionally editable gram shortcuts.
+            qty.value = str(grams)
+            page.update()
+
+        portion_shortcuts = ft.Column([
+            ft.Row([
+                make_button("一两口 30g", on_click=lambda e: choose_portion(30), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
+                make_button("几口 60g", on_click=lambda e: choose_portion(60), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
+            ], spacing=8),
+            ft.Row([
+                make_button("半份 150g", on_click=lambda e: choose_portion(150), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
+                make_button("一份 250g", on_click=lambda e: choose_portion(250), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
+            ], spacing=8),
+        ], spacing=8)
+
         def update_qty_label():
             qty.label_text = f"数量（{current_unit()}）"
 
         def apply_filter(e=None):
             kw = (search.value or "").strip().lower()
-            filtered = [f for f in foods if not kw or kw in f.get("name", "").lower() or kw in f.get("category", "").lower()]
+            filtered = search_foods(kw, foods=foods)[:24]
             food_dd.options = [ft.dropdown.Option(f["name"]) for f in filtered]
             if len(filtered) == 1:
                 food_dd.value = filtered[0]["name"]
@@ -346,6 +367,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             [
                 diet_shortcut_panel(shortcut_tabs, shortcut_list),
                 two_field_grid(meal_dd, qty, viewport_width=dialog_width),
+                portion_shortcuts,
                 two_field_grid(search, food_dd, viewport_width=dialog_width),
             ],
             confirm,
@@ -581,7 +603,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             ], spacing=6), bgcolor="#FFFFFF", border_radius=8, padding=8),
         ], spacing=8))
 
-    def render_food_library():
+    def _render_food_library_legacy():
         search = mobile_text_field("搜索食物", value="", expand=True)
         list_box = ft.Column(spacing=4)
 
@@ -606,6 +628,123 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             card(ft.Row([section_title("食物库"), make_button("新增", on_click=lambda e: open_food_library_dialog(), icon=ft.Icons.ADD)], alignment="spaceBetween")),
             card(search, padding=10),
             list_box,
+        ], spacing=0)
+
+    def render_food_library():
+        """Fast, no-image food browser for the bundled 1,657-item catalog."""
+        search = mobile_text_field("搜索食物", value="", expand=True)
+        selected = {"category": "全部", "subgroup": "全部", "limit": 24}
+        scroll_auto = getattr(getattr(ft, "ScrollMode", object()), "AUTO", "auto")
+        filter_row = ft.Row(spacing=6, scroll=scroll_auto)
+        list_box = ft.ListView(spacing=4, height=520, build_controls_on_demand=True, cache_extent=180)
+        load_more_holder = ft.Column(spacing=6)
+
+        def rebuild_filters():
+            controls = [make_button(
+                "全部",
+                on_click=lambda e: choose_category("全部"),
+                bgcolor=PRIMARY if selected["category"] == "全部" else PRIMARY_SOFT,
+                color="#FFFFFF" if selected["category"] == "全部" else GREEN,
+            )]
+            controls.extend(
+                make_button(
+                    label,
+                    on_click=lambda e, value=label: choose_category(value),
+                    bgcolor=PRIMARY if selected["category"] == label and selected["subgroup"] == "全部" else PRIMARY_SOFT,
+                    color="#FFFFFF" if selected["category"] == label and selected["subgroup"] == "全部" else GREEN,
+                )
+                for label in FOOD_CATEGORIES
+            )
+            if selected["category"] != "全部":
+                subgroups = list(dict.fromkeys(
+                    str(item.get("subgroup") or "其他")
+                    for item in foods if item.get("category") == selected["category"]
+                ))
+                if selected["subgroup"] not in subgroups:
+                    selected["subgroup"] = "全部"
+                controls.extend(
+                    make_button(
+                        label,
+                        on_click=lambda e, value=label: choose_subgroup(value),
+                        bgcolor=PRIMARY if selected["subgroup"] == label else PRIMARY_SOFT,
+                        color="#FFFFFF" if selected["subgroup"] == label else GREEN,
+                    )
+                    for label in subgroups
+                )
+            filter_row.controls = controls
+
+        def choose_category(category):
+            selected["category"] = category
+            selected["subgroup"] = "全部"
+            selected["limit"] = 24
+            rebuild_filters()
+            rebuild_list()
+            page.update()
+
+        def choose_subgroup(subgroup):
+            selected["subgroup"] = subgroup
+            selected["limit"] = 24
+            rebuild_filters()
+            rebuild_list()
+            page.update()
+
+        def load_more(e=None):
+            selected["limit"] += 24
+            rebuild_list()
+            page.update()
+
+        def rebuild_list(e=None):
+            keyword = str(search.value or "").strip()
+            category = None if keyword or selected["category"] == "全部" else selected["category"]
+            matched = search_foods(keyword, category=category, foods=foods)
+            if not keyword and selected["subgroup"] != "全部":
+                matched = [item for item in matched if str(item.get("subgroup") or "其他") == selected["subgroup"]]
+            visible = matched[:selected["limit"]]
+            list_box.controls.clear()
+            for food in visible:
+                name = str(food.get("name") or "")
+                index = next((i for i, item in enumerate(foods) if item.get("name") == name), -1)
+                if index < 0:
+                    continue
+                macros = (
+                    f"每 100g：{food.get('kcal')} kcal · 碳水 {food.get('carb')}g · "
+                    f"蛋白 {food.get('protein')}g · 脂肪 {food.get('fat')}g"
+                )
+                micros = f"纤维 {food.get('fiber', 0)}g · 胆固醇 {food.get('cholesterol', 0)}mg"
+                list_box.controls.append(card(ft.Row([
+                    ft.Column([
+                        ft.Text(f"{name} · {food.get('category')}", size=14, weight="bold", max_lines=1, overflow="ellipsis"),
+                        small_text(macros),
+                        small_text(micros, color=GREEN),
+                    ], expand=True, spacing=2),
+                    ft.IconButton(icon=ft.Icons.EDIT, icon_color=PRIMARY, on_click=lambda e, i=index: open_food_library_dialog(i)),
+                    ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, icon_color=RED, on_click=lambda e, i=index: delete_food(i)),
+                ]), padding=10, margin_bottom=6))
+            load_more_holder.controls.clear()
+            if len(matched) > len(visible):
+                load_more_holder.controls.append(make_button(
+                    f"加载更多（已显示 {len(visible)}/{len(matched)}）",
+                    on_click=load_more,
+                    bgcolor=PRIMARY_SOFT,
+                    color=GREEN,
+                    expand=True,
+                ))
+            if e is not None:
+                page.update()
+
+        def on_search_change(e=None):
+            selected["limit"] = 24
+            rebuild_list(e)
+
+        search.on_change = on_search_change
+        rebuild_filters()
+        rebuild_list()
+        return ft.Column([
+            card(ft.Row([section_title("食物库"), make_button("新增", on_click=lambda e: open_food_library_dialog(), icon=ft.Icons.ADD)], alignment="spaceBetween")),
+            card(search, padding=10),
+            card(ft.Container(content=filter_row, height=52, clip_behavior=ft.ClipBehavior.HARD_EDGE), padding=10),
+            list_box,
+            load_more_holder,
         ], spacing=0)
 
     return DietController(

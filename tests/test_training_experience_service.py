@@ -158,6 +158,18 @@ class ExerciseRankingTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in recent], ["Beta", "Gamma", "Alpha"])
         self.assertEqual(library, [{"name": "Alpha"}, {"name": "Beta"}, {"name": "Gamma"}])
 
+    def test_frequent_sort_places_personal_history_before_global_popularity(self):
+        library = [{"name": "杠铃卧推"}, {"name": "冷门拉伸"}, {"name": "个人动作"}]
+        stats = {"个人动作": {"name": "个人动作", "session_count": 3, "last_date": "2026-07-20"}}
+        self.assertEqual(
+            [item["name"] for item in sort_exercises(library, stats, "frequent")],
+            ["个人动作", "杠铃卧推", "冷门拉伸"],
+        )
+
+    def test_frequent_sort_places_base_move_before_cold_variants(self):
+        library = [{"name": "史密斯下斜反握推举"}, {"name": "史密斯卧推"}, {"name": "史密斯宽距卧推"}]
+        self.assertEqual(sort_exercises(library, {}, "frequent")[0]["name"], "史密斯卧推")
+
 
 class WeightEditingTests(unittest.TestCase):
     def test_step_is_exactly_one_point_two_five_and_clamped(self):

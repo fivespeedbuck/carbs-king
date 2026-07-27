@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -253,7 +254,7 @@ def _recording_mode(name: str) -> str:
         return "timed"
     return "strength"
 
-EXERCISE_LIBRARY: list[dict[str, Any]] = [
+_LEGACY_EXERCISE_LIBRARY: list[dict[str, Any]] = [
     {
         "name": name,
         "category": category,
@@ -273,6 +274,30 @@ EXERCISE_LIBRARY: list[dict[str, Any]] = [
     for category, specs in _EXERCISE_SPECS.items()
     for name, equipment, target_muscles, guide, default_weight_kg, default_reps, default_sets in specs
 ]
+
+
+def _load_offline_dataset() -> list[dict[str, Any]]:
+    """Load the imported Chinese exercise dataset when it ships with the app."""
+    path = Path(__file__).with_name("exercise_catalog_data.json")
+    try:
+        values = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(values, list):
+        return []
+    return [item for item in values if isinstance(item, dict) and str(item.get("name") or "").strip()]
+
+
+# The offline dataset replaces the previous small strength library.  Keep the
+# legacy definitions only as a safe development fallback when the data file is
+# absent; user-created actions continue to be appended separately.
+EXERCISE_LIBRARY = _load_offline_dataset() or _LEGACY_EXERCISE_LIBRARY
+_CATEGORY_ORDER = (
+    "胸", "背", "腿", "肩", "二头", "三头", "小臂", "颈部", "臀部",
+    "功能性", "核心稳定", "腹部", "热身动作", "拉伸", "有氧", "全身", "计时动作", "Tabata", "自重", "其他",
+)
+_AVAILABLE_CATEGORIES = {str(item.get("category") or "其他") for item in EXERCISE_LIBRARY}
+EXERCISE_CATEGORIES = tuple(category for category in _CATEGORY_ORDER if category in _AVAILABLE_CATEGORIES)
 
 _EXERCISES_BY_NAME = {exercise["name"].casefold(): exercise for exercise in EXERCISE_LIBRARY}
 
@@ -299,8 +324,8 @@ def normalize_custom_exercise(value: Any) -> dict[str, Any] | None:
 
     return {
         "name": name,
-        "category": "自定义",
-        "equipment": "其他",
+        "category": str(value.get("category") or "其他").strip(),
+        "equipment": str(value.get("equipment") or "其他").strip(),
         "target_muscles": text_list("target_muscles"),
         "cues": text_list("cues"),
         "mistakes": text_list("mistakes"),
@@ -360,7 +385,9 @@ def delete_custom_exercise(name: str, path: Path = TRAINING_FILE) -> bool:
 
 def exercise_catalog(custom_exercises: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     custom = load_custom_exercises() if custom_exercises is None else custom_exercises
-    return [*EXERCISE_LIBRARY, *custom]
+    # User entries intentionally come first: a custom variant with the same
+    # display name must remain selectable after the much larger offline import.
+    return [*custom, *EXERCISE_LIBRARY]
 
 
 def search_exercises(

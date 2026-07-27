@@ -47,10 +47,12 @@ supplement_library.json
 user_profile.json
 import_safety_backups/
 src/storage/
+src/assets/
 
 # Version packages are attached to GitHub Releases, not committed
 *.zip
 release_candidates/*
+outputs/
 
 # Operating system files
 .DS_Store

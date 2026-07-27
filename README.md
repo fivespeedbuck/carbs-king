@@ -2,13 +2,13 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**v62 / 1.2.3 / Build 62**
+- 当前版本：**v70 / 1.2.3 / Build 70**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-[![下载 v62 APK](https://img.shields.io/badge/下载-v62_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v62/carbs_king-v62.apk)
+[![下载 v70 APK](https://img.shields.io/badge/下载-v70_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v70/carbs_king-v70.apk)
 
-[查看 v62 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v62)
+[查看 v70 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v70)
 
 ## 项目定位
 
@@ -54,8 +54,9 @@
 
 ### 训练
 
-- 内置 106 个训练动作，支持按部位筛选，并按名称、器械和目标肌群搜索。
-- 动作详情包含目标肌群、动作要点和常见错误。
+- 内置 1324 个离线中文训练动作，覆盖胸、背、腿、肩、二头、三头、核心、腹部、拉伸和有氧等部位；支持按部位、细分肌群、器械和关键词筛选。
+- 动作详情包含离线图片/GIF、目标肌群、动作要点和常见错误；选入训练后可在参数编辑页直接查看。
+- 动作库将常练和热门动作优先展示，冷门变式按每页 24 条加载；器械筛选会随当前部位自动隐藏无结果项，并支持展开全部器械。
 - 支持逐组重量、次数、完成状态、RIR/RPE、防误触完成确认、撤销完成和训练总结。
 - 支持同一天保存多场训练，以及复用历史复合训练组合。
 - 支持超级组和复合组，安排页按整组拖动，训练中显示组内进度和下一个动作。
@@ -67,7 +68,8 @@
 
 - 六个固定餐次：早餐、午餐、晚餐、练前、练后、偷吃。
 - 饮食页包含“今日饮食 / 食物库”互斥视图。
-- 食物库记录单位、基准数量、计量口径、热量和三大营养素，可新增和编辑。
+- 食物库提供 2000+ 条可搜索食物，包含基础食材、家常菜、外卖/地方菜、早餐小吃、便利店食品与日常餐饮；记录单位、基准数量、计量口径、热量和三大营养素，可新增和编辑。
+- 添加饮食提供一两口、几口、半份和一份四种快捷份量，并支持按餐次记录堂食或外卖。
 - 补剂库与今日补剂记录保留在“身体与恢复”页面。
 - 当日汇总直接对照宏量目标区间，减少在多个页面之间来回查看。
 
@@ -94,7 +96,7 @@
 
 ## Android 安装与覆盖更新
 
-1. 下载 [carbs_king-v62.apk](https://github.com/fivespeedbuck/carbs-king/releases/download/v62/carbs_king-v62.apk)。
+1. 下载 [carbs_king-v70.apk](https://github.com/fivespeedbuck/carbs-king/releases/download/v70/carbs_king-v70.apk)。
 2. 在 Android 中允许当前文件管理器或浏览器“安装未知应用”。
 3. 打开 APK 并安装。已有旧版时，请直接覆盖安装，**不要先卸载旧版**。
 4. 首次使用休息提醒时，根据系统提示允许通知和精确闹钟权限。
@@ -182,7 +184,7 @@ Windows 下可以运行：
 - 优先使用项目专属的备份签名密钥。
 - 构建成功后把 `pyproject.toml` 中的 Build 自动加一，为下次更新做准备。
 
-当前候选包为 `1.2.3 / Build 62`，构建脚本已把下一次 Build 预备为 `63`。发布新包前应同时核对版本号、Build、更新日志和 Release 文件名。
+当前发布包为 `1.2.3 / Build 70`，构建脚本会在成功后自动把下一次 Build 预备为 `71`。发布新包前应同时核对版本号、Build、更新日志和 Release 文件名。
 
 ## 目录结构
 
@@ -202,8 +204,8 @@ carbs-king/
 
 ## 版本与 Release
 
-- [v62 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v62)
-- [v62 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v62/carbs_king-v62.apk)
+- [v70 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v70)
+- [v70 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v70/carbs_king-v70.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 
