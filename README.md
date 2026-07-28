@@ -2,13 +2,13 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**v70 / 1.2.3 / Build 70**
+- 当前版本：**v71 / 1.2.3 / Build 71**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-[![下载 v70 APK](https://img.shields.io/badge/下载-v70_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v70/carbs_king-v70.apk)
+[![下载 v71 APK](https://img.shields.io/badge/下载-v71_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v71/carbs_king-v71.apk)
 
-[查看 v70 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v70)
+[查看 v71 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v71)
 
 ## 项目定位
 
@@ -96,7 +96,7 @@
 
 ## Android 安装与覆盖更新
 
-1. 下载 [carbs_king-v70.apk](https://github.com/fivespeedbuck/carbs-king/releases/download/v70/carbs_king-v70.apk)。
+1. 下载 [carbs_king-v71.apk](https://github.com/fivespeedbuck/carbs-king/releases/download/v71/carbs_king-v71.apk)。
 2. 在 Android 中允许当前文件管理器或浏览器“安装未知应用”。
 3. 打开 APK 并安装。已有旧版时，请直接覆盖安装，**不要先卸载旧版**。
 4. 首次使用休息提醒时，根据系统提示允许通知和精确闹钟权限。
@@ -184,7 +184,7 @@ Windows 下可以运行：
 - 优先使用项目专属的备份签名密钥。
 - 构建成功后把 `pyproject.toml` 中的 Build 自动加一，为下次更新做准备。
 
-当前发布包为 `1.2.3 / Build 70`，构建脚本会在成功后自动把下一次 Build 预备为 `71`。发布新包前应同时核对版本号、Build、更新日志和 Release 文件名。
+当前发布包为 `1.2.3 / Build 71`，构建脚本会在成功后自动把下一次 Build 预备为 `72`。发布新包前应同时核对版本号、Build、更新日志和 Release 文件名。
 
 ## 目录结构
 
@@ -204,8 +204,8 @@ carbs-king/
 
 ## 版本与 Release
 
-- [v70 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v70)
-- [v70 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v70/carbs_king-v70.apk)
+- [v71 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v71)
+- [v71 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v71/carbs_king-v71.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 

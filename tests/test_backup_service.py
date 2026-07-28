@@ -189,7 +189,7 @@ class BackupServiceTests(unittest.TestCase):
             self.assertEqual(repositories.achievements.load(), {})
             self.assertEqual(profile_store["value"], {})
             self.assertFalse(state["profile_inited"])
-            self.assertEqual(state["weight"], "62.5")
+            self.assertEqual(state["weight"], "")
             self.assertEqual(foods, original_foods)
             self.assertEqual(supplements, original_supplements)
             self.assertEqual(repositories.foods.load(), original_foods)

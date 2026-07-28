@@ -54,7 +54,8 @@ class MainAnalyticsIntegrationTests(unittest.TestCase):
         self.assertIn("CIRCUMFERENCE_FIELDS", section)
         self.assertIn('("calf_cm", "小腿围")', APP_DEFAULTS_SOURCE)
         self.assertIn('"chart_kind": "circumference"', section)
-        self.assertIn('daily_records.update_circumference(', section)
+        self.assertIn('daily_records.update_circumferences(', section)
+        self.assertIn("一次填写所有已测量围度", section)
         self.assertIn('daily_records.update_calendar_event(selected_date, event)', section)
         self.assertNotIn('repositories.records.save(records)', section)
 

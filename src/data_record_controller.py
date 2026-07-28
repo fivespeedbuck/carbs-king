@@ -16,7 +16,7 @@ from controller_runtime import ControllerRuntime
 from daily_record_controller import DailyRecordController
 from form_views import FormViewContext, build_dialog, build_full_form_sheet
 from repositories import AppRepositories
-from ui_components import RED, labeled_plain_field, make_button, mobile_dropdown, mobile_text_field, small_text
+from ui_components import RED, labeled_plain_field, make_button, mobile_text_field, small_text, two_field_grid
 
 
 @dataclass(frozen=True)
@@ -74,33 +74,28 @@ def create_data_record_controller(deps: DataRecordControllerDependencies) -> Dat
 
         def open_circumference_form():
             circumference_options = list(CIRCUMFERENCE_FIELDS)
-            selected_key = str(data_state.get("metric_key") or "waist_cm")
-            if selected_key not in {key for key, _ in circumference_options}:
-                selected_key = "waist_cm"
             record_date = str(data_state.get("selected_trend_date") or state.get("date") or date.today().isoformat())
             current_record = records.get(record_date, {}) if isinstance(records, dict) else {}
             current_profile = current_record.get("profile", {}) if isinstance(current_record, dict) else {}
             current_circumference = current_profile.get("circumference", {}) if isinstance(current_profile, dict) else {}
-            existing = current_circumference.get(selected_key, "") if isinstance(current_circumference, dict) else ""
             has_existing = any(
                 current_circumference.get(key) not in (None, "")
                 for key, _ in circumference_options
             ) if isinstance(current_circumference, dict) else False
-            existing_notes = current_circumference.get("notes", {}) if isinstance(current_circumference, dict) else {}
 
             date_box, date_field = labeled_plain_field("日期", record_date, width=responsive_width())
-            metric_field = mobile_dropdown(
-                "围度项目",
-                selected_key,
-                [ft.dropdown.Option(key=key, text=label) for key, label in circumference_options],
-                width=responsive_width(),
-            )
-            value_box, value_field = labeled_plain_field("数值 cm", existing, keyboard_type=_KEYBOARD_NUMBER, width=responsive_width())
-            note_box, note_field = labeled_plain_field(
-                "备注（可选）",
-                existing_notes.get(selected_key, "") if isinstance(existing_notes, dict) else "",
-                width=responsive_width(),
-            )
+            circumference_boxes = []
+            circumference_fields = {}
+            for key, label in circumference_options:
+                value = current_circumference.get(key, "") if isinstance(current_circumference, dict) else ""
+                box, field = labeled_plain_field(
+                    f"{label} cm",
+                    value,
+                    keyboard_type=_KEYBOARD_NUMBER,
+                    expand=True,
+                )
+                circumference_boxes.append(box)
+                circumference_fields[key] = field
             sheet = None
 
             def save_circumference(e=None):
@@ -110,47 +105,57 @@ def create_data_record_controller(deps: DataRecordControllerDependencies) -> Dat
                 except ValueError:
                     snack("请输入正确日期，例如 2026-07-22")
                     return
-                metric_key = str(metric_field.field.value or "waist_cm")
-                raw_value = str(value_field.value or "").strip()
-                try:
-                    metric_value = float(raw_value)
-                except ValueError:
-                    snack("请输入围度数值")
+                values = {}
+                for key, field in circumference_fields.items():
+                    raw_value = str(field.value or "").strip()
+                    if not raw_value:
+                        continue
+                    try:
+                        metric_value = float(raw_value)
+                    except ValueError:
+                        snack("围度应为数字")
+                        return
+                    if not 1 <= metric_value <= 300:
+                        snack("围度应在 1-300 cm 之间")
+                        return
+                    values[key] = metric_value
+                if not values:
+                    snack("请至少填写一项围度")
                     return
-                if not 1 <= metric_value <= 300:
-                    snack("围度应在 1-300 cm 之间")
-                    return
-                note = str(note_field.value or "").strip()
-                daily_records.update_circumference(
+                daily_records.update_circumferences(
                     target_date,
-                    metric_key,
-                    metric_value,
+                    values,
                     measured_at=iso_now(),
-                    note=note,
                 )
                 data_state.update({
-                    "active_tab": "趋势", "chart_kind": "circumference", "metric_key": metric_key,
+                    "active_tab": "趋势", "chart_kind": "circumference", "metric_key": "waist_cm",
                     "selected_trend_date": target_date,
                 })
                 close_control(sheet)
                 refresh()
-                snack("围度已记录")
+                snack(f"已记录 {len(values)} 项围度")
 
             def delete_circumference(e=None):
                 target_date = str(date_field.value or "").strip()
-                metric_key = str(metric_field.field.value or "waist_cm")
-                if not daily_records.delete_circumference(target_date, metric_key):
+                if not daily_records.delete_circumferences(target_date):
                     snack("没有可删除的围度记录")
                     return
                 data_state["selected_trend_date"] = None
                 close_control(sheet)
                 refresh()
-                snack("围度记录已删除")
+                snack("当天围度记录已删除")
 
-            controls = [date_box, metric_field, value_box, note_box]
+            controls = [
+                date_box,
+                small_text("一次填写所有已测量围度；未填写的项目不会覆盖已有历史记录。"),
+                *[
+                    two_field_grid(*circumference_boxes[index:index + 2], viewport_width=responsive_width())
+                    for index in range(0, len(circumference_boxes), 2)
+                ],
+            ]
             if has_existing:
                 controls.append(make_button(
-                    "删除这条围度记录",
+                    "删除当天围度记录",
                     on_click=delete_circumference,
                     bgcolor="#FDECEC",
                     color=RED,

@@ -27,7 +27,7 @@ class MemoryRepository:
         self.value = value
 
 
-def build_controller(records=None):
+def build_controller(records=None, *, on_records_changed=None):
     state = AppState.default(MEALS)
     records = records or {}
     repository = MemoryRepository(records)
@@ -45,11 +45,26 @@ def build_controller(records=None):
         restore_training_cursor=lambda: events.append("cursor"),
         refresh=lambda: events.append("refresh"),
         snack=lambda message: events.append(message),
+        on_records_changed=on_records_changed or (lambda: None),
     ))
     return controller, state, repository, events
 
 
 class DailyRecordControllerTests(unittest.TestCase):
+    def test_every_record_persistence_notifies_goal_progress_refresh(self):
+        notifications = []
+        controller, state, _, _ = build_controller(
+            on_records_changed=lambda: notifications.append("records-changed")
+        )
+
+        controller.save()
+        controller.update_calendar_event(state["date"], {"type": "custom", "text": "测试"})
+        controller.update_circumference(
+            state["date"], "waist_cm", 80, measured_at="2026-07-28T08:00:00"
+        )
+
+        self.assertEqual(notifications, ["records-changed"] * 3)
+
     def test_save_preserves_daily_record_contract(self):
         controller, state, repository, events = build_controller()
         state["meals"]["早餐"] = [{"name": "燕麦", "kcal": 100, "carb": 20, "protein": 4, "fat": 2}]

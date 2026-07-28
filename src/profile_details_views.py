@@ -14,6 +14,8 @@ from ui_components import (
 
 
 def build_profile_metrics(targets: Mapping[str, Any]) -> ft.Control:
+    if not targets.get("is_ready", True):
+        return ft.Container(height=0)
     return ft.Container(
         content=ft.Column([
             ft.Row([small_text("去脂体重"), ft.Text(f"{targets['lean_mass']} kg", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
@@ -35,7 +37,9 @@ def build_profile_details(
     *,
     sex: str,
     activity_habit: str,
-    on_record_measurement: Callable[[Any], None],
+    circumference_values: Mapping[str, Any],
+    circumference_expanded: bool,
+    on_toggle_circumference: Callable[[Any], None],
     on_sex_change: Callable[[str], None],
     on_activity_change: Callable[[str], None],
     metrics: ft.Control,
@@ -43,32 +47,46 @@ def build_profile_details(
     backup_panel: ft.Control,
     viewport_width: int | float | None = None,
 ) -> ft.Control:
-    weight_box, bodyfat_box, height_box, age_box, *circumference_boxes = field_boxes
-    circumference_rows = [
-        two_field_grid(*circumference_boxes[index:index + 2], viewport_width=viewport_width)
-        for index in range(0, len(circumference_boxes), 2)
-    ]
+    weight_box, bodyfat_box, height_box, age_box = field_boxes
+    circumference_labels = (
+        ("chest_cm", "胸围"), ("waist_cm", "腰围"), ("hip_cm", "臀围"),
+        ("arm_cm", "上臂围"), ("thigh_cm", "大腿围"), ("calf_cm", "小腿围"),
+    )
+    circumference_rows = []
+    if circumference_expanded:
+        values = []
+        for key, label in circumference_labels:
+            raw = circumference_values.get(key, "")
+            value = f"{raw} cm" if raw not in (None, "") else "未记录"
+            values.append(ft.Container(
+                content=ft.Column([small_text(label), ft.Text(value, size=14, weight="bold", color=TEXT)], spacing=3),
+                bgcolor="#F8FAFC", border_radius=8, padding=10, expand=True,
+            ))
+        circumference_rows = [
+            two_field_grid(*values[index:index + 2], viewport_width=viewport_width)
+            for index in range(0, len(values), 2)
+        ]
     return card(ft.Column([
         section_title("我"),
         two_field_grid(weight_box, bodyfat_box, viewport_width=viewport_width),
         two_field_grid(height_box, age_box, viewport_width=viewport_width),
-        section_title("身体围度（可选）"),
+        make_button(
+            "收起身体围度" if circumference_expanded else "查看身体围度",
+            on_click=on_toggle_circumference,
+            bgcolor=PRIMARY_SOFT,
+            color=GREEN,
+            expand=True,
+        ),
         *circumference_rows,
-        ft.Row([
-            make_button(
-                "记录本次测量", on_click=on_record_measurement,
-                bgcolor=PRIMARY_SOFT, color=GREEN, expand=True,
-            ),
-        ]),
         small_text("性别"),
-        ft.Row([option_button("男", sex, on_sex_change), option_button("女", sex, on_sex_change)], spacing=8),
+        ft.Row([option_button("男", sex, on_sex_change), option_button("?", sex, on_sex_change)], spacing=8),
         small_text("运动习惯"),
         ft.Row([option_button("久坐少动", activity_habit, on_activity_change), option_button("偶尔运动", activity_habit, on_activity_change)], spacing=8),
         ft.Row([option_button("规律训练", activity_habit, on_activity_change), option_button("高频训练", activity_habit, on_activity_change)], spacing=8),
         metrics,
         macro_panel,
         backup_panel,
-        ft.Container(content=small_text("围度只做趋势记录，不参与碳循环公式。保存资料不会新增测量记录。"), bgcolor="#FAFAFA", border_radius=8, padding=10),
+        ft.Container(content=small_text("围度请在“数据 → 记录围度”中一次填写；围度只做趋势记录，不参与碳循环公式。"), bgcolor="#FAFAFA", border_radius=8, padding=10),
     ], spacing=10))
 
 

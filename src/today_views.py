@@ -33,7 +33,7 @@ TODAY_SECTION_SPACING = 8
 @dataclass(frozen=True)
 class TodayDashboardModel:
     kcal: float
-    kcal_target: float
+    kcal_target: float | None
     day_type: str
     macros: Mapping[str, float]
     targets: Mapping[str, float]
@@ -96,19 +96,27 @@ def build_today_dashboard(
     meals: Sequence[str],
     bar_width: int,
 ) -> TodayDashboardResult:
+    profile_ready = bool(model.targets.get("is_ready", True))
+    macro_content = (
+        [small_text(str(model.targets.get("profile_message", "请完善个人资料后计算营养目标。")))]
+        if not profile_ready
+        else [
+            macro_progress_bar("??", model.macros["carb"], target_min=model.targets["carb_min"], target_max=model.targets["carb_max"], kind="carb", width=bar_width),
+            macro_progress_bar("蛋白", model.macros["protein"], target_min=model.targets["protein_min"], target_max=model.targets["protein_max"], kind="protein", width=bar_width),
+            macro_progress_bar("脂肪", model.macros["fat"], target_min=model.targets["fat_min"], target_max=model.targets["fat_max"], kind="fat", width=bar_width),
+        ]
+    )
     macro_card = ft.Container(
         content=ft.Column([
             ft.Row([
                 ft.Column([
                     small_text("今日摄入"),
                     ft.Text(f"{model.kcal:g}", size=40, weight="bold", color=TEXT),
-                    small_text(f"目标约 {model.kcal_target:g} kcal"),
+                    small_text(f"目标约 {model.kcal_target:g} kcal" if profile_ready else "目标待完善资料后计算"),
                 ], spacing=2),
                 pill(model.day_type, ORANGE if model.day_type == "高碳日" else SKY_BLUE if model.day_type == "中碳日" else "#7C5CC4"),
             ], alignment="spaceBetween", vertical_alignment="start"),
-            macro_progress_bar("碳水", model.macros["carb"], target_min=model.targets["carb_min"], target_max=model.targets["carb_max"], kind="carb", width=bar_width),
-            macro_progress_bar("蛋白", model.macros["protein"], target_min=model.targets["protein_min"], target_max=model.targets["protein_max"], kind="protein", width=bar_width),
-            macro_progress_bar("脂肪", model.macros["fat"], target_min=model.targets["fat_min"], target_max=model.targets["fat_max"], kind="fat", width=bar_width),
+            *macro_content,
         ], spacing=8),
         bgcolor="#FFFFFF",
         border=thin_border(),

@@ -1,4 +1,4 @@
-"""Update-safe JSON storage and profile persistence."""
+﻿"""Update-safe JSON storage and profile persistence."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ DATA_FILENAMES = [
     "user_profile.json",
     "training_data.json",
     "achievement_unlocks.json",
+    "goal_challenges.json",
 ]
 
 def get_app_dir() -> Path:
@@ -53,6 +54,7 @@ SUPP_FILE = APP_DIR / "supplement_library.json"
 RECORD_FILE = APP_DIR / "daily_records.json"
 PROFILE_FILE = APP_DIR / "user_profile.json"
 ACHIEVEMENT_FILE = APP_DIR / "achievement_unlocks.json"
+GOAL_CHALLENGE_FILE = APP_DIR / "goal_challenges.json"
 TRAINING_FILE = APP_DIR / "training_data.json"
 
 def migrate_legacy_data():
@@ -113,12 +115,12 @@ def save_json(path: Path, data):
 
 def load_user_profile():
     default = {
-        "weight": "62.5",
-        "bodyfat": "13",
-        "height": "170",
-        "age": "30",
-        "sex": "男",
-        "activity_habit": "规律训练",
+        "weight": "",
+        "bodyfat": "",
+        "height": "",
+        "age": "",
+        "sex": "",
+        "activity_habit": "",
         "waist_cm": "",
         "arm_cm": "",
         "chest_cm": "",
@@ -126,6 +128,7 @@ def load_user_profile():
         "thigh_cm": "",
         "calf_cm": "",
         "macro_mode": "auto",
+        "macro_goal": "减脂",
         "macro_multipliers": DEFAULT_MACRO_MULTIPLIERS,
         "custom_macro_multipliers": DEFAULT_MACRO_MULTIPLIERS,
         "auto_macro_multipliers": DEFAULT_MACRO_MULTIPLIERS,
@@ -166,13 +169,15 @@ def load_user_profile():
     data["auto_macro_multipliers"] = normalized_auto
     if data.get("macro_mode") not in ["auto", "custom"]:
         data["macro_mode"] = "auto"
+    if data.get("macro_goal") not in ["减脂", "保持", "增肌"]:
+        data["macro_goal"] = "减脂"
     return data
 
 def save_user_profile(data):
     save_json(PROFILE_FILE, data)
 
 __all__ = [
-    "ACHIEVEMENT_FILE", "APP_DIR", "FOOD_FILE", "PROFILE_FILE", "RECORD_FILE",
-    "SUPP_FILE", "TRAINING_FILE", "load_json", "load_user_profile", "save_json",
-    "save_user_profile",
+    "ACHIEVEMENT_FILE", "APP_DIR", "FOOD_FILE", "GOAL_CHALLENGE_FILE",
+    "PROFILE_FILE", "RECORD_FILE", "SUPP_FILE", "TRAINING_FILE", "load_json",
+    "load_user_profile", "save_json", "save_user_profile",
 ]

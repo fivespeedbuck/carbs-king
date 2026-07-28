@@ -1,4 +1,4 @@
-"""Repository contracts and JSON-backed application repositories."""
+﻿"""Repository contracts and JSON-backed application repositories."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app_defaults import DEFAULT_FOODS, DEFAULT_SUPPLEMENTS
 from storage_service import (
     ACHIEVEMENT_FILE,
     FOOD_FILE,
+    GOAL_CHALLENGE_FILE,
     PROFILE_FILE,
     RECORD_FILE,
     SUPP_FILE,
@@ -59,6 +60,7 @@ class AppRepositories:
     supplements: Repository[list[dict[str, Any]]]
     profile: Repository[dict[str, Any]]
     achievements: Repository[dict[str, Any]]
+    goal_challenges: Repository[dict[str, Any]] | None = None
 
 
 def build_default_repositories() -> AppRepositories:
@@ -68,6 +70,7 @@ def build_default_repositories() -> AppRepositories:
         supplements=JsonRepository(SUPP_FILE, lambda: copy.deepcopy(DEFAULT_SUPPLEMENTS), _dict_list),
         profile=JsonRepository(PROFILE_FILE, dict, _dict),
         achievements=JsonRepository(ACHIEVEMENT_FILE, dict, _dict),
+        goal_challenges=JsonRepository(GOAL_CHALLENGE_FILE, dict, _dict),
     )
 
 

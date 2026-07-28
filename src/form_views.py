@@ -46,6 +46,7 @@ def build_full_form_sheet(
     on_save: Callable[[Any], None],
     save_label: str = "保存",
     header_action: Any | None = None,
+    footer_controls: Sequence[Any] | None = None,
 ):
     """Build a keyboard-safe, full-height mobile editing surface."""
     sheet = None
@@ -83,10 +84,13 @@ def build_full_form_sheet(
                     expand=True,
                 ),
                 ft.Container(
-                    content=ft.Row([
-                        make_button("取消", on_click=close_sheet, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
-                        make_button(save_label, on_click=on_save, expand=True),
-                    ], spacing=FORM_FOOTER_SPACING),
+                    content=ft.Row(
+                        list(footer_controls) if footer_controls is not None else [
+                            make_button("取消", on_click=close_sheet, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                            make_button(save_label, on_click=on_save, expand=True),
+                        ],
+                        spacing=FORM_FOOTER_SPACING,
+                    ),
                     padding=ft.Padding(
                         left=FORM_HORIZONTAL_PADDING,
                         top=10,

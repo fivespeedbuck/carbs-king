@@ -1,4 +1,4 @@
-"""Typed runtime state shared by feature controllers and the app shell."""
+﻿"""Typed runtime state shared by feature controllers and the app shell."""
 
 from __future__ import annotations
 
@@ -44,12 +44,12 @@ class DataPageData(TypedDict, total=False):
 
 @dataclass
 class ProfileState:
-    weight: str = "62.5"
-    bodyfat: str = "13"
-    height: str = "170"
-    age: str = "30"
-    sex: str = "男"
-    activity_habit: str = "规律训练"
+    weight: str = ""
+    bodyfat: str = ""
+    height: str = ""
+    age: str = ""
+    sex: str = ""
+    activity_habit: str = ""
     waist_cm: str = ""
     arm_cm: str = ""
     chest_cm: str = ""
@@ -57,6 +57,7 @@ class ProfileState:
     thigh_cm: str = ""
     calf_cm: str = ""
     macro_mode: str = "auto"
+    macro_goal: str = "减脂"
     macro_multipliers: dict[str, dict[str, float]] = field(
         default_factory=lambda: copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS)
     )
@@ -64,6 +65,7 @@ class ProfileState:
         default_factory=lambda: copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS)
     )
     initialized: bool = False
+    circumference_expanded: bool = False
 
 
 @dataclass
@@ -154,9 +156,11 @@ class AppState(MutableMapping[str, Any]):
             "thigh_cm": (self.profile, "thigh_cm"),
             "calf_cm": (self.profile, "calf_cm"),
             "macro_mode": (self.profile, "macro_mode"),
+            "macro_goal": (self.profile, "macro_goal"),
             "macro_multipliers": (self.profile, "macro_multipliers"),
             "auto_macro_multipliers": (self.profile, "auto_macro_multipliers"),
             "profile_inited": (self.profile, "initialized"),
+            "profile_circumference_expanded": (self.profile, "circumference_expanded"),
             "day_type": (self.daily, "day_type"),
             "meals": (self.daily, "meals"),
             "training": (self.daily, "training"),

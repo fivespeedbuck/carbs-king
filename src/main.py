@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import json
 import datetime
 import asyncio
@@ -18,6 +18,7 @@ from daily_record_controller import DailyRecordController, DailyRecordDependenci
 from diet_controller import DietControllerDependencies, create_diet_controller
 from rest_notification import RestNotifier
 from repositories import build_default_repositories
+from goal_challenge_service import normalize_challenge_state, recalculate_state
 from recovery_controller import RecoveryControllerDependencies, create_recovery_controller
 from storage_service import (
     APP_DIR,
@@ -273,6 +274,15 @@ def main(page: ft.Page):
     repositories = build_default_repositories()
     records = repositories.records.load()
 
+    def recalculate_goal_challenges_on_change():
+        repository = repositories.goal_challenges
+        if repository is None:
+            return
+        stored = normalize_challenge_state(repository.load())
+        updated, _ = recalculate_state(stored, records, now=datetime.datetime.now().isoformat(timespec="seconds"))
+        if updated != stored:
+            repository.save(updated)
+
     def responsive_width(max_width=340):
         raw_width = to_float(getattr(page, "width", None), 430)
         return max(260, min(max_width, int(raw_width) - 56))
@@ -306,6 +316,7 @@ def main(page: ft.Page):
         restore_training_cursor=lambda: training_controller.restore_cursor(),
         refresh=lambda: refresh(),
         snack=snack,
+        on_records_changed=recalculate_goal_challenges_on_change,
     ))
 
     def save_current(show=False):
@@ -335,6 +346,8 @@ def main(page: ft.Page):
     state["thigh_cm"] = str(saved_profile.get("thigh_cm", state.get("thigh_cm", "")))
     state["calf_cm"] = str(saved_profile.get("calf_cm", state.get("calf_cm", "")))
     state["macro_mode"] = saved_profile.get("macro_mode", "auto")
+    saved_macro_goal = saved_profile.get("macro_goal", "减脂")
+    state["macro_goal"] = saved_macro_goal if saved_macro_goal in {"减脂", "保持", "增肌"} else "减脂"
     state["macro_multipliers"] = json.loads(json.dumps(
         saved_profile.get("custom_macro_multipliers", saved_profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))
     ))
@@ -610,7 +623,7 @@ def main(page: ft.Page):
                 dashboard_control.value = (
                     f"训练开始于 {active_date} · {clock_text(elapsed_seconds(session))}"
                     if active_date != state.get("date")
-                    else f"已完成 {completed}/{planned} 组 · {clock_text(elapsed_seconds(session))}"
+                    else f"宸插畬鎴?{completed}/{planned} 缁?· {clock_text(elapsed_seconds(session))}"
                 )
                 try:
                     dashboard_control.update()

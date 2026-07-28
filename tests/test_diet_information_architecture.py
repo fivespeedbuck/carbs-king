@@ -44,6 +44,7 @@ from form_views import (
     FormViewContext,
     build_full_form_sheet,
 )
+from profile_views import build_completed_challenges
 from ui_components import (
     FIELD_GRID_COLLAPSE_WIDTH,
     INPUT_LABEL_HEIGHT,
@@ -53,6 +54,7 @@ from ui_components import (
     responsive_field_grid,
     three_field_grid,
     two_field_grid,
+    make_button,
 )
 from today_views import TODAY_SECTION_SPACING, TodayDashboardActions, TodayDashboardModel, build_date_toolbar, build_today_dashboard
 
@@ -212,6 +214,28 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertEqual(footer.padding.left, FORM_HORIZONTAL_PADDING)
         self.assertEqual(footer.padding.right, FORM_HORIZONTAL_PADDING)
         self.assertTrue(all(button.height >= 48 for button in footer.content.controls))
+
+    def test_fullscreen_form_accepts_mode_specific_footer_controls(self):
+        cancel = make_button("取消", expand=True)
+        custom = make_button("创建自定义挑战", expand=True)
+        custom.visible = False
+        sheet = build_full_form_sheet(
+            FormViewContext(close_control=lambda control: None, scroll_mode="hidden"),
+            "新建挑战",
+            [mobile_text_field("挑战名称")],
+            lambda event: None,
+            footer_controls=[cancel, custom],
+        )
+
+        footer = sheet.content.content.controls[2]
+        self.assertEqual(footer.content.controls, [cancel, custom])
+        self.assertFalse(footer.content.controls[1].visible)
+
+    def test_completed_challenge_dialog_reserves_mobile_alert_dialog_gutters(self):
+        dialog = build_completed_challenges([], on_close=lambda event: None, content_width=340)
+        self.assertEqual(dialog.content.width, 312)
+        compact = build_completed_challenges([], on_close=lambda event: None, content_width=280)
+        self.assertEqual(compact.content.width, 280)
 
     def test_food_form_uses_required_full_width_and_compact_pair_structure(self):
         self.assertEqual(FOOD_UNIT_PRESETS, ("g", "ml", "个", "份"))

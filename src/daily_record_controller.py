@@ -34,6 +34,10 @@ class DailyRecordDependencies:
     restore_training_cursor: Callable[[], None]
     refresh: Callable[[], None]
     snack: Callable[..., None]
+    # Goal challenges derive their progress only from persisted daily records.
+    # Keep this callback at the single persistence boundary so meals, water,
+    # training and body/circumference updates all trigger the same refresh.
+    on_records_changed: Callable[[], None] = lambda: None
     now: Callable[[], datetime] = datetime.now
     today: Callable[[], date] = date.today
 
@@ -84,10 +88,10 @@ class DailyRecordController:
             "profile": {
                 "weight_kg": state["weight"],
                 "bodyfat_percent": state["bodyfat"],
-                "height_cm": state.get("height", "170"),
-                "age": state.get("age", "30"),
-                "sex": state.get("sex", "男"),
-                "activity_habit": state.get("activity_habit", "规律训练"),
+                "height_cm": state.get("height", ""),
+                "age": state.get("age", ""),
+                "sex": state.get("sex", ""),
+                "activity_habit": state.get("activity_habit", ""),
                 "waist_cm": state.get("waist_cm", ""),
                 "arm_cm": state.get("arm_cm", ""),
                 "chest_cm": state.get("chest_cm", ""),
@@ -151,6 +155,7 @@ class DailyRecordController:
 
     def persist_records(self) -> None:
         self.deps.repositories.records.save(self.deps.records)
+        self.deps.on_records_changed()
 
     def save(self, show: bool = False) -> None:
         state = self.deps.state
@@ -211,6 +216,73 @@ class DailyRecordController:
             self.deps.state["circumference"] = copy.deepcopy(circumference)
         self.persist_records()
         return copy.deepcopy(circumference)
+
+    def update_circumferences(
+        self,
+        target_date: str,
+        values: Mapping[str, float],
+        *,
+        measured_at: str,
+    ) -> dict[str, Any]:
+        """Save one complete body-measurement session for a date.
+
+        A measurement session may contain any subset of the six supported
+        circumferences, but it is persisted as one timestamped record so the
+        data page can collect all dimensions in a single form.
+        """
+        allowed_keys = {key for key, _ in CIRCUMFERENCE_FIELDS}
+        cleaned = {
+            key: round(float(value), 2)
+            for key, value in values.items()
+            if key in allowed_keys
+        }
+        if not cleaned:
+            raise ValueError("至少需要一项围度")
+
+        current = self.deps.records.get(target_date, {})
+        current = copy.deepcopy(dict(current)) if isinstance(current, Mapping) else {}
+        profile = current.get("profile", {})
+        profile = dict(profile) if isinstance(profile, Mapping) else {}
+        previous = profile.get("circumference", {})
+        previous = dict(previous) if isinstance(previous, Mapping) else {}
+        circumference = {
+            **{key: previous[key] for key in allowed_keys if key in previous and key not in cleaned},
+            **cleaned,
+            "measured_at": measured_at,
+        }
+        profile["circumference"] = circumference
+        current["profile"] = profile
+        self.deps.records[target_date] = current
+        if target_date == self.deps.state.get("date"):
+            self.deps.state["circumference"] = copy.deepcopy(circumference)
+        self.persist_records()
+        return copy.deepcopy(circumference)
+
+    def delete_circumferences(self, target_date: str) -> bool:
+        """Delete all six circumference values for a date as one session."""
+        current = self.deps.records.get(target_date, {})
+        current = copy.deepcopy(dict(current)) if isinstance(current, Mapping) else {}
+        profile = current.get("profile", {})
+        profile = dict(profile) if isinstance(profile, Mapping) else {}
+        circumference = profile.get("circumference", {})
+        if not isinstance(circumference, Mapping):
+            return False
+        allowed_keys = {key for key, _ in CIRCUMFERENCE_FIELDS}
+        if not any(key in circumference for key in allowed_keys):
+            return False
+        profile.pop("circumference", None)
+        if profile:
+            current["profile"] = profile
+        else:
+            current.pop("profile", None)
+        if current:
+            self.deps.records[target_date] = current
+        else:
+            self.deps.records.pop(target_date, None)
+        if target_date == self.deps.state.get("date"):
+            self.deps.state["circumference"] = None
+        self.persist_records()
+        return True
 
     def delete_circumference(self, target_date: str, metric_key: str) -> bool:
         allowed_keys = {key for key, _ in CIRCUMFERENCE_FIELDS}
@@ -398,8 +470,8 @@ class DailyRecordController:
             state["circumference"] = profile.get("circumference") if isinstance(profile.get("circumference"), dict) else None
             if not state.get("profile_inited"):
                 for state_key, record_key, fallback in (
-                    ("height", "height_cm", "170"), ("age", "age", "30"), ("sex", "sex", "男"),
-                    ("activity_habit", "activity_habit", "规律训练"), ("waist_cm", "waist_cm", ""), ("arm_cm", "arm_cm", ""),
+                    ("height", "height_cm", ""), ("age", "age", ""), ("sex", "sex", ""),
+                    ("activity_habit", "activity_habit", ""), ("waist_cm", "waist_cm", ""), ("arm_cm", "arm_cm", ""),
                     ("chest_cm", "chest_cm", ""), ("hip_cm", "hip_cm", ""),
                     ("thigh_cm", "thigh_cm", ""), ("calf_cm", "calf_cm", ""),
                 ):

@@ -62,7 +62,7 @@ CARDIO_METRIC_LABELS = {
     "speed_kph": "速度 km/h",
     "incline_percent": "坡度 %",
     "resistance_level": "阻力/档位",
-    "cadence_rpm": "踏频 rpm",
+    "cadence_rpm": "?? rpm",
     "strides_per_minute": "步频 spm",
     "stroke_rate_spm": "桨频 spm",
     "steps_per_minute": "爬楼步频 spm",
@@ -466,7 +466,11 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         load_more_holder = ft.Column(spacing=6)
         category_rows = ft.Column(spacing=3, width=82, scroll=_SCROLL_HIDDEN)
         subgroup_rows = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
-        equipment_rows = ft.Column(spacing=6)
+        # The picker sidebar consumes part of the form width. Keep the
+        # equipment layout explicitly bounded to the remaining mobile width,
+        # rather than allowing an intrinsic Row to widen the whole panel.
+        equipment_panel_width = max(190, dialog_width - 100)
+        equipment_rows = ft.Column(spacing=6, width=equipment_panel_width)
         equipment_scroll = {"offset": 0.0}
 
         def remember_equipment_scroll(event):
@@ -474,6 +478,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         equipment_compact_row = ft.Row(
             spacing=6,
+            width=equipment_panel_width,
             scroll=_SCROLL_HIDDEN,
             on_scroll=remember_equipment_scroll,
             scroll_interval=80,
@@ -934,12 +939,25 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 # Expanded mode deliberately has no horizontal scroller: every
                 # available option is wrapped into visible rows, ending with
                 # the collapse control.
-                expanded_buttons = [equipment_button(label) for label in ["全部", *equipment]]
-                expanded_buttons.append(make_button("收起器械", on_click=lambda e: toggle_more_equipment(), bgcolor=PRIMARY_SOFT, color=GREEN))
-                controls = [
-                    ft.Row(expanded_buttons[index:index + 3], spacing=6)
-                    for index in range(0, len(expanded_buttons), 3)
-                ]
+                expanded_items = [(label, equipment_button(label)) for label in ["全部", *equipment]]
+                expanded_items.append(("收起器械", make_button("收起器械", on_click=lambda e: toggle_more_equipment(), bgcolor=PRIMARY_SOFT, color=GREEN)))
+                controls = []
+                current_row = []
+                current_width = 0
+                for label, button in expanded_items:
+                    # Text is 14px with 20px horizontal padding. The estimate
+                    # deliberately errs wide so a long Chinese name starts a
+                    # new line instead of leaking through the dialog edge.
+                    estimated_width = min(equipment_panel_width, max(54, len(label) * 16 + 28))
+                    next_width = estimated_width if not current_row else current_width + 6 + estimated_width
+                    if current_row and next_width > equipment_panel_width:
+                        controls.append(ft.Row(current_row, spacing=6, width=equipment_panel_width))
+                        current_row = []
+                        current_width = 0
+                    current_row.append(button)
+                    current_width = estimated_width if current_width == 0 else current_width + 6 + estimated_width
+                if current_row:
+                    controls.append(ft.Row(current_row, spacing=6, width=equipment_panel_width))
             else:
                 # A selected non-common tool stays immediately after “全部”,
                 # so a rebuild never makes the user hunt for it at the start
@@ -1048,8 +1066,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         browser_panel = ft.Row([
             ft.Container(content=category_rows, width=88, padding=ft.Padding(left=0, top=0, right=4, bottom=0)),
             ft.VerticalDivider(width=1, color="#D9E6E1"),
-            ft.Column([subgroup_rows, equipment_rows, sort_row, selection_status, list_holder, load_more_holder], expand=True, spacing=8),
-        ], height=560, spacing=8)
+            ft.Column([subgroup_rows, equipment_rows, sort_row, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8),
+        ], width=dialog_width, height=560, spacing=8)
         library_dlg = full_form_sheet(
             f"添加动作 · {len(catalog)} 个",
             [search, browser_panel],
@@ -2079,7 +2097,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             refresh()
 
         note_field = mobile_text_field(label="训练备注", value=tr.get("summary_note", ""), expand=True, on_blur=save_training_note, on_submit=save_training_note)
-        fatigue_dd = mobile_dropdown(label="状态", value=tr.get("fatigue_status", "状态一般"), options=[ft.dropdown.Option(x) for x in FATIGUE_OPTIONS], on_change=lambda e: (tr.update({"fatigue_status": e.control.value}), save_current(), refresh()), expand=True)
+        fatigue_dd = mobile_dropdown(label="??", value=tr.get("fatigue_status", "状态一般"), options=[ft.dropdown.Option(x) for x in FATIGUE_OPTIONS], on_change=lambda e: (tr.update({"fatigue_status": e.control.value}), save_current(), refresh()), expand=True)
 
         return card(ft.Column([
             ft.Row([section_title("训练记录"), make_button("添加", on_click=lambda e: open_training_dialog(), icon=ft.Icons.ADD)], alignment="spaceBetween"),

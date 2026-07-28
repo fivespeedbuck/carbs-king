@@ -1,4 +1,4 @@
-"""Full backup validation, snapshots, restore, and rollback."""
+﻿"""Full backup validation, snapshots, restore, and rollback."""
 
 from __future__ import annotations
 
@@ -64,6 +64,15 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
     reload_date = deps.reload_date
     training_path = app_dir / "training_data.json"
 
+    def load_goal_challenges() -> dict[str, Any]:
+        if repositories.goal_challenges is None:
+            return {}
+        return copy.deepcopy(repositories.goal_challenges.load())
+
+    def save_goal_challenges(value: dict[str, Any]) -> None:
+        if repositories.goal_challenges is not None:
+            repositories.goal_challenges.save(value)
+
     def make_full_backup_payload() -> dict[str, Any]:
         return {
             "format": "carbs_king_backup",
@@ -75,6 +84,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             "supplement_library": copy.deepcopy(repositories.supplements.load()),
             "user_profile": copy.deepcopy(load_profile()),
             "achievement_unlocks": copy.deepcopy(repositories.achievements.load()),
+            "goal_challenges": load_goal_challenges(),
             "training_data": copy.deepcopy(load_json(training_path, {})),
         }
 
@@ -104,6 +114,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
                 "supplement_library": list,
                 "user_profile": dict,
                 "achievement_unlocks": dict,
+                "goal_challenges": dict,
                 "training_data": dict,
             }
             for key, expected_type in expected_types.items():
@@ -121,7 +132,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
                 if date_keys and len(date_keys) == len(payload):
                     _validate_section("daily_records", payload, dict)
                     normalized["daily_records"] = copy.deepcopy(payload)
-                elif any(key in payload for key in ("profile_inited", "height", "activity_habit", "macro_mode")):
+                elif any(key in payload for key in ("profile_inited", "height", "activity_habit", "macro_mode", "macro_goal")):
                     normalized["user_profile"] = copy.deepcopy(payload)
         elif isinstance(payload, list):
             if not payload:
@@ -184,12 +195,12 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         return snapshot_path
 
     def _sync_profile_state(profile: dict[str, Any]) -> None:
-        state["weight"] = str(profile.get("weight", state.get("weight", "62.5")))
-        state["bodyfat"] = str(profile.get("bodyfat", state.get("bodyfat", "13")))
-        state["height"] = str(profile.get("height", state.get("height", "170")))
-        state["age"] = str(profile.get("age", state.get("age", "30")))
-        state["sex"] = str(profile.get("sex", state.get("sex", "男")))
-        state["activity_habit"] = str(profile.get("activity_habit", state.get("activity_habit", "规律训练")))
+        state["weight"] = str(profile.get("weight", state.get("weight", "")))
+        state["bodyfat"] = str(profile.get("bodyfat", state.get("bodyfat", "")))
+        state["height"] = str(profile.get("height", state.get("height", "")))
+        state["age"] = str(profile.get("age", state.get("age", "")))
+        state["sex"] = str(profile.get("sex", state.get("sex", "")))
+        state["activity_habit"] = str(profile.get("activity_habit", state.get("activity_habit", "")))
         state["waist_cm"] = str(profile.get("waist_cm", state.get("waist_cm", "")))
         state["arm_cm"] = str(profile.get("arm_cm", state.get("arm_cm", "")))
         state["chest_cm"] = str(profile.get("chest_cm", state.get("chest_cm", "")))
@@ -197,6 +208,8 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         state["thigh_cm"] = str(profile.get("thigh_cm", state.get("thigh_cm", "")))
         state["calf_cm"] = str(profile.get("calf_cm", state.get("calf_cm", "")))
         state["macro_mode"] = profile.get("macro_mode", state.get("macro_mode", "auto"))
+        macro_goal = profile.get("macro_goal", "减脂")
+        state["macro_goal"] = macro_goal if macro_goal in {"减脂", "保持", "增肌"} else "减脂"
         state["macro_multipliers"] = copy.deepcopy(
             profile.get("custom_macro_multipliers", profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))
         )
@@ -211,6 +224,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         repositories.supplements.save(payload["supplement_library"])
         save_profile(payload["user_profile"])
         repositories.achievements.save(payload["achievement_unlocks"])
+        save_goal_challenges(payload["goal_challenges"])
         save_json(training_path, payload["training_data"])
 
     def _replace_runtime(payload: dict[str, Any]) -> None:
@@ -243,14 +257,15 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         else:
             for key in (
                 "daily_records", "food_library", "supplement_library", "user_profile",
-                "achievement_unlocks", "training_data",
+                "achievement_unlocks", "goal_challenges", "training_data",
             ):
                 if key in import_data:
                     target[key] = copy.deepcopy(import_data[key])
 
-        # Legacy full backups did not contain these two sections; preserving the
+        # Legacy full backups did not contain these sections; preserving the
         # current values avoids deleting data that the old format could not carry.
         target.setdefault("achievement_unlocks", copy.deepcopy(before["achievement_unlocks"]))
+        target.setdefault("goal_challenges", copy.deepcopy(before["goal_challenges"]))
         target.setdefault("training_data", copy.deepcopy(before["training_data"]))
 
         save_pre_import_snapshot()
@@ -285,6 +300,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             "thigh_cm": "",
             "calf_cm": "",
             "macro_mode": "auto",
+            "macro_goal": "减脂",
             "custom_macro_multipliers": copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS),
             "auto_macro_multipliers": copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS),
             "profile_inited": False,
@@ -300,6 +316,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             repositories.records.save({})
             save_profile({})
             repositories.achievements.save({})
+            save_goal_challenges({})
             save_json(training_path, {"custom_exercises": custom_exercises})
 
             records.clear()
@@ -310,6 +327,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
                 repositories.records.save(before["daily_records"])
                 save_profile(before["user_profile"])
                 repositories.achievements.save(before["achievement_unlocks"])
+                save_goal_challenges(before["goal_challenges"])
                 save_json(training_path, before["training_data"])
                 records.clear()
                 records.update(copy.deepcopy(before["daily_records"]))
