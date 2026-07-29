@@ -28,6 +28,7 @@ from diet_controller import (
 from diet_views import (
     DIET_INPUT_FIELD_HEIGHT,
     DIET_INPUT_LABEL_HEIGHT,
+    DIET_PAGE_GUTTER,
     DIET_TAB_HEIGHT,
     DietShellRenderers,
     aligned_input_row,
@@ -122,6 +123,21 @@ class DietViewComponentTests(unittest.TestCase):
 
         self.assertEqual(calls, ["foods"])
         self.assertEqual(shell.controls[1], "foods-panel")
+
+    def test_shell_tabs_and_cards_share_the_standard_page_gutter(self):
+        shell = build_diet_shell(
+            DietViewState(TODAY_DIET_VIEW),
+            DietShellRenderers(today_diet=lambda: "today-panel", food_library=lambda: "foods-panel"),
+            lambda view: None,
+        )
+
+        tabs_holder = shell.controls[0]
+        self.assertEqual(tabs_holder.margin.left, DIET_PAGE_GUTTER)
+        self.assertEqual(tabs_holder.margin.right, DIET_PAGE_GUTTER)
+        self.assertIn(
+            "padding=ft.Padding(left=0, top=8, right=0, bottom=0)",
+            DIET_CONTROLLER_SOURCE,
+        )
 
     def test_fixed_labeled_input_uses_external_fixed_label_not_floating_label(self):
         field = ft.TextField()

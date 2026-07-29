@@ -164,6 +164,8 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
 
         self.assertIn("当前训练", self.texts(buttons[0]))
         self.assertIn("今日已训练 2", self.texts(buttons[1]))
+        self.assertEqual(tabs.padding.left, 0)
+        self.assertEqual(tabs.padding.right, 0)
         buttons[0].on_click(None)
         buttons[1].on_click(None)
         self.assertEqual(calls, ["current", "completed"])

@@ -68,9 +68,9 @@ def build_date_toolbar(
     on_today: Callable[[Any], None],
     on_save: Callable[[Any], None],
 ):
-    from ui_components import GREEN, PRIMARY_SOFT, card, make_button
+    from ui_components import GREEN, PRIMARY_SOFT, page_card, make_button
 
-    return card(ft.Column([
+    return page_card(ft.Column([
         ft.Row([
             ft.IconButton(icon=ft.Icons.ARROW_BACK_IOS_NEW_ROUNDED, icon_size=17, on_click=on_previous),
             ft.Container(
@@ -122,7 +122,7 @@ def build_today_dashboard(
         border=thin_border(),
         border_radius=12,
         padding=18,
-        margin=ft.Margin(left=8, top=0, right=8, bottom=0),
+        margin=ft.Margin(left=0, top=0, right=0, bottom=0),
     )
 
     training_subtitle = ft.Text(model.training_subtitle, size=14, color="#EAFBF5", weight="bold")
@@ -135,7 +135,7 @@ def build_today_dashboard(
         bgcolor="#116E59",
         border_radius=12,
         padding=18,
-        margin=ft.Margin(left=8, top=0, right=8, bottom=0),
+        margin=ft.Margin(left=0, top=0, right=0, bottom=0),
         on_click=actions.open_training,
     )
 
@@ -165,7 +165,7 @@ def build_today_dashboard(
         border=thin_border(),
         border_radius=12,
         padding=16,
-        margin=ft.Margin(left=8, top=0, right=8, bottom=0),
+        margin=ft.Margin(left=0, top=0, right=0, bottom=0),
     )
 
     recovery_card = ft.Container(
@@ -181,7 +181,7 @@ def build_today_dashboard(
         border=thin_border(),
         border_radius=12,
         padding=16,
-        margin=ft.Margin(left=8, top=0, right=8, bottom=0),
+        margin=ft.Margin(left=0, top=0, right=0, bottom=0),
         on_click=actions.open_recovery,
     )
     return TodayDashboardResult(

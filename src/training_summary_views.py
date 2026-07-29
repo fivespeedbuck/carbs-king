@@ -9,7 +9,7 @@ from typing import Any
 import flet as ft
 
 from training_models import TrainingSession
-from ui_components import GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, card, make_button, section_title, small_text, thin_border
+from ui_components import GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, page_card, make_button, section_title, small_text, thin_border
 
 
 _METRIC_LABELS = {
@@ -57,7 +57,7 @@ def build_training_workspace_tabs(
                 height=48,
             ),
         ], spacing=8),
-        padding=ft.Padding(left=8, top=8, right=8, bottom=4),
+        padding=ft.Padding(left=0, top=8, right=0, bottom=4),
     )
 
 
@@ -86,7 +86,7 @@ def build_today_completed_training(
     actions: TrainingWorkspaceTabsActions,
 ) -> ft.Control:
     if not sessions:
-        return card(ft.Column([
+        return page_card(ft.Column([
             section_title("今日已训练内容"),
             small_text("今天还没有完成的训练。"),
             make_button("开始今天的训练", on_click=actions.create_new, icon=ft.Icons.ADD, expand=True),
@@ -200,10 +200,11 @@ def build_training_summary(
                     ft.Column([ft.Text(f"{volume_kg:g}", size=26, weight="bold", color="#FFFFFF"), ft.Text("总容量 kg", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
                 ], spacing=8),
             ], horizontal_alignment="center", spacing=12),
-            bgcolor="#173E35", border_radius=12, padding=22, margin=8,
+            bgcolor="#173E35", border_radius=12, padding=22,
+            margin=ft.Margin(left=0, top=8, right=0, bottom=8),
         ),
-        card(ft.Column([section_title("动作明细"), *rows], spacing=8), padding=14),
-        card(ft.Column([
+        page_card(ft.Column([section_title("动作明细"), *rows], spacing=8), padding=14),
+        page_card(ft.Column([
             section_title("练后建议"),
             ft.Text(advice, size=14, color=TEXT),
             ft.Row([

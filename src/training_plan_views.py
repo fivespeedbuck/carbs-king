@@ -10,7 +10,7 @@ import flet as ft
 
 from app_utils import to_float
 from training_experience_service import preview_session_exercise_block_order
-from ui_components import GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, card, make_button, section_title, small_text, thin_border
+from ui_components import GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, page_card, make_button, section_title, small_text, thin_border
 
 
 _METRIC_LABELS = {
@@ -39,9 +39,10 @@ def build_empty_training(actions: EmptyTrainingActions) -> ft.Control:
                     make_button("自由训练", on_click=actions.create_free, bgcolor="#125F4D", color="#FFFFFF", expand=True),
                 ], spacing=8),
             ], horizontal_alignment="center", spacing=14),
-            bgcolor="#116E59", border_radius=12, padding=24, margin=8,
+            bgcolor="#116E59", border_radius=12, padding=24,
+            margin=ft.Margin(left=0, top=8, right=0, bottom=8),
         ),
-        card(ft.Column([
+        page_card(ft.Column([
             section_title("训练准备"),
             small_text("添加动作后即可开始，重量与次数会完整保存。"),
             make_button("添加第一个动作", on_click=actions.add_first, icon=ft.Icons.ADD, expand=True, height=54),
@@ -359,13 +360,14 @@ def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingA
             ft.Row([ft.Column([small_text("训练计划", color="#EAFBF5"), ft.Text("当前的训练", size=25, weight="bold", color="#FFFFFF")], spacing=2), ft.Icon(ft.Icons.FITNESS_CENTER, size=42, color="#FFFFFF")], alignment="spaceBetween"),
             ft.Text(f"{len(exercises)} 个动作 · {sum(len(item.get('sets', [])) for item in exercises if item.get('recording_mode', 'strength') == 'strength')} 个力量组", size=14, color="#EAFBF5", weight="bold"),
             make_button("开始训练", on_click=actions.start, icon=ft.Icons.PLAY_ARROW, bgcolor="#FFFFFF", color=GREEN, expand=True, height=58),
-        ], spacing=12), bgcolor="#116E59", border_radius=12, padding=20, margin=8),
-        card(ft.Column([
+        ], spacing=12), bgcolor="#116E59", border_radius=12, padding=20,
+            margin=ft.Margin(left=0, top=8, right=0, bottom=8)),
+        page_card(ft.Column([
             ft.Row([section_title("动作安排"), make_button("添加动作", on_click=actions.add_exercise, icon=ft.Icons.ADD, bgcolor=PRIMARY_SOFT, color=GREEN)], alignment="spaceBetween"),
             small_text("拖动右侧手柄排序；超级组/复合组会作为一个整体移动。"),
             exercise_list if baseline_order else ft.Container(content=small_text("还没有动作，先添加一个动作"), bgcolor=SURFACE, border_radius=12, padding=14),
         ], spacing=8), padding=14),
-        card(ft.Row([
+        page_card(ft.Row([
             make_button("复用历史训练", on_click=actions.reuse_history, icon=ft.Icons.HISTORY, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
             make_button("清空", on_click=actions.clear, icon=ft.Icons.DELETE_OUTLINE, bgcolor="#FCECEC", color=RED, expand=True),
         ], spacing=8), padding=12),

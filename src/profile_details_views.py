@@ -8,7 +8,7 @@ from typing import Any
 import flet as ft
 
 from ui_components import (
-    GREEN, PRIMARY, PRIMARY_SOFT, TEXT, card, make_button, section_title,
+    GREEN, PRIMARY, PRIMARY_SOFT, TEXT, page_card, make_button, section_title,
     small_text, two_field_grid,
 )
 
@@ -66,7 +66,7 @@ def build_profile_details(
             two_field_grid(*values[index:index + 2], viewport_width=viewport_width)
             for index in range(0, len(values), 2)
         ]
-    return card(ft.Column([
+    return page_card(ft.Column([
         section_title("我"),
         two_field_grid(weight_box, bodyfat_box, viewport_width=viewport_width),
         two_field_grid(height_box, age_box, viewport_width=viewport_width),

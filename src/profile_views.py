@@ -7,7 +7,7 @@ from typing import Any
 
 import flet as ft
 
-from ui_components import BAR_BG, BORDER, GREEN, PRIMARY, PRIMARY_SOFT, SUB, TEXT, YELLOW, card, make_button, section_title, small_text, thin_border
+from ui_components import BAR_BG, BORDER, GREEN, PRIMARY, PRIMARY_SOFT, SUB, TEXT, YELLOW, page_card, make_button, section_title, small_text, thin_border
 
 from goal_challenge_definitions import LANE_LABELS, LANES, level_info
 
@@ -132,7 +132,7 @@ def build_goal_challenge_panel(
                 expand=True,
             ),
         ]
-    return card(ft.Column([
+    return page_card(ft.Column([
         ft.Row([
             ft.Column([section_title("目标挑战"), small_text("设定目标，持续推进")], spacing=2, expand=True),
             ft.IconButton(icon=ft.Icons.ADD_CIRCLE_OUTLINE, tooltip="新建挑战", on_click=on_new),
@@ -203,7 +203,7 @@ def build_achievement_wall(
             padding=9,
         ))
     rows = [ft.Row(tiles[index:index + 2], spacing=8) for index in range(0, len(tiles), 2)]
-    return card(ft.Column([
+    return page_card(ft.Column([
         ft.Row([
             section_title("成就系统"),
             ft.Text(f"{unlocked_count} / {len(results)}", size=12, weight="bold", color=GREEN),

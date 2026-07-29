@@ -16,6 +16,7 @@ DIET_TAB_HEIGHT = 48
 DIET_INPUT_LABEL_HEIGHT = INPUT_LABEL_HEIGHT
 DIET_INPUT_FIELD_HEIGHT = INPUT_FIELD_HEIGHT
 DIET_INPUT_SPACING = INPUT_LABEL_SPACING
+DIET_PAGE_GUTTER = 0
 
 PRIMARY = "#116E59"
 PRIMARY_SOFT = "#F1F7F5"
@@ -111,7 +112,15 @@ def build_diet_shell(
     normalized_state = DietViewState(active_view)
     return ft.Column(
         [
-            diet_tabs(normalized_state, on_select),
+            ft.Container(
+                content=diet_tabs(normalized_state, on_select),
+                margin=ft.Margin(
+                    left=DIET_PAGE_GUTTER,
+                    top=0,
+                    right=DIET_PAGE_GUTTER,
+                    bottom=0,
+                ),
+            ),
             renderers.render(active_view),
         ],
         spacing=10,

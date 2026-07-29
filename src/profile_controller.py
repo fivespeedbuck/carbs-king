@@ -573,6 +573,10 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         lane_box = mobile_dropdown("所属赛道", default_lane, lane_options, expand=True)
         target_box, target_field = labeled_plain_field("目标值", str(preset.get("target", "")), keyboard_type=_KEYBOARD_NUMBER, expand=True)
         unit_box = mobile_dropdown("单位", preset.get("unit", "次"), [ft.dropdown.Option(value) for value in ("次", "天", "组", "kg", "lbs", "%", "cm")], expand=True)
+        # Flet Web renders Dropdown's outlined surface taller than TextField at
+        # the same declared height.  Calibrate the compact unit selector so its
+        # visible border aligns with the adjacent numeric target field.
+        unit_box.field.height = 46
         today = datetime.date.today()
         start_box, start_field = labeled_plain_field("开始日期（YYYY-MM-DD）", preset.get("start_date", today.isoformat()), expand=True)
         end_box, end_field = labeled_plain_field("结束日期（YYYY-MM-DD）", preset.get("end_date", (today + datetime.timedelta(days=30)).isoformat()), expand=True)
@@ -799,7 +803,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             title_box,
             declaration_box,
             lane_box,
-            ft.Row([target_box, unit_box], spacing=8),
+            two_field_grid(target_box, unit_box, viewport_width=dialog_width),
             ft.Row([start_box, end_box], spacing=8),
             action_selection_holder,
             action_picker_button,
@@ -1027,7 +1031,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             ft.ProgressBar(value=max(0, min(1, progress["percent"] / 100)), color=PRIMARY, bgcolor="#E4EAE8", height=7),
             small_text(f"{item.get('start_date', '')} 至 {item.get('end_date', '')}"),
             small_text(f"所属赛道：{LANE_LABELS.get(str(item.get('lane') or ''), '未分类')}"),
-        ], spacing=12)
+        ], spacing=8, tight=True)
         dialog = dialog_base(
             "挑战详情",
             content,

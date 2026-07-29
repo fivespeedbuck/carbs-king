@@ -154,15 +154,20 @@ def make_button(text, on_click=None, icon=None, bgcolor=None, color=None, expand
     return button
 
 
-def card(content, padding=12, margin_bottom=8):
+def card(content, padding=12, margin_bottom=8, margin_horizontal=8):
     return ft.Container(
         content=content,
         bgcolor=CARD,
         border=thin_border(),
         border_radius=8,
         padding=padding,
-        margin=ft.Margin(left=8, top=0, right=8, bottom=margin_bottom),
+        margin=ft.Margin(left=margin_horizontal, top=0, right=margin_horizontal, bottom=margin_bottom),
     )
+
+
+def page_card(content, padding=12, margin_bottom=8):
+    """Top-level page card aligned with the data page's edge gutter."""
+    return card(content, padding=padding, margin_bottom=margin_bottom, margin_horizontal=0)
 
 
 def section_title(text):
@@ -407,7 +412,7 @@ __all__ = [
     "GREEN", "SKY_BLUE", "BAR_BG", "YELLOW", "BORDER", "SURFACE",
     "INPUT_LABEL_HEIGHT", "INPUT_FIELD_HEIGHT", "INPUT_LABEL_SPACING",
     "FIELD_GRID_SPACING", "FIELD_GRID_COLLAPSE_WIDTH",
-    "LabeledInput", "input_is_focused", "make_button", "thin_border", "card",
+    "LabeledInput", "input_is_focused", "make_button", "thin_border", "card", "page_card",
     "section_title", "small_text", "labeled_plain_field", "mobile_text_field",
     "mobile_dropdown", "plain_number_field", "responsive_field_grid", "three_field_grid",
     "two_field_grid", "quantity_unit_grid", "custom_progress_bar",

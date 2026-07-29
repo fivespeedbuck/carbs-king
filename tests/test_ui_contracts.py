@@ -23,7 +23,7 @@ from training_picker_views import (  # noqa: E402
     training_parameter_mode_state,
 )
 from training_views import _segmented_progress  # noqa: E402
-from ui_components import mobile_dropdown  # noqa: E402
+from ui_components import mobile_dropdown, page_card  # noqa: E402
 
 
 MAIN_SOURCE = (Path(__file__).parents[1] / "src" / "main.py").read_text(encoding="utf-8-sig")
@@ -49,6 +49,8 @@ TRAINING_SOURCE = (Path(__file__).parents[1] / "src" / "training_views.py").read
 TRAINING_CONTROLLER_SOURCE = (Path(__file__).parents[1] / "src" / "training_controller.py").read_text(encoding="utf-8-sig")
 TRAINING_PICKER_SOURCE = (Path(__file__).parents[1] / "src" / "training_picker_views.py").read_text(encoding="utf-8-sig")
 UI_SOURCE = (Path(__file__).parents[1] / "src" / "ui_components.py").read_text(encoding="utf-8-sig")
+PROFILE_SOURCE = (Path(__file__).parents[1] / "src" / "profile_views.py").read_text(encoding="utf-8-sig")
+PROFILE_DETAILS_SOURCE = (Path(__file__).parents[1] / "src" / "profile_details_views.py").read_text(encoding="utf-8-sig")
 
 
 class UiContractsTests(unittest.TestCase):
@@ -120,6 +122,18 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn('controls = getattr(dashboard, "controls", None)', TODAY_CONTROLLER_SOURCE)
         self.assertIn("dashboard_controls = list(controls) if isinstance(controls, list)", TODAY_CONTROLLER_SOURCE)
         self.assertIn("ft.Column([*dashboard_controls, self.render_toolbar()], spacing=TODAY_SECTION_SPACING)", TODAY_CONTROLLER_SOURCE)
+
+    def test_main_page_cards_match_the_data_page_edge_width(self):
+        control = page_card(None)
+
+        self.assertEqual(control.margin.left, 0)
+        self.assertEqual(control.margin.right, 0)
+        self.assertEqual(TODAY_SOURCE.count("margin=ft.Margin(left=0, top=0, right=0, bottom=0)"), 4)
+        self.assertIn("summary = page_card(", DIET_CONTROLLER_SOURCE)
+        self.assertIn("return page_card(", DIET_CONTROLLER_SOURCE)
+        self.assertIn("return page_card(", TRAINING_CONTROLLER_SOURCE)
+        self.assertIn("return page_card(", PROFILE_SOURCE)
+        self.assertIn("return page_card(", PROFILE_DETAILS_SOURCE)
 
     def test_training_rest_card_exposes_full_controls_and_stays_visible_when_paused(self):
         self.assertIn('is_resting = model.rest_status in {"running", "paused"}', TRAINING_SOURCE)

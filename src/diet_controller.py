@@ -22,7 +22,7 @@ from food_library import FOOD_CATEGORIES, food_catalog, search_foods
 from form_views import FormViewContext, build_full_form_sheet
 from repositories import AppRepositories
 from ui_components import (
-    BORDER, GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, card, macro_progress_bar,
+    BORDER, GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, card, page_card, macro_progress_bar,
     make_button, mobile_dropdown, mobile_text_field, quantity_unit_grid, section_title,
     small_text, thin_border, two_field_grid,
 )
@@ -514,7 +514,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                 macro_progress_bar("脂肪", total["fat"], target_min=targets["fat_min"], target_max=targets["fat_max"], kind="fat", width=responsive_bar_width()),
             ]
         )
-        summary = card(ft.Column([
+        summary = page_card(ft.Column([
             section_title("饮食总览"),
             ft.Row(day_buttons, spacing=7),
             *target_controls,
@@ -532,7 +532,10 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             ),
             select_diet_view,
         )
-        return ft.Container(content=shell, padding=ft.Padding(left=8, top=8, right=8, bottom=0))
+        # Cards already own the shared 8 px page gutter.  Do not apply a
+        # second horizontal inset here or the diet cards become narrower than
+        # their peers on Today, Data and Me pages.
+        return ft.Container(content=shell, padding=ft.Padding(left=0, top=8, right=0, bottom=0))
 
     def render_diet():
         total = daily_total()
@@ -597,7 +600,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             else:
                 content_rows.append(ft.Container(content=small_text("暂无记录"), bgcolor="#FAFAFA", border_radius=12, padding=10))
 
-        return card(ft.Column([
+        return page_card(ft.Column([
             ft.Row([section_title("饮食记录"), make_button("添加", on_click=lambda e, m=(meal_for_current_time() if selected_meal=="汇总" else selected_meal): open_add_food_dialog(m), icon=ft.Icons.ADD, expand=False)], alignment="spaceBetween"),
             ft.Row([meal_button("汇总"), meal_button("早餐"), meal_button("午餐"), meal_button("晚餐")], spacing=5),
             ft.Row([meal_button("练前"), meal_button("练后"), meal_button("偷吃")], spacing=5),

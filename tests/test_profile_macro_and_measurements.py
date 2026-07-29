@@ -247,6 +247,9 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertNotIn("action_field", controller)
         self.assertIn('allowed_units = ("kg", "lbs") if default_unit == "kg" else (default_unit,)', controller)
         self.assertIn("unit_box.field.disabled = len(allowed_units) == 1", controller)
+        self.assertIn("unit_box.field.height = 46", controller)
+        self.assertIn("two_field_grid(target_box, unit_box, viewport_width=dialog_width)", controller)
+        self.assertIn("], spacing=8, tight=True)", controller)
 
     def test_profile_details_removes_obsolete_circumference_tip_below_backup(self):
         details = (ROOT / "src" / "profile_details_views.py").read_text(encoding="utf-8")
