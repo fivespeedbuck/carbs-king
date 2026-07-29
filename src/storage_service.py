@@ -1,4 +1,4 @@
-﻿"""Update-safe JSON storage and profile persistence."""
+"""Update-safe JSON storage and profile persistence."""
 
 from __future__ import annotations
 

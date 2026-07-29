@@ -21,6 +21,8 @@ TIER_COLORS = {
 
 
 def _challenge_color(item):
+    if item.get("status") == "failed":
+        return "#6F7774"
     return str(item.get("level_color") or YELLOW)
 
 
@@ -32,7 +34,7 @@ def _challenge_text(item):
     return f"{current:g} / {target:g} {unit} · {percent:g}%"
 
 
-def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None):
+def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None, on_open=None):
     color = _challenge_color(item)
     leading = ft.Container(
         content=ft.Icon(
@@ -43,7 +45,17 @@ def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None):
         width=28,
         on_click=(lambda event: on_select(item.get("id")) if on_select else None),
     ) if delete_mode else ft.Icon(ft.Icons.FLAG_ROUNDED, size=22, color=color)
-    end = ft.Text(str(item.get("level_name") or "自定义"), size=11, color=color, weight="bold")
+    end_label = (
+        "挑战失败" if item.get("status") == "failed"
+        else "待确认完成" if item.get("awaiting_confirmation")
+        else str(item.get("level_name") or "自定义")
+    )
+    end = ft.Text(
+        end_label,
+        size=11,
+        color="#E0822B" if item.get("awaiting_confirmation") else color,
+        weight="bold",
+    )
     content = ft.Column([
         ft.Row([leading, ft.Text(str(item.get("title") or "目标挑战"), size=14, weight="bold", color=TEXT, expand=True, max_lines=1, overflow="ellipsis"), end], spacing=6),
         small_text(f"所属赛道：{LANE_LABELS.get(str(item.get('lane') or ''), '未分类')}", color=GREEN),
@@ -53,8 +65,17 @@ def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None):
             f"{item.get('start_date', '')} 至 {item.get('end_date', '')}"
             if item.get("start_date") or item.get("end_date") else "持续记录中",
         ),
+        *([small_text(str(item.get("failure_reason") or "目标未完成"), color="#6F7774")] if item.get("status") == "failed" else []),
     ], spacing=6)
-    return ft.Container(content=content, padding=10, margin=ft.Margin(left=0, top=0, right=0, bottom=8), bgcolor="#FFFDF7" if color == YELLOW else "#F9FBFA", border=thin_border(color), border_radius=8)
+    return ft.Container(
+        content=content,
+        padding=10,
+        margin=ft.Margin(left=0, top=0, right=0, bottom=8),
+        bgcolor="#FFFDF7" if color == YELLOW else "#F9FBFA",
+        border=thin_border(color),
+        border_radius=8,
+        on_click=(None if delete_mode or on_open is None else lambda event: on_open(item)),
+    )
 
 
 def build_goal_challenge_panel(
@@ -67,24 +88,38 @@ def build_goal_challenge_panel(
     selected_ids=None,
     on_select=None,
     on_delete_confirm=None,
+    on_open=None,
+    pending_success=None,
+    failed=None,
 ):
     selected_ids = set(selected_ids or ())
+    pending_success = [item for item in (pending_success or ()) if isinstance(item, Mapping)]
+    failed = [item for item in (failed or ()) if isinstance(item, Mapping) and not item.get("retried_at")]
     active_cards = [
-        _challenge_card(item, delete_mode=delete_mode, selected=item.get("id") in selected_ids, on_select=on_select)
+        _challenge_card(item, delete_mode=delete_mode, selected=item.get("id") in selected_ids, on_select=on_select, on_open=on_open)
         for item in active if isinstance(item, Mapping)
     ]
-    if not active_cards:
-        active_cards = [ft.Container(
+    pending_cards = [
+        _challenge_card({**dict(item), "awaiting_confirmation": True}, on_open=on_open)
+        for item in pending_success
+    ]
+    failed_cards = [_challenge_card(item, on_open=on_open) for item in failed]
+    if not active_cards and not pending_cards and not failed_cards:
+        empty_card = ft.Container(
             content=ft.Column([
                 ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, size=22, color=PRIMARY),
                 small_text("还没有进行中的挑战，点击开始创建"),
             ], horizontal_alignment="center", spacing=6),
+            expand=True,
             padding=14,
             bgcolor="#F9FBFA",
             border=thin_border(BORDER),
             border_radius=8,
             on_click=on_new,
-        )]
+        )
+        # A Column does not stretch a child to its cross axis by default.  Put
+        # the empty-state CTA in a Row so it fills the challenge panel width.
+        active_cards = [ft.Row([empty_card], spacing=0)]
     footer = []
     if delete_mode:
         footer = [
@@ -104,8 +139,15 @@ def build_goal_challenge_panel(
             ft.IconButton(icon=ft.Icons.HISTORY, tooltip="已完成挑战", on_click=on_completed),
             ft.IconButton(icon=ft.Icons.DELETE_OUTLINE if not delete_mode else ft.Icons.CLOSE, tooltip="删除挑战" if not delete_mode else "退出删除", on_click=on_delete_toggle),
         ], spacing=0, vertical_alignment="center"),
-        small_text(f"进行中 {len(active_cards) if active else 0} / 3 项挑战" if active else "开始你的第一项目标挑战", color=GREEN),
+        small_text(
+            f"进行中 {len(active)} / 3 项挑战"
+            if active or pending_cards or failed_cards
+            else "开始你的第一项目标挑战",
+            color=GREEN,
+        ),
         *active_cards,
+        *([small_text("待确认完成", color="#E0822B"), *pending_cards] if pending_cards else []),
+        *([small_text("挑战失败", color="#6F7774"), *failed_cards] if failed_cards else []),
         *footer,
     ], spacing=8), padding=14)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import calendar
 import datetime as _dt
 import uuid
 from collections.abc import Mapping, Sequence
@@ -16,6 +17,7 @@ from goal_challenge_definitions import (
     challenge_type_label,
     level_info,
     recommended_templates,
+    repeatable_template,
 )
 from training_models import TrainingSession
 from training_service import raw_training_sessions, session_volume
@@ -76,26 +78,64 @@ def _completed_session(session: Mapping[str, Any]) -> bool:
 def _exercise_identity(exercise: Mapping[str, Any]) -> set[str]:
     return {
         str(exercise.get("id") or "").strip(),
+        str(exercise.get("exercise_id") or "").strip(),
         str(exercise.get("name") or exercise.get("exercise") or "").strip(),
     } - {""}
 
 
-def _exercise_stats(session: Mapping[str, Any], action_id: str = "") -> tuple[float, float, int]:
+def _exercise_matches(exercise: Mapping[str, Any], action_id: str = "", body_part: str = "") -> bool:
+    if action_id and action_id not in _exercise_identity(exercise):
+        return False
+    return not body_part or str(exercise.get("body_part") or "") == body_part
+
+
+def _exercise_stats(
+    session: Mapping[str, Any], action_id: str = "", body_part: str = "", min_weight: float = 0.0
+) -> tuple[float, float, int, int]:
     volume = max_weight = reps = 0.0
+    formal_sets = 0
     exercises = session.get("exercises", [])
     for exercise in exercises if isinstance(exercises, list) else []:
-        if not isinstance(exercise, Mapping) or (action_id and action_id not in _exercise_identity(exercise)):
+        if not isinstance(exercise, Mapping) or not _exercise_matches(exercise, action_id, body_part):
             continue
-        sets = exercise.get("sets", [])
-        for item in sets if isinstance(sets, list) else []:
-            if not isinstance(item, Mapping) or not item.get("completed"):
+        raw_sets = exercise.get("sets", [])
+        for item in raw_sets if isinstance(raw_sets, list) else []:
+            if not isinstance(item, Mapping) or not item.get("completed") or item.get("warmup") or item.get("is_warmup"):
                 continue
             weight = max(0.0, _number(item.get("weight_kg", item.get("weight"))))
             count = max(0.0, _number(item.get("reps", item.get("count"))))
+            if weight < min_weight:
+                continue
             volume += weight * count
             max_weight = max(max_weight, weight)
             reps += count
-    return round(volume, 2), round(max_weight, 2), int(reps)
+            formal_sets += 1
+    return round(volume, 2), round(max_weight, 2), int(reps), formal_sets
+
+
+def _session_duration_minutes(session: Mapping[str, Any]) -> float:
+    explicit = _number(session.get("total_duration_min"), -1)
+    if explicit >= 0:
+        return explicit
+    try:
+        started = _dt.datetime.fromisoformat(str(session.get("started_at") or ""))
+        ended = _dt.datetime.fromisoformat(str(session.get("ended_at") or ""))
+        return max(0.0, (ended - started).total_seconds() / 60)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _cardio_duration_minutes(session: Mapping[str, Any]) -> float:
+    total = 0.0
+    for exercise in session.get("exercises", []) if isinstance(session.get("exercises", []), list) else []:
+        if not isinstance(exercise, Mapping) or str(exercise.get("recording_mode") or "") != "cardio":
+            continue
+        if exercise.get("completed") or any(
+            isinstance(item, Mapping) and item.get("completed")
+            for item in exercise.get("sets", []) if isinstance(exercise.get("sets", []), list)
+        ):
+            total += max(0.0, _number(exercise.get("duration_seconds"))) / 60
+    return total
 
 
 def _has_food(record: Mapping[str, Any]) -> bool:
@@ -150,8 +190,12 @@ def _daily_flags(
             flags[day] = isinstance(values, list) and bool(values) and sum(_number(v) for v in values) >= daily_target
         elif challenge_type == "nutrition_streak":
             flags[day] = _nutrition_met(raw_record, challenge)
-        elif challenge_type in {"training_streak", "training_days"}:
-            flags[day] = any(_completed_session(session) for session in _sessions(raw_record))
+        elif challenge_type in {"training_streak", "training_days", "effective_training_streak", "effective_training_days"}:
+            sessions = [session for session in _sessions(raw_record) if _completed_session(session)]
+            if challenge_type.startswith("effective_"):
+                minimum = _number(_config(challenge, "min_duration_min"), 0)
+                sessions = [session for session in sessions if _session_duration_minutes(session) >= minimum]
+            flags[day] = bool(sessions)
     return flags
 
 
@@ -181,6 +225,7 @@ def challenge_progress(
     challenge_type = str(challenge.get("challenge_type") or "")
     current = 0.0
     selected_action = str(_config(challenge, "action_id", "") or "").strip()
+    selected_body_part = str(_config(challenge, "body_part", "") or "").strip()
     days = sorted(
         ((_date(key), value) for key, value in records.items()
          if _in_window(_date(key), start, end) and isinstance(value, Mapping)),
@@ -194,10 +239,13 @@ def challenge_progress(
         current = len(completed_sessions)
     elif challenge_type == "training_volume":
         for session in completed_sessions:
-            try:
-                current += session_volume(TrainingSession.from_dict(dict(session)))
-            except (TypeError, ValueError, KeyError):
-                current += _exercise_stats(session)[0]
+            if selected_action or selected_body_part:
+                current += _exercise_stats(session, selected_action, selected_body_part)[0]
+            else:
+                try:
+                    current += session_volume(TrainingSession.from_dict(dict(session)), include_warmup=False)
+                except (TypeError, ValueError, KeyError):
+                    current += _exercise_stats(session)[0]
         if str(challenge.get("unit") or "kg").lower() == "lbs":
             current *= KG_TO_LBS
     elif challenge_type == "max_weight":
@@ -206,11 +254,57 @@ def challenge_progress(
             if str(challenge.get("unit") or "kg").lower() == "lbs":
                 current *= KG_TO_LBS
     elif challenge_type == "exercise_reps":
-        current = sum(_exercise_stats(session, selected_action)[2] for session in completed_sessions)
-    elif challenge_type in {"training_streak", "water_streak", "nutrition_streak"}:
+        if _config(challenge, "any_action", False) and not selected_action:
+            totals: dict[str, int] = {}
+            for session in completed_sessions:
+                exercises = session.get("exercises", [])
+                for exercise in exercises if isinstance(exercises, list) else []:
+                    if not isinstance(exercise, Mapping):
+                        continue
+                    identity = str(exercise.get("exercise_id") or exercise.get("name") or exercise.get("id") or "")
+                    if identity:
+                        totals[identity] = totals.get(identity, 0) + _exercise_stats(
+                            {"exercises": [exercise]}
+                        )[2]
+            current = max(totals.values(), default=0)
+        else:
+            current = sum(_exercise_stats(session, selected_action, selected_body_part)[2] for session in completed_sessions)
+    elif challenge_type == "training_sets":
+        current = sum(_exercise_stats(session, selected_action, selected_body_part)[3] for session in completed_sessions)
+    elif challenge_type == "heavy_sets":
+        minimum = _number(_config(challenge, "min_weight"), 0)
+        current = sum(_exercise_stats(session, selected_action, selected_body_part, minimum)[3] for session in completed_sessions)
+    elif challenge_type in {"training_streak", "effective_training_streak", "water_streak", "nutrition_streak"}:
         current = _streak(_daily_flags(records, start, end, challenge), end)
-    elif challenge_type == "training_days":
+    elif challenge_type in {"training_days", "effective_training_days"}:
         current = sum(_daily_flags(records, start, end, challenge).values())
+    elif challenge_type == "cardio_sessions":
+        minimum = _number(_config(challenge, "min_duration_min"), 0)
+        current = sum(
+            1 for session in completed_sessions
+            if _cardio_duration_minutes(session) >= minimum
+        )
+    elif challenge_type == "time_window_sessions":
+        start_hour = _number(_config(challenge, "start_hour"), 0)
+        end_hour = _number(_config(challenge, "end_hour"), 24)
+        for session in completed_sessions:
+            try:
+                hour = _dt.datetime.fromisoformat(str(session.get("started_at") or "")).hour
+            except (TypeError, ValueError):
+                continue
+            if start_hour <= hour < end_hour:
+                current += 1
+    elif challenge_type == "special_day_sessions":
+        rule = str(_config(challenge, "date_rule", "weekend") or "weekend")
+        specified = {
+            _date(item) for item in _config(challenge, "special_dates", [])
+        } if isinstance(_config(challenge, "special_dates", []), list) else set()
+        for day, record in days:
+            if not any(_completed_session(session) for session in _sessions(record)) or not _valid_date(day):
+                continue
+            weekday = _dt.date.fromisoformat(day).weekday()
+            if (rule == "weekend" and weekday >= 5) or (rule == "weekday" and weekday < 5) or (rule == "dates" and day in specified):
+                current += 1
     elif challenge_type == "body_target":
         metric = str(_config(challenge, "metric", "weight"))
         values: list[float] = []
@@ -268,6 +362,7 @@ def normalize_challenge_state(value: Any) -> dict[str, Any]:
     value = value if isinstance(value, Mapping) else {}
     active: list[dict[str, Any]] = []
     completed: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for raw in value.get("active", []) if isinstance(value.get("active", []), list) else []:
         if not isinstance(raw, Mapping):
@@ -286,6 +381,14 @@ def normalize_challenge_state(value: Any) -> dict[str, Any]:
             continue
         completed.append(item)
         seen_ids.add(item["id"])
+    for raw in value.get("failed", []) if isinstance(value.get("failed", []), list) else []:
+        if not isinstance(raw, Mapping):
+            continue
+        item = _clean_item(raw, status="failed")
+        if not item or item["id"] in seen_ids:
+            continue
+        failed.append(item)
+        seen_ids.add(item["id"])
     completed_ids = {item["id"] for item in completed}
     pending = list(dict.fromkeys(
         str(item) for item in value.get("pending_celebrations", [])
@@ -295,17 +398,33 @@ def normalize_challenge_state(value: Any) -> dict[str, Any]:
         str(item) for item in value.get("celebrated", []) if str(item)
     )) if isinstance(value.get("celebrated", []), list) else []
     pending = [identity for identity in pending if identity not in celebrated]
+    failed_ids = {item["id"] for item in failed}
+    pending_failures = list(dict.fromkeys(
+        str(item) for item in value.get("pending_failures", [])
+        if str(item) in failed_ids
+    )) if isinstance(value.get("pending_failures", []), list) else []
+    acknowledged_failures = list(dict.fromkeys(
+        str(item) for item in value.get("acknowledged_failures", []) if str(item)
+    )) if isinstance(value.get("acknowledged_failures", []), list) else []
+    pending_failures = [identity for identity in pending_failures if identity not in acknowledged_failures]
     return {
-        "version": 1,
+        "version": 2,
         "active": active,
         "completed": completed,
+        "failed": failed,
         "pending_celebrations": pending,
         "celebrated": celebrated,
+        "pending_failures": pending_failures,
+        "acknowledged_failures": acknowledged_failures,
     }
 
 
 def _dates_for_template(base: Mapping[str, Any], now_date: str) -> tuple[str, str]:
     config = base.get("config", {}) if isinstance(base.get("config"), Mapping) else {}
+    if config.get("calendar_month"):
+        current = _dt.date.fromisoformat(now_date)
+        last_day = calendar.monthrange(current.year, current.month)[1]
+        return current.replace(day=1).isoformat(), current.replace(day=last_day).isoformat()
     days = max(1, int(_number(config.get("window_days"), base.get("target", 30))))
     start = (_dt.date.fromisoformat(now_date) - _dt.timedelta(days=days - 1)).isoformat()
     return start, now_date
@@ -377,12 +496,71 @@ def validate_challenge(challenge: Mapping[str, Any]) -> None:
         raise ValueError("挑战日期范围不正确")
     if challenge_type in {"max_weight"} and not str(_config(challenge, "action_id", "")).strip():
         raise ValueError("请选择一个训练动作")
+    if challenge_type == "heavy_sets" and _number(_config(challenge, "min_weight")) <= 0:
+        raise ValueError("大重量组数必须设置大于 0 的重量门槛")
+    if challenge_type in {"effective_training_days", "effective_training_streak", "cardio_sessions"} and _number(_config(challenge, "min_duration_min")) <= 0:
+        raise ValueError("请设置大于 0 的单次最低时长")
+    if challenge_type == "time_window_sessions":
+        start_hour = _number(_config(challenge, "start_hour"), -1)
+        end_hour = _number(_config(challenge, "end_hour"), -1)
+        if not 0 <= start_hour < end_hour <= 24:
+            raise ValueError("训练时间段必须满足 0 ≤ 开始小时 < 结束小时 ≤ 24")
+    if challenge_type == "special_day_sessions":
+        rule = str(_config(challenge, "date_rule", ""))
+        if rule not in {"weekend", "weekday", "dates"}:
+            raise ValueError("请选择特殊日期类型")
+        special_dates = _config(challenge, "special_dates", [])
+        if rule == "dates" and (
+            not isinstance(special_dates, list) or not special_dates
+            or any(not _valid_date(_date(item)) for item in special_dates)
+        ):
+            raise ValueError("请按 YYYY-MM-DD 填写至少一个有效日期")
     if challenge_type == "water_streak" and _number(_config(challenge, "daily_target")) <= 0:
         raise ValueError("每日饮水目标必须大于 0")
     if challenge_type == "nutrition_streak" and str(_config(challenge, "indicator", "")) not in {"protein", "carb_cycle"}:
         raise ValueError("请选择饮食达标指标")
     if challenge_type == "body_target" and not str(_config(challenge, "metric", "")).strip():
         raise ValueError("请选择身体指标")
+
+
+def challenge_failure_reason(
+    challenge: Mapping[str, Any], records: Mapping[str, Any], *, today: str
+) -> str:
+    """Detect a real deadline miss or a streak broken after the challenge was created."""
+    today_value = _date(today)
+    if not _valid_date(today_value):
+        return ""
+    end = _date(challenge.get("end_date"))
+    if _valid_date(end) and today_value > end:
+        return "挑战已超过结束日期，目标仍未完成"
+
+    challenge_type = str(challenge.get("challenge_type") or "")
+    if challenge_type not in {
+        "training_streak", "effective_training_streak", "water_streak", "nutrition_streak",
+    }:
+        return ""
+    valid_starts = [
+        value for value in (_date(challenge.get("start_date")), _date(challenge.get("created_at")))
+        if _valid_date(value)
+    ]
+    if not valid_starts:
+        return ""
+    monitor_start = max(valid_starts)
+    cursor = _dt.date.fromisoformat(monitor_start)
+    last_closed_day = _dt.date.fromisoformat(today_value) - _dt.timedelta(days=1)
+    if _valid_date(end):
+        last_closed_day = min(last_closed_day, _dt.date.fromisoformat(end))
+    if cursor > last_closed_day:
+        return ""
+    flags = _daily_flags(records, monitor_start, last_closed_day.isoformat(), challenge)
+    started = False
+    while cursor <= last_closed_day:
+        if flags.get(cursor.isoformat()) is True:
+            started = True
+        elif started:
+            return "连续记录已经中断"
+        cursor += _dt.timedelta(days=1)
+    return ""
 
 
 def recalculate_state(
@@ -411,7 +589,20 @@ def recalculate_state(
                 state["pending_celebrations"].append(challenge["id"])
             completed_now.append(copy.deepcopy(challenge))
         else:
-            remaining.append(challenge)
+            failure_reason = challenge_failure_reason(challenge, records, today=_date(now_value))
+            if failure_reason:
+                challenge.update({
+                    "status": "failed",
+                    "failed_at": now_value,
+                    "failure_reason": failure_reason,
+                    "failed_value": progress["current"],
+                    "final_progress": progress["current"],
+                })
+                state["failed"].insert(0, challenge)
+                if challenge["id"] not in state["acknowledged_failures"] and challenge["id"] not in state["pending_failures"]:
+                    state["pending_failures"].append(challenge["id"])
+            else:
+                remaining.append(challenge)
     state["active"] = remaining
     return state, completed_now
 
@@ -455,7 +646,54 @@ def consume_next_celebration(stored: Any) -> tuple[dict[str, Any], dict[str, Any
     return state, None
 
 
-def visible_recommendations(stored: Any) -> list[dict[str, Any]]:
+def consume_pending_celebrations(stored: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    state = normalize_challenge_state(stored)
+    completed_by_id = {item["id"]: item for item in state["completed"]}
+    consumed = []
+    for identity in state["pending_celebrations"]:
+        if identity not in state["celebrated"]:
+            state["celebrated"].append(identity)
+        item = completed_by_id.get(identity)
+        if item is not None:
+            consumed.append(copy.deepcopy(item))
+    state["pending_celebrations"] = []
+    return state, consumed
+
+
+def consume_pending_failures(stored: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    state = normalize_challenge_state(stored)
+    failed_by_id = {item["id"]: item for item in state["failed"]}
+    consumed = []
+    for identity in state["pending_failures"]:
+        if identity not in state["acknowledged_failures"]:
+            state["acknowledged_failures"].append(identity)
+        item = failed_by_id.get(identity)
+        if item is not None:
+            consumed.append(copy.deepcopy(item))
+    state["pending_failures"] = []
+    return state, consumed
+
+
+def mark_failed_retried(stored: Any, identity: str, *, now: str | None = None) -> dict[str, Any]:
+    state = normalize_challenge_state(stored)
+    retried_at = now or _dt.datetime.now().isoformat(timespec="seconds")
+    for item in state["failed"]:
+        if item["id"] == str(identity):
+            item["retried_at"] = retried_at
+            break
+    state["pending_failures"] = [item for item in state["pending_failures"] if item != str(identity)]
+    if str(identity) not in state["acknowledged_failures"]:
+        state["acknowledged_failures"].append(str(identity))
+    return state
+
+
+def visible_recommendations(
+    stored: Any,
+    records: Mapping[str, Any] | None = None,
+    *,
+    today: str | None = None,
+    profile: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     state = normalize_challenge_state(stored)
     completed_levels: dict[str, int] = {}
     for item in state["completed"]:
@@ -463,12 +701,46 @@ def visible_recommendations(stored: Any) -> list[dict[str, Any]]:
         if chain_id:
             completed_levels[chain_id] = max(completed_levels.get(chain_id, -1), int(item.get("level", -1)))
     active_chains = {str(item.get("chain_id")) for item in state["active"] if item.get("chain_id")}
-    return [
-        template.to_dict()
-        for template in recommended_templates()
-        if template.chain_id not in active_chains
-        and template.level == completed_levels.get(template.chain_id, -1) + 1
-    ]
+    chains: dict[str, list[ChallengeTemplate]] = {}
+    for template in recommended_templates(profile):
+        chains.setdefault(template.chain_id, []).append(template)
+
+    visible = []
+    for chain_id, templates in chains.items():
+        if chain_id in active_chains:
+            continue
+        config = templates[0].config if templates else {}
+        if config.get("repeatable_same"):
+            visible.append(templates[0].to_dict())
+            continue
+        if config.get("one_time") and completed_levels.get(chain_id, -1) >= 0:
+            continue
+        next_level = completed_levels.get(chain_id, -1) + 1
+        candidates = [template for template in templates if template.level >= next_level]
+        if not candidates:
+            highest = max(templates, key=lambda item: item.level)
+            if highest.challenge_type == "body_target":
+                if records is not None and not recommendation_progress(highest, records, today=today)["complete"]:
+                    visible.append(highest.to_dict())
+                continue
+            selected = repeatable_template(templates, next_level)
+            if records is not None:
+                for extended_level in range(next_level, next_level + 100):
+                    candidate = repeatable_template(templates, extended_level)
+                    if not recommendation_progress(candidate, records, today=today)["complete"]:
+                        break
+                    selected = candidate
+            visible.append(selected.to_dict())
+            continue
+        selected = candidates[0]
+        if records is not None:
+            for candidate in candidates:
+                progress = recommendation_progress(candidate, records, today=today)
+                if not progress["complete"]:
+                    break
+                selected = candidate
+        visible.append(selected.to_dict())
+    return visible
 
 
 def recommendation_progress(
@@ -479,13 +751,26 @@ def recommendation_progress(
     return challenge_progress(preview, records, today=now_date)
 
 
+def filter_recommendations_by_lane(
+    recommendations: Sequence[Mapping[str, Any]], lane: str = "all"
+) -> list[dict[str, Any]]:
+    selected = str(lane or "all")
+    if selected != "all" and selected not in LANES:
+        return []
+    return [
+        copy.deepcopy(dict(item))
+        for item in recommendations
+        if isinstance(item, Mapping) and (selected == "all" or item.get("lane") == selected)
+    ]
+
+
 def lane_available(stored: Any, lane: str) -> bool:
     return lane in LANES and len(normalize_challenge_state(stored)["active"]) < 3
 
 
 __all__ = [
-    "add_challenge", "challenge_progress", "consume_next_celebration", "create_challenge",
-    "delete_active_challenges", "lane_available", "normalize_challenge_state",
-    "recalculate_state", "recommendation_progress", "validate_challenge",
+    "add_challenge", "challenge_failure_reason", "challenge_progress", "consume_next_celebration", "consume_pending_celebrations", "consume_pending_failures", "create_challenge",
+    "delete_active_challenges", "filter_recommendations_by_lane", "lane_available", "normalize_challenge_state",
+    "mark_failed_retried", "recalculate_state", "recommendation_progress", "validate_challenge",
     "visible_recommendations",
 ]

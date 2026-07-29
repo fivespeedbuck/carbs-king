@@ -1,11 +1,47 @@
 $ErrorActionPreference = "Stop"
 $env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 $env:FLET_CLI_NO_RICH_OUTPUT = "1"
 $env:HTTP_PROXY = "http://127.0.0.1:7897"
 $env:HTTPS_PROXY = "http://127.0.0.1:7897"
 $env:NO_PROXY = "localhost,127.0.0.1,::1"
 
 Set-Location $PSScriptRoot
+
+try {
+    chcp 65001 | Out-Null
+} catch {
+    Write-Warning "Could not switch the console code page to UTF-8."
+}
+
+$pythonCandidates = @(
+    (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"),
+    (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
+) | Where-Object { $_ -and (Test-Path $_) }
+$python = $pythonCandidates | Select-Object -First 1
+if (-not $python) {
+    throw "Python 3.12 was not found."
+}
+
+$fletCandidates = @(
+    (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\Scripts\flet.exe"),
+    (Get-Command flet -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
+) | Where-Object { $_ -and (Test-Path $_) }
+$flet = $fletCandidates | Select-Object -First 1
+if (-not $flet) {
+    throw "Flet CLI was not found."
+}
+
+$git = Get-Command git -ErrorAction Stop | Select-Object -ExpandProperty Source -First 1
+& $git lfs pull --include="assets/exercises/**"
+if ($LASTEXITCODE -ne 0) {
+    throw "git lfs pull failed with exit code $LASTEXITCODE"
+}
+
+& $python "$PSScriptRoot\tools\asset_gate.py" verify-source
+if ($LASTEXITCODE -ne 0) {
+    throw "Canonical asset verification failed."
+}
 
 # Flet packages the directory configured by [tool.flet.app]. This project uses
 # `src` as the app path while the canonical media directory lives at root
@@ -19,6 +55,11 @@ New-Item -ItemType Directory -Force -Path $packageAssets | Out-Null
 & robocopy $sourceAssets $packageAssets /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -gt 7) {
     throw "Could not mirror app assets for APK packaging (robocopy exit code $LASTEXITCODE)"
+}
+
+& $python "$PSScriptRoot\tools\asset_gate.py" verify-mirror
+if ($LASTEXITCODE -ne 0) {
+    throw "Build asset mirror verification failed."
 }
 
 # Android 只有在包名、签名证书相同且版本号不降低时，才会显示“更新”。
@@ -96,10 +137,16 @@ if (Test-Path $debugKeyBackup) {
     )
 }
 
-& flet @buildArgs
+& $flet @buildArgs
 
 if ($LASTEXITCODE -ne 0) {
     throw "APK build failed with exit code $LASTEXITCODE"
+}
+
+$apkPath = Join-Path $PSScriptRoot "build\apk\carbs_king.apk"
+& $python "$PSScriptRoot\tools\asset_gate.py" verify-apk $apkPath
+if ($LASTEXITCODE -ne 0) {
+    throw "Packaged APK asset verification failed. Build number was not advanced."
 }
 
 # On a first-ever Android build Gradle may create the debug key during the build.

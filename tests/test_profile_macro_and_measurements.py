@@ -180,7 +180,7 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertNotIn('"记录本次测量"', details)
         self.assertIn("update_circumferences(", data_controller)
         self.assertIn("一次填写所有已测量围度", data_controller)
-        self.assertIn("记录围度", details)
+        self.assertNotIn("围度请在“数据 → 记录围度”中一次填写", details)
         self.assertNotIn("记录维度", details)
         self.assertNotIn("请先完善个人资料，再计算自动宏量目标。", controller)
         self.assertIn("small_text(profile_message) if not profile_ready", macro)
@@ -188,7 +188,8 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertIn("BMR（基础代谢率）", details)
         self.assertIn("TDEE（每日总能量消耗）", details)
         self.assertIn("if not auto_selected", macro)
-        self.assertIn("当前显示自动计算倍率，仅供查看", macro)
+        self.assertIn("蛋白按去脂体重", macro)
+        self.assertIn("碳水补足剩余热量", macro)
 
     def test_profile_fields_use_shared_compact_aligned_grids(self):
         controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8-sig")
@@ -199,6 +200,58 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertIn("three_field_grid(carb_box, protein_box, fat_box", controller)
         self.assertIn("two_field_grid(weight_box, bodyfat_box", details)
         self.assertIn("two_field_grid(height_box, age_box", details)
+
+    def test_profile_gender_options_keep_male_and_female_labels(self):
+        details = (ROOT / "src" / "profile_details_views.py").read_text(encoding="utf-8-sig")
+
+        self.assertIn('option_button("男", sex, on_sex_change)', details)
+        self.assertIn('option_button("女", sex, on_sex_change)', details)
+        self.assertNotIn('option_button("?", sex, on_sex_change)', details)
+
+    def test_challenge_recommendations_default_to_all_lanes_and_filter_on_select(self):
+        controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8")
+
+        self.assertIn('ft.dropdown.Option("all", "全部赛道")', controller)
+        self.assertIn('mobile_dropdown("选择赛道", "all"', controller)
+        self.assertIn("recommended_lane_box.on_change = change_recommendation_lane", controller)
+        self.assertIn("filter_recommendations_by_lane(recommendation_templates, selected_lane)", controller)
+        self.assertNotIn('mobile_dropdown("创建到赛道"', controller)
+
+    def test_custom_challenge_page_uses_grouped_catalog_and_metric_fields(self):
+        definitions = (ROOT / "src" / "goal_challenge_definitions.py").read_text(encoding="utf-8")
+        controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8")
+
+        for heading in ("基础累积", "强度突破", "密度效率", "游戏化"):
+            self.assertIn(f'"group": "{heading}"', definitions)
+        for title in (
+            "训练总容量 (kg/lbs)", "动作总容量 (kg/lbs)", "训练总组数 (组)",
+            "大重量组数 (组)", "有效连续打卡 (天)", "有氧耐力 (次)",
+            "定点训练 (次)", "特殊日训练 (次)",
+        ):
+            self.assertIn(title, definitions)
+        self.assertIn("CUSTOM_CHALLENGE_CATALOG", controller)
+        self.assertIn("def open_custom_spec(spec, *, preserve_values=False):", controller)
+        self.assertIn("min_weight_field.value", controller)
+        self.assertIn("duration_field.value", controller)
+        self.assertIn("special_dates_field.value", controller)
+        self.assertIn("def open_action_picker(e=None):", controller)
+        self.assertIn("catalog = exercise_catalog()", controller)
+        self.assertIn("build_category_sidebar(categories", controller)
+        self.assertIn("build_exercise_card(", controller)
+        self.assertIn("build_sort_row(choose_sort", controller)
+        self.assertIn('f"选择动作 · {len(catalog)} 个"', controller)
+        self.assertIn("[search, browser_panel]", controller)
+        self.assertIn('selected_action["id"] = str(exercise.get("id")', controller)
+        self.assertIn('small_text("已选动作")', controller)
+        self.assertNotIn("动作名称/ID", controller)
+        self.assertNotIn("action_field", controller)
+        self.assertIn('allowed_units = ("kg", "lbs") if default_unit == "kg" else (default_unit,)', controller)
+        self.assertIn("unit_box.field.disabled = len(allowed_units) == 1", controller)
+
+    def test_profile_details_removes_obsolete_circumference_tip_below_backup(self):
+        details = (ROOT / "src" / "profile_details_views.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("围度请在“数据 → 记录围度”中一次填写", details)
 
 
     def test_macro_goal_controls_are_wired_in_both_profile_entries(self):

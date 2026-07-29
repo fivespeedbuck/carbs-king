@@ -1,43 +1,62 @@
 # 本地 APK 构建与发布门禁（P0）
 
-## P0：资源完整性是发布阻断项
+## 单一资源源
 
-本项目的 Flet 应用目录是 `src`。Android 构建器只会打包 `src/assets`；根目录的
-`assets` 不会自动进入 APK。训练 GIF、提示音和图标必须同时在 `src/assets` 中存在，
-并且训练 GIF 必须被 Git 跟踪，保证干净检出后的构建也完整。
+- 根目录 `assets/**` 是唯一应用资源源。
+- 训练媒体只由 `assets/exercises/**` 进入 Git LFS；不得再提交
+  `src/assets/**` 的副本。
+- Flet 应用路径是 `src`，所以 `build_apk_update.ps1` 会在构建前把根目录
+  `assets` 镜像到被 Git 忽略的 `src/assets`。该目录是生成物。
 
-以下任一情况都视为 P0，禁止发布或替换 GitHub Release：
+## 以下情况禁止发布
 
-- APK 内 GIF 或音频数量为 0，或明显低于源资源数量；
-- `src/assets/exercises` 缺失、为空或被 `.gitignore` 排除；
-- 仅验证了构建命令成功，未检查 APK 压缩包内容；
-- 构建日志出现 UTF-8/GBK 编码错误。
+- `git lfs pull` 失败；
+- 根资源中出现 `version https://git-lfs.github.com/spec/v1` 指针文本；
+- 任一 GIF 文件头不是 `GIF87a` 或 `GIF89a`；
+- 根资源与 `src/assets` 的路径、大小或 SHA-256 不一致；
+- APK 缺少 `assets/flutter_assets/app/app.zip`；
+- 内层 ZIP 的资源路径、大小、SHA-256 或 GIF 文件头与根资源不一致；
+- 构建、测试、语法检查或 `git diff --check` 失败。
 
-## 每次本地构建的固定流程
+## 固定构建流程
 
-1. 在正式目录 `D:\carbs-king` 执行，不能在临时 worktree 或其他目录发布。
-2. 构建前启用 UTF-8：
+在正式目录 `D:\carbs-king` 使用：
 
-   ```powershell
-   chcp 65001
-   $env:PYTHONUTF8 = "1"
-   $env:PYTHONIOENCODING = "utf-8"
-   ```
+```powershell
+chcp 65001
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+powershell -ExecutionPolicy Bypass -File .\build_apk_update.ps1
+```
 
-3. 核对源资源数量：`assets` 与 `src/assets` 的 GIF、MP3、WAV 数量应一致。
-4. 使用项目指定的 Flet 执行 APK 构建。
-5. 将 APK 当作 ZIP 检查：Flet 会把应用资源放在
-   `assets/flutter_assets/app/app.zip` 的内层 ZIP；必须统计这个内层 ZIP 的 GIF、MP3、WAV
-   数量和总体积，并与第 3 步对照。不能只统计 APK 最外层文件名。
-6. 运行相关测试及 `git diff --check`。所有检查通过后，才允许提交、推送或上传 Release。
+脚本按顺序执行：
 
-## 验收基线
+1. `git lfs pull --include="assets/exercises/**"`；
+2. `tools/asset_gate.py verify-source`，同时核对 Git 资源清单；
+3. 使用固定源/目标路径将 `assets` 镜像到 `src/assets`；
+4. `tools/asset_gate.py verify-mirror` 逐文件核对；
+5. Flet APK 构建；
+6. `tools/asset_gate.py verify-apk` 检查 APK 内层 `app.zip`；
+7. 只有以上全部通过后，才把 `pyproject.toml` 的 Build 号加一。
 
-截至 2026-07-29，源资源基线为：1324 个 GIF、3 个音频文件。数字变化时应有对应的
-资源变更说明；不能因为 APK 体积变小或构建成功而跳过内容核验。
+长时间构建应使用隐藏后台进程和独立日志，每次轮询不超过 60 秒。工具等待超时
+不等于构建失败；必须继续检查实际进程、日志和 APK 更新时间。
 
-## 复现与诊断
+## 当前资源基线
 
-若 APK 缺资源，先检查 `pyproject.toml` 的 `[tool.flet.app] path = "src"`，再检查
-`src/assets/exercises` 是否实际存在且已纳入版本控制。不要先怀疑 Android 构建器，也不要
-直接重试发布。
+截至 2026-07-29：
+
+- 根目录 `assets/exercises`：2649 个文件、155,007,984 字节；
+- GIF：1324 个；JPG：1324 个；
+- 根目录全部 `assets`：2653 个文件、155,783,546 字节；
+- 音频：2 个 MP3、1 个 WAV。
+
+基线变化必须有对应资源提交说明。门禁以逐文件一致为最终标准，不以 APK 大小或
+“Successfully built”作为完整性证据。
+
+## Release 规则
+
+- APK 不提交 Git，只上传 GitHub Release；
+- 上传前记录本地大小和 SHA-256；上传后核对远端大小与 digest；
+- 未经用户确认，不推送分支、不合并 `main`、不覆盖 Release；
+- 2026-07-29 的 `v1.2.3` 71,915,571 字节 APK 含 LFS 指针，是已知错误包。

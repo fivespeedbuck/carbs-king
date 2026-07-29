@@ -79,14 +79,13 @@ def build_profile_details(
         ),
         *circumference_rows,
         small_text("性别"),
-        ft.Row([option_button("男", sex, on_sex_change), option_button("?", sex, on_sex_change)], spacing=8),
+        ft.Row([option_button("男", sex, on_sex_change), option_button("女", sex, on_sex_change)], spacing=8),
         small_text("运动习惯"),
         ft.Row([option_button("久坐少动", activity_habit, on_activity_change), option_button("偶尔运动", activity_habit, on_activity_change)], spacing=8),
         ft.Row([option_button("规律训练", activity_habit, on_activity_change), option_button("高频训练", activity_habit, on_activity_change)], spacing=8),
         metrics,
         macro_panel,
         backup_panel,
-        ft.Container(content=small_text("围度请在“数据 → 记录围度”中一次填写；围度只做趋势记录，不参与碳循环公式。"), bgcolor="#FAFAFA", border_radius=8, padding=10),
     ], spacing=10))
 
 

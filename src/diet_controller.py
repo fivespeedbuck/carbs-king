@@ -396,7 +396,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             "method": "计量口径",
             "base_qty": "基准数量",
             "kcal": "热量 kcal",
-            "carb": "?? g",
+            "carb": "碳水 g",
             "protein": "蛋白 g",
             "fat": "脂肪 g",
         }
@@ -509,7 +509,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             [small_text(str(targets.get("profile_message", "请完善个人资料后计算营养目标。")))]
             if not targets.get("is_ready", True)
             else [
-                macro_progress_bar("??", total["carb"], target_min=targets["carb_min"], target_max=targets["carb_max"], kind="carb", width=responsive_bar_width()),
+                macro_progress_bar("碳水", total["carb"], target_min=targets["carb_min"], target_max=targets["carb_max"], kind="carb", width=responsive_bar_width()),
                 macro_progress_bar("蛋白", total["protein"], target_min=targets["protein_min"], target_max=targets["protein_max"], kind="protein", width=responsive_bar_width()),
                 macro_progress_bar("脂肪", total["fat"], target_min=targets["fat_min"], target_max=targets["fat_max"], kind="fat", width=responsive_bar_width()),
             ]
@@ -577,7 +577,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                 if len(items) > 3:
                     names += "…"
                 content_rows.append(ft.Container(content=ft.Column([
-                    ft.Row([ft.Text(meal, size=13, weight="bold", color=TEXT), small_text(f"{mt['kcal']} kcal｜碳{mt['carb']} 蛋{mt['protein']} ?{mt['fat']}")], alignment="spaceBetween"),
+                    ft.Row([ft.Text(meal, size=13, weight="bold", color=TEXT), small_text(f"{mt['kcal']} kcal｜碳{mt['carb']} 蛋{mt['protein']} 脂{mt['fat']}")], alignment="spaceBetween"),
                     ft.Text(names, size=12, color=SUB) if names else ft.Container(),
                 ], spacing=2), bgcolor="#FAFAFA", border_radius=8, padding=8, margin=2))
             if not any_record:
@@ -714,7 +714,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                 if index < 0:
                     continue
                 macros = (
-                    f"? 100g：{food.get('kcal')} kcal · ?? {food.get('carb')}g · "
+                    f"每 100g：{food.get('kcal')} kcal · 碳水 {food.get('carb')}g · "
                     f"蛋白 {food.get('protein')}g · 脂肪 {food.get('fat')}g"
                 )
                 micros = f"纤维 {food.get('fiber', 0)}g · 胆固醇 {food.get('cholesterol', 0)}mg"

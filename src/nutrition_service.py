@@ -1,4 +1,4 @@
-﻿"""Pure nutrition and body-composition calculations."""
+"""Pure nutrition and body-composition calculations."""
 
 from __future__ import annotations
 
@@ -24,21 +24,22 @@ CARB_CYCLE_GOALS = ("减脂", "保持", "增肌")
 
 GOAL_CONFIG = {
     "减脂": {
-        "calorie_factor": {"高碳日": 0.80, "中碳日": 0.72, "低碳日": 0.65},
-        "protein_gkg": {"高碳日": 2.20, "中碳日": 2.15, "低碳日": 2.05},
-        "fat_gkg": {"高碳日": 0.75, "中碳日": 0.85, "低碳日": 0.95},
+        "calorie_factor": {"高碳日": 0.90, "中碳日": 0.80, "低碳日": 0.70},
+        "protein_lbm_gkg": 2.20,
     },
     "保持": {
-        "calorie_factor": {"高碳日": 1.00, "中碳日": 1.00, "低碳日": 1.00},
-        "protein_gkg": {"高碳日": 2.00, "中碳日": 1.95, "低碳日": 1.90},
-        "fat_gkg": {"高碳日": 0.80, "中碳日": 0.90, "低碳日": 1.00},
+        "calorie_factor": {"高碳日": 1.10, "中碳日": 1.00, "低碳日": 0.90},
+        "protein_lbm_gkg": 2.00,
     },
     "增肌": {
-        "calorie_factor": {"高碳日": 1.10, "中碳日": 1.10, "低碳日": 1.10},
-        "protein_gkg": {"高碳日": 1.95, "中碳日": 1.90, "低碳日": 1.85},
-        "fat_gkg": {"高碳日": 0.75, "中碳日": 0.80, "低碳日": 0.85},
+        "calorie_factor": {"高碳日": 1.15, "中碳日": 1.05, "低碳日": 0.95},
+        "protein_lbm_gkg": 2.00,
     },
 }
+
+# Fat receives a transparent share of each day's target calories.  Carbs close
+# the remaining energy, so no hidden upper limit or discarded calories exist.
+FAT_CALORIE_SHARE = {"高碳日": 0.25, "中碳日": 0.30, "低碳日": 0.35}
 
 
 @dataclass
@@ -55,9 +56,26 @@ def create_nutrition_service(state: AppState) -> NutritionService:
         value = str(goal or "").strip()
         return value if value in CARB_CYCLE_GOALS else "减脂"
 
-    def get_goal_value(goal: str, day_type: str, key: str) -> float:
-        config = GOAL_CONFIG[goal][key]
-        return float(config.get(day_type, config["高碳日"]))
+    def automatic_targets(comp: dict[str, Any], goal: str, day_type: str) -> dict[str, float]:
+        config = GOAL_CONFIG[goal]
+        calorie_factor = float(config["calorie_factor"][day_type])
+        protein_lbm_gkg = float(config["protein_lbm_gkg"])
+        fat_calorie_share = FAT_CALORIE_SHARE[day_type]
+        calorie_target = round(comp["tdee"] * calorie_factor, 0)
+        protein_target = comp["lean_mass"] * protein_lbm_gkg
+        fat_target = calorie_target * fat_calorie_share / 9
+        carb_target = (calorie_target - protein_target * 4 - fat_target * 9) / 4
+        if carb_target <= 0:
+            raise ValueError("automatic macro configuration leaves no calories for carbohydrates")
+        return {
+            "calorie_factor": calorie_factor,
+            "calorie_target": calorie_target,
+            "protein_lbm_gkg": protein_lbm_gkg,
+            "fat_calorie_share": fat_calorie_share,
+            "protein": protein_target,
+            "fat": fat_target,
+            "carb": carb_target,
+        }
 
     def body_composition():
         raw = {key: str(state.get(key, "") or "").strip() for key in PROFILE_REQUIRED_FIELDS}
@@ -128,19 +146,12 @@ def create_nutrition_service(state: AppState) -> NutritionService:
 
         goal = normalize_goal(state.get("macro_goal", "减脂"))
         result = {}
-        for day_type, cfg in DAY_TYPES.items():
-            calorie_factor = get_goal_value(goal, day_type, "calorie_factor")
-            protein_gkg = get_goal_value(goal, day_type, "protein_gkg")
-            fat_gkg = get_goal_value(goal, day_type, "fat_gkg")
-            calorie_target = round(comp["tdee"] * calorie_factor, 0)
-            protein_target = comp["lean_mass"] * protein_gkg
-            fat_target = comp["weight"] * fat_gkg
-            carb_target = max(30.0, (calorie_target - protein_target * 4 - fat_target * 9) / 4)
-
+        for day_type in DAY_TYPES:
+            target = automatic_targets(comp, goal, day_type)
             result[day_type] = {
-                "carb": round(carb_target / comp["weight"], 2),
-                "protein": round(protein_target / comp["lean_mass"], 2) if comp["lean_mass"] else protein_gkg,
-                "fat": round(fat_target / comp["weight"], 2),
+                "carb": round(target["carb"] / comp["weight"], 2),
+                "protein": round(target["protein"] / comp["lean_mass"], 2),
+                "fat": round(target["fat"] / comp["weight"], 2),
             }
         return result
 
@@ -187,8 +198,6 @@ def create_nutrition_service(state: AppState) -> NutritionService:
         macro_mode = state.get("macro_mode", "auto")
         macro_goal = normalize_goal(state.get("macro_goal", "减脂"))
         if macro_mode == "custom":
-            calorie_factor = cfg["calorie_factor"]
-            calorie_target = round(comp["tdee"] * calorie_factor, 0)
             macro_multipliers = get_multipliers("custom")
             day_multipliers = macro_multipliers.get(day_type, {}) if isinstance(macro_multipliers, dict) else {}
             day_multipliers = day_multipliers if isinstance(day_multipliers, dict) else {}
@@ -204,18 +213,20 @@ def create_nutrition_service(state: AppState) -> NutritionService:
             fat_min = round(max(0, fat_center - weight * 0.075), 1)
             fat_max = round(fat_center + weight * 0.075, 1)
             carb_center = max(30, round(weight * carb_gkg, 1))
+            calorie_target = round(carb_center * 4 + protein_center * 4 + fat_center * 9, 0)
+            calorie_factor = calorie_target / comp["tdee"]
+            fat_calorie_share = fat_center * 9 / calorie_target
             carb_interval = cfg["carb_interval"]
             carb_min = max(30, round(carb_center - carb_interval, 1))
             carb_max = round(carb_center + carb_interval, 1)
         else:
-            calorie_factor = get_goal_value(macro_goal, day_type, "calorie_factor")
-            protein_gkg = get_goal_value(macro_goal, day_type, "protein_gkg")
-            fat_gkg = get_goal_value(macro_goal, day_type, "fat_gkg")
-            calorie_target = round(comp["tdee"] * calorie_factor, 0)
-
-            protein_center = lean_mass * protein_gkg
-            fat_center = weight * fat_gkg
-            carb_center = max(30.0, (calorie_target - protein_center * 4 - fat_center * 9) / 4)
+            automatic = automatic_targets(comp, macro_goal, day_type)
+            calorie_factor = automatic["calorie_factor"]
+            calorie_target = automatic["calorie_target"]
+            fat_calorie_share = automatic["fat_calorie_share"]
+            protein_center = automatic["protein"]
+            fat_center = automatic["fat"]
+            carb_center = automatic["carb"]
             carb_interval = cfg["carb_interval"]
 
             protein_spread = 0.15 if macro_goal == "减脂" else 0.10
@@ -250,6 +261,9 @@ def create_nutrition_service(state: AppState) -> NutritionService:
             "bmr": comp["bmr"],
             "tdee": comp["tdee"],
             "calorie_target": calorie_target,
+            "calorie_factor": round(calorie_factor, 4),
+            "fat_calorie_share": round(fat_calorie_share, 4),
+            "protein_basis": "lean_mass",
             "activity_habit": comp["activity_habit"],
             "activity_factor": comp["activity_factor"],
             "macro_mode": macro_mode,

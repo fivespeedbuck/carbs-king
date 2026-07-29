@@ -1,4 +1,4 @@
-﻿"""Repository contracts and JSON-backed application repositories."""
+"""Repository contracts and JSON-backed application repositories."""
 
 from __future__ import annotations
 

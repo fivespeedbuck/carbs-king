@@ -1,4 +1,4 @@
-﻿"""Profile feature controller for onboarding, profile, macros, achievements, and backup entry points."""
+"""Profile feature controller for onboarding, profile, macros, achievements, and backup entry points."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import flet as ft
+import flet_audio as fta
 
 from achievement_service import (
     acknowledge_achievement_celebration,
@@ -25,12 +26,19 @@ from app_utils import to_float
 from backup_controller import BackupController
 from controller_runtime import ControllerRuntime
 from form_views import FormViewContext, build_dialog, build_full_form_sheet
-from goal_challenge_definitions import BODY_METRICS, LANE_LABELS, TYPE_LABELS, TYPE_LANES
+from exercise_library import EXERCISE_CATEGORIES, exercise_catalog, search_exercises
+from goal_challenge_definitions import (
+    BODY_METRICS, CUSTOM_CHALLENGE_CATALOG, LANE_LABELS, TYPE_LABELS, TYPE_LANES, level_info,
+)
 from goal_challenge_service import (
     add_challenge,
-    consume_next_celebration,
+    challenge_progress,
+    consume_pending_celebrations,
+    consume_pending_failures,
     create_challenge,
     delete_active_challenges,
+    filter_recommendations_by_lane,
+    mark_failed_retried,
     normalize_challenge_state,
     recalculate_state,
     recommendation_progress,
@@ -42,6 +50,10 @@ from profile_backup_views import build_backup_panel
 from profile_details_views import build_profile_details, build_profile_metrics
 from profile_macro_views import build_carb_cycle_goal_section, build_macro_panel
 from repositories import AppRepositories
+from training_experience_service import exercise_usage_stats, sort_exercises
+from training_picker_views import (
+    build_category_sidebar, build_exercise_card, build_exercise_help, build_sort_row,
+)
 from ui_components import (
     GREEN, PRIMARY, PRIMARY_SOFT, TEXT, YELLOW, labeled_plain_field, make_button,
     mobile_dropdown, small_text, three_field_grid, two_field_grid,
@@ -91,8 +103,31 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
     _KEYBOARD_NUMBER = deps.keyboard_number
     _SCROLL_HIDDEN = deps.scroll_hidden
     celebration_state = {"scheduled": False, "dialog": None}
+    failure_state = {"scheduled": False, "dialog": None}
+    challenge_completion_audio = {"service": None}
+    try:
+        challenge_completion_audio["service"] = fta.Audio(src="assets/training_complete.mp3", volume=1.0)
+        page.services.append(challenge_completion_audio["service"])
+    except (AttributeError, RuntimeError, TypeError):
+        challenge_completion_audio["service"] = None
     challenge_ui = {"delete_mode": False, "selected": set()}
     fallback_challenges: dict[str, Any] = {}
+
+    def play_challenge_completion_audio():
+        audio = challenge_completion_audio["service"]
+        if audio is None:
+            return
+
+        async def play_audio():
+            try:
+                await audio.play()
+            except Exception:
+                pass
+
+        try:
+            page.run_task(play_audio)
+        except (AttributeError, RuntimeError):
+            pass
 
     def iso_now():
         return datetime.datetime.now().isoformat(timespec="seconds")
@@ -110,7 +145,6 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             "age": state.get("age", ""),
             "sex": state.get("sex", ""),
             "activity_habit": state.get("activity_habit", ""),
-            "macro_goal": state.get("macro_goal", "减脂"),
             "waist_cm": state.get("waist_cm", ""),
             "arm_cm": state.get("arm_cm", ""),
             "chest_cm": state.get("chest_cm", ""),
@@ -195,43 +229,57 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         pending = stored.get("pending_celebrations", [])
         if not pending:
             return
-        challenge = next(
-            (item for item in stored.get("completed", []) if item.get("id") == pending[0]),
-            None,
-        )
-        if challenge is None:
+        completed_by_id = {
+            str(item.get("id")): item
+            for item in stored.get("completed", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        challenges = [completed_by_id[identity] for identity in pending if identity in completed_by_id]
+        if not challenges:
             return
+        if any(int(challenge.get("level", -1) or -1) >= 4 for challenge in challenges):
+            play_challenge_completion_audio()
+        highest_challenge = max(
+            challenges,
+            key=lambda challenge: int(challenge.get("level", -1) or -1),
+        )
         dialog = None
 
         def confirm(event=None):
-            updated, _ = consume_next_celebration(load_challenges())
+            updated, consumed = consume_pending_celebrations(load_challenges())
             save_challenges(updated)
             close_control(dialog)
             celebration_state["dialog"] = None
-            schedule_challenge_celebration()
+            snack("挑战成果已收下" if len(consumed) == 1 else f"已收下 {len(consumed)} 项挑战成果")
+            refresh()
 
         def dismissed(event=None):
             if celebration_state["dialog"] is dialog:
                 celebration_state["dialog"] = None
-                schedule_challenge_celebration()
 
         def dismiss(event=None):
             close_control(dialog)
             dismissed()
 
+        progress_lines = [
+            f"完成了：{str(challenge.get('declaration') or challenge.get('title') or '目标挑战').strip()}"
+            for challenge in challenges
+        ]
         dialog = build_achievement_celebration(
             {
-                "title": str(challenge.get("title") or "目标挑战"),
-                "description": (
-                    f"最终进度：{float(challenge.get('completed_value', challenge.get('current', 0)) or 0):g} / "
-                    f"{float(challenge.get('target', 0) or 0):g} {challenge.get('unit', '')}"
+                "title": (
+                    str(challenges[0].get("title") or "目标挑战")
+                    if len(challenges) == 1
+                    else f"{len(challenges)} 项挑战已完成"
                 ),
+                "description": "\n".join(progress_lines),
+                "level_color": str(highest_challenge.get("level_color") or YELLOW),
             },
             on_confirm=confirm,
             on_dismiss=dismissed,
             headline="挑战达成",
             confirm_label="收下挑战成果",
-            message="这是一项由你主动设定并完成的挑战。继续保持，下一项目标也不远了。",
+            message="Yeah Buddy! Light Weight Baby!",
             on_close=dismiss,
         )
         celebration_state["dialog"] = dialog
@@ -252,6 +300,103 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         except (AttributeError, RuntimeError):
             celebration_state["scheduled"] = False
             show_next_challenge_celebration()
+
+    def show_failure_dialog(items=None, *, acknowledge_pending=False):
+        if failure_state["dialog"] is not None or state.get("current_view") != "me":
+            return
+        stored = load_challenges()
+        failed_by_id = {
+            str(item.get("id")): item
+            for item in stored.get("failed", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        if items is None:
+            pending = stored.get("pending_failures", [])
+            failures = [failed_by_id[identity] for identity in pending if identity in failed_by_id]
+            acknowledge_pending = True
+        else:
+            failures = [
+                failed_by_id.get(str(item.get("id")), item)
+                for item in items
+                if isinstance(item, dict) and item.get("id")
+            ]
+            pending_ids = {str(identity) for identity in stored.get("pending_failures", [])}
+            acknowledge_pending = any(str(item.get("id")) in pending_ids for item in failures)
+        if not failures:
+            return
+        dialog = None
+
+        def acknowledge():
+            if not acknowledge_pending:
+                return list(failures)
+            updated, consumed = consume_pending_failures(load_challenges())
+            save_challenges(updated)
+            return consumed
+
+        def retry(event=None):
+            consumed = acknowledge()
+            close_control(dialog)
+            failure_state["dialog"] = None
+            if consumed:
+                open_retry_challenge(consumed[0])
+
+        def keep(event=None):
+            acknowledge()
+            close_control(dialog)
+            failure_state["dialog"] = None
+            refresh()
+
+        def dismiss_failure(event=None):
+            close_control(dialog)
+            failure_state["dialog"] = None
+
+        failure_lines = [
+            f"{item.get('title') or '目标挑战'}：{item.get('failure_reason') or '目标未完成'}"
+            for item in failures
+        ]
+        failure_color = "#6F7774"
+        failure_list_height = min(190, max(72, 44 + len(failure_lines) * 42))
+        dialog = dialog_base(
+            "挑战失败",
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("恭喜，你成功证明了计划不会自己完成。", size=16, weight="bold", color=failure_color),
+                    ft.Text("计划写得挺狠，执行得挺软。", size=14, color=TEXT),
+                    ft.Text("嘴硬没用，记录不会替你训练。", size=14, color=TEXT),
+                    ft.Container(
+                        content=ft.Column([small_text(line) for line in failure_lines], spacing=5, scroll=_SCROLL_HIDDEN),
+                        bgcolor="#F0F2F1", border_radius=8, padding=10, height=failure_list_height,
+                    ),
+                ], spacing=10, tight=True),
+                width=min(286, max(250, responsive_width() - 36)),
+            ),
+            [
+                make_button("先挂着丢人", on_click=keep, bgcolor="#EEF0EF", color=failure_color, expand=True),
+                make_button("不服，编辑后重来", on_click=retry, expand=True),
+            ],
+            on_close=dismiss_failure,
+        )
+        failure_state["dialog"] = dialog
+        open_control(dialog)
+
+    def show_pending_failure_dialog():
+        show_failure_dialog()
+
+    def schedule_challenge_failure():
+        if failure_state["scheduled"] or failure_state["dialog"] is not None:
+            return
+        failure_state["scheduled"] = True
+
+        async def show_after_render():
+            await asyncio.sleep(0)
+            failure_state["scheduled"] = False
+            show_pending_failure_dialog()
+
+        try:
+            page.run_task(show_after_render)
+        except (AttributeError, RuntimeError):
+            failure_state["scheduled"] = False
+            show_pending_failure_dialog()
 
     def open_completed_challenges(event=None):
         dialog = None
@@ -288,9 +433,10 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         )
         open_control(dialog)
 
-    def open_new_challenge(initial_lane=None, preset=None, event=None):
+    def open_new_challenge(initial_lane=None, preset=None, retry_source=None, event=None):
         dialog_width = responsive_width()
         selected_mode = {"value": "recommended"}
+        selected_custom = {"spec": None}
         sheet = None
         tabs = ft.Row(spacing=8)
         recommended_holder = ft.Container(expand=True)
@@ -299,13 +445,15 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         footer_custom = make_button("创建自定义挑战", expand=True)
         footer_custom.visible = False
         preset = dict(preset or {})
+        retry_source = dict(retry_source or {})
         if initial_lane and not preset:
             lane_defaults = {"food": "nutrition_streak", "training": "training_sessions", "recovery": "water_streak"}
             preset["challenge_type"] = lane_defaults.get(initial_lane, "training_sessions")
             preset["lane"] = initial_lane
         lane_options = [ft.dropdown.Option(key, label) for key, label in LANE_LABELS.items()]
+        recommendation_lane_options = [ft.dropdown.Option("all", "全部赛道"), *lane_options]
         default_lane = str(preset.get("lane") or initial_lane or "training")
-        recommended_lane_box = mobile_dropdown("创建到赛道", default_lane, lane_options, width=dialog_width)
+        recommended_lane_box = mobile_dropdown("选择赛道", "all", recommendation_lane_options, width=dialog_width)
 
         def close_sheet(e=None):
             close_control(sheet)
@@ -315,64 +463,104 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         def save_created(challenge):
             try:
                 updated, saved = add_challenge(load_challenges(), challenge, records, now=iso_now())
+                if retry_source.get("id"):
+                    updated = mark_failed_retried(updated, str(retry_source["id"]), now=iso_now())
                 save_challenges(updated)
             except ValueError as exc:
                 snack(str(exc))
                 return False
             close_sheet()
             refresh()
-            if saved.get("status") == "completed":
-                schedule_challenge_celebration()
             return True
 
         def create_from_template(template):
+            selected_lane = str(recommended_lane_box.value or "all")
+            creation_lane = str(template.get("lane") or "training") if selected_lane == "all" else selected_lane
             try:
                 challenge = create_challenge(
                     template,
                     now=iso_now(),
-                    lane=str(recommended_lane_box.value or template.get("lane") or "training"),
+                    lane=creation_lane,
                 )
             except ValueError as exc:
                 snack(str(exc))
                 return
             save_created(challenge)
 
-        recommendation_controls = [
-            small_text("推荐卡会显示真实历史背景进度；选择赛道后点击创建才会追踪和庆祝。"),
-            recommended_lane_box,
-        ]
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for template in visible_recommendations(load_challenges()):
-            grouped.setdefault(str(template.get("group") or "推荐挑战"), []).append(template)
-        level_names = ("优秀", "精良", "史诗", "传说")
-        level_colors = ("#2E9B62", "#2878C8", "#7651B8", "#E0822B")
-        for group, templates in grouped.items():
-            recommendation_controls.append(ft.Text(group, size=15, weight="bold", color=TEXT))
-            for template in templates:
-                progress = recommendation_progress(template, records)
-                level = max(0, min(3, int(template.get("level", 0))))
-                recommendation_controls.append(ft.Container(
-                    content=ft.Column([
+        level_colors = ("#2E9B62", "#2878C8", "#7651B8", "#E0822B", "#C73B3B")
+        recommendation_profile = {
+            "weight": state.get("weight", ""),
+            "bodyfat": state.get("bodyfat", ""),
+            "height": state.get("height", ""),
+            "age": state.get("age", ""),
+            "sex": state.get("sex", ""),
+            "activity_habit": state.get("activity_habit", ""),
+            "macro_goal": state.get("macro_goal", "减脂"),
+            "circumference": state.get("circumference"),
+        }
+        recommendation_templates = visible_recommendations(
+            load_challenges(), records, profile=recommendation_profile
+        )
+
+        def build_recommendation_controls(selected_lane="all"):
+            recommendation_controls = [
+                small_text("推荐会结合身体资料、运动频率和碳循环目标；只有点击创建后才会追踪和庆祝。"),
+                recommended_lane_box,
+            ]
+            selected_lane = str(selected_lane or "all")
+            filtered = filter_recommendations_by_lane(recommendation_templates, selected_lane)
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for template in filtered:
+                grouped.setdefault(str(template.get("group") or "推荐挑战"), []).append(template)
+            for group, templates in grouped.items():
+                recommendation_controls.append(ft.Text(group, size=15, weight="bold", color=TEXT))
+                for template in templates:
+                    progress = recommendation_progress(template, records)
+                    raw_level = max(0, int(template.get("level", 0)))
+                    level = min(4, raw_level)
+                    level_name = level_info(raw_level)["name"]
+                    config = template.get("config", {})
+                    rationale = str(config.get("rationale") or "") if isinstance(config, dict) else ""
+                    details = [
                         ft.Row([
                             ft.Text(str(template.get("title") or "目标挑战"), size=14, weight="bold", color=TEXT, expand=True, max_lines=2, overflow="ellipsis"),
-                            ft.Text(level_names[level], size=11, weight="bold", color=level_colors[level]),
+                            ft.Text(level_name, size=11, weight="bold", color=level_colors[level]),
                         ], spacing=6),
+                    ]
+                    if rationale:
+                        details.append(small_text(rationale))
+                    details.extend([
                         small_text(
                             f"历史进度 {progress['current']:g} / {progress['target']:g} "
                             f"{progress['unit']} · {progress['percent']:g}%"
                         ),
                         ft.ProgressBar(value=progress["percent"] / 100, color=level_colors[level], bgcolor="#E4EAE8", height=6),
                         small_text("点击创建并同步历史进度"),
-                    ], spacing=6),
-                    padding=10,
-                    bgcolor="#F9FBFA",
-                    border=ft.Border.all(1, level_colors[level]),
-                    border_radius=8,
-                    on_click=lambda e, template=template: create_from_template(template),
-                ))
-        if len(recommendation_controls) == 1:
-            recommendation_controls.append(small_text("当前没有可推荐项目；完成上一等级后会显示下一等级。"))
-        recommended_holder.content = ft.Column(recommendation_controls, spacing=9, scroll=_SCROLL_HIDDEN, expand=True)
+                    ])
+                    recommendation_controls.append(ft.Container(
+                        content=ft.Column(details, spacing=6),
+                        padding=10,
+                        bgcolor="#F9FBFA",
+                        border=ft.Border.all(1, level_colors[level]),
+                        border_radius=8,
+                        on_click=lambda e, template=template: create_from_template(template),
+                    ))
+            if not filtered:
+                recommendation_controls.append(small_text("这个赛道当前没有可推荐项目；完善资料或完成上一等级后会自动更新。"))
+            recommended_holder.content = ft.Column(recommendation_controls, spacing=9, scroll=_SCROLL_HIDDEN, expand=True)
+
+        def change_recommendation_lane(event=None):
+            event_value = getattr(getattr(event, "control", None), "value", None)
+            selected_lane = str(event_value or recommended_lane_box.value or "all")
+            recommended_lane_box.value = selected_lane
+            build_recommendation_controls(selected_lane)
+            try:
+                page.update()
+            except Exception:
+                pass
+
+        recommended_lane_box.on_change = change_recommendation_lane
+        build_recommendation_controls("all")
 
         title_box, title_field = labeled_plain_field("挑战名称", preset.get("title", ""), expand=True)
         declaration_box, declaration_field = labeled_plain_field("挑战宣言（可选）", preset.get("declaration", ""), expand=True)
@@ -384,26 +572,207 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         )
         lane_box = mobile_dropdown("所属赛道", default_lane, lane_options, expand=True)
         target_box, target_field = labeled_plain_field("目标值", str(preset.get("target", "")), keyboard_type=_KEYBOARD_NUMBER, expand=True)
-        unit_box = mobile_dropdown("单位", preset.get("unit", "次"), [ft.dropdown.Option(value) for value in ("次", "天", "kg", "lbs", "%", "cm")], expand=True)
+        unit_box = mobile_dropdown("单位", preset.get("unit", "次"), [ft.dropdown.Option(value) for value in ("次", "天", "组", "kg", "lbs", "%", "cm")], expand=True)
         today = datetime.date.today()
         start_box, start_field = labeled_plain_field("开始日期（YYYY-MM-DD）", preset.get("start_date", today.isoformat()), expand=True)
         end_box, end_field = labeled_plain_field("结束日期（YYYY-MM-DD）", preset.get("end_date", (today + datetime.timedelta(days=30)).isoformat()), expand=True)
-        action_box, action_field = labeled_plain_field("动作名称/ID", preset.get("action_id", ""), expand=True)
+        selected_action = {
+            "id": str(preset.get("action_id") or ""),
+            "name": str(preset.get("action_name") or preset.get("action_id") or ""),
+        }
+        selected_action_text = ft.Text(selected_action["name"] or "未选择动作", size=14, weight="bold", color=TEXT)
+        action_selection_holder = ft.Container(
+            content=ft.Row([small_text("已选动作"), selected_action_text], alignment="spaceBetween"),
+            padding=10, bgcolor="#F8FAFC", border_radius=8,
+        )
+        action_picker_button = make_button("从动作库选择动作", bgcolor=PRIMARY_SOFT, color=GREEN, expand=True)
+        min_weight_box, min_weight_field = labeled_plain_field("重量门槛 kg", str(preset.get("min_weight", "")), keyboard_type=_KEYBOARD_NUMBER, expand=True)
+        duration_box, duration_field = labeled_plain_field("单次最低时长 min", str(preset.get("min_duration_min", 40)), keyboard_type=_KEYBOARD_NUMBER, expand=True)
+        start_hour_box, start_hour_field = labeled_plain_field("开始小时（0-23）", str(preset.get("start_hour", 6)), keyboard_type=_KEYBOARD_NUMBER, expand=True)
+        end_hour_box, end_hour_field = labeled_plain_field("结束小时（1-24）", str(preset.get("end_hour", 10)), keyboard_type=_KEYBOARD_NUMBER, expand=True)
+        date_rule_box = mobile_dropdown(
+            "特殊日期类型", preset.get("date_rule", "weekend"),
+            [ft.dropdown.Option("weekend", "周末"), ft.dropdown.Option("weekday", "工作日"), ft.dropdown.Option("dates", "指定日期")],
+            expand=True,
+        )
+        special_dates_box, special_dates_field = labeled_plain_field(
+            "指定日期（逗号分隔）", ",".join(preset.get("special_dates", [])) if isinstance(preset.get("special_dates"), list) else "", expand=True
+        )
         daily_box, daily_field = labeled_plain_field("每日饮水阈值 ml", str(preset.get("daily_target", 2000)), keyboard_type=_KEYBOARD_NUMBER, expand=True)
         indicator_box = mobile_dropdown("饮食达标指标", preset.get("indicator", "protein"), [ft.dropdown.Option("protein", "蛋白质目标"), ft.dropdown.Option("carb_cycle", "碳循环目标")], expand=True)
         metric_box = mobile_dropdown("身体指标", preset.get("metric", "weight"), [ft.dropdown.Option(key, label) for key, (label, _) in BODY_METRICS.items()], expand=True)
         direction_box = mobile_dropdown("目标方向", preset.get("direction", "at_most"), [ft.dropdown.Option("at_most", "不高于"), ft.dropdown.Option("at_least", "不低于")], expand=True)
 
+        def open_action_picker(e=None):
+            catalog = exercise_catalog()
+            categories = tuple(
+                category for category in EXERCISE_CATEGORIES
+                if any(item.get("category") == category for item in catalog)
+            )
+            picker_state = {
+                "category": "胸" if "胸" in categories else categories[0],
+                "subgroup": "全部",
+                "equipment": "全部",
+                "sort": "frequent",
+            }
+            search = ft.TextField(label="搜索动作名称、器械或目标肌群", autofocus=True)
+            category_rows = ft.Column(spacing=3, width=82, scroll=_SCROLL_HIDDEN)
+            subgroup_row = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
+            equipment_row = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
+            sort_row = ft.Row(spacing=6)
+            results = ft.GridView(
+                max_extent=280,
+                child_aspect_ratio=2.0,
+                spacing=8,
+                run_spacing=8,
+                expand=True,
+                build_controls_on_demand=True,
+                cache_extent=180,
+            )
+            picker = None
+            usage_stats = exercise_usage_stats(records)
+
+            def choose_action(exercise):
+                selected_action["id"] = str(exercise.get("id") or exercise.get("name") or "")
+                selected_action["name"] = str(exercise.get("name") or "")
+                selected_action_text.value = selected_action["name"] or "未选择动作"
+                close_control(picker)
+                try:
+                    page.update()
+                except Exception:
+                    pass
+
+            def open_help(exercise):
+                help_dialog = dialog_base(
+                    str(exercise.get("name") or "动作说明"),
+                    build_exercise_help(exercise, responsive_width(), _SCROLL_HIDDEN),
+                    [make_button("知道了", on_click=lambda event: close_control(help_dialog), expand=True)],
+                )
+                open_control(help_dialog)
+
+            def choose_category(category):
+                picker_state.update({"category": category, "subgroup": "全部", "equipment": "全部"})
+                rebuild_picker()
+
+            def choose_subgroup(subgroup):
+                picker_state.update({"subgroup": subgroup, "equipment": "全部"})
+                rebuild_picker()
+
+            def choose_equipment(equipment):
+                picker_state["equipment"] = equipment
+                rebuild_picker()
+
+            def choose_sort(mode):
+                picker_state["sort"] = mode
+                rebuild_picker()
+
+            def rebuild_picker(event=None):
+                category_rows.controls = build_category_sidebar(categories, picker_state["category"], choose_category)
+                category_items = [item for item in catalog if item.get("category") == picker_state["category"]]
+                subgroups = list(dict.fromkeys(str(item.get("subgroup") or "整体") for item in category_items))
+                if picker_state["subgroup"] not in {"全部", *subgroups}:
+                    picker_state["subgroup"] = "全部"
+                subgroup_row.controls = [
+                    make_button(
+                        label,
+                        on_click=lambda click, value=label: choose_subgroup(value),
+                        bgcolor=PRIMARY if picker_state["subgroup"] == label else PRIMARY_SOFT,
+                        color="#FFFFFF" if picker_state["subgroup"] == label else GREEN,
+                    )
+                    for label in ("全部", *subgroups)
+                ]
+                subgroup_items = category_items if picker_state["subgroup"] == "全部" else [
+                    item for item in category_items
+                    if str(item.get("subgroup") or "整体") == picker_state["subgroup"]
+                ]
+                equipments = list(dict.fromkeys(str(item.get("equipment") or "其他") for item in subgroup_items))
+                if picker_state["equipment"] not in {"全部", *equipments}:
+                    picker_state["equipment"] = "全部"
+                equipment_row.controls = [
+                    make_button(
+                        label,
+                        on_click=lambda click, value=label: choose_equipment(value),
+                        bgcolor=PRIMARY if picker_state["equipment"] == label else PRIMARY_SOFT,
+                        color="#FFFFFF" if picker_state["equipment"] == label else GREEN,
+                    )
+                    for label in ("全部", *equipments)
+                ]
+                sort_row.controls = build_sort_row(choose_sort, picker_state["sort"]).controls
+                query = str(getattr(getattr(event, "control", None), "value", search.value) or "").strip()
+                matches = search_exercises(query, None if query else picker_state["category"], catalog)
+                if not query and picker_state["subgroup"] != "全部":
+                    matches = [
+                        item for item in matches
+                        if str(item.get("subgroup") or "整体") == picker_state["subgroup"]
+                    ]
+                if not query and picker_state["equipment"] != "全部":
+                    matches = [
+                        item for item in matches
+                        if str(item.get("equipment") or "其他") == picker_state["equipment"]
+                    ]
+                matches = sort_exercises(matches, usage_stats, picker_state["sort"])[:24]
+                results.controls.clear()
+                for exercise in matches:
+                    usage = usage_stats.get(str(exercise.get("name") or "").casefold(), {})
+                    results.controls.append(build_exercise_card(
+                        exercise,
+                        usage,
+                        lambda click, item=exercise: open_help(item),
+                        lambda click, item=exercise: choose_action(item),
+                    ))
+                if not matches:
+                    results.controls.append(small_text("没有匹配动作，请换一个关键词。"))
+                try:
+                    page.update()
+                except Exception:
+                    pass
+
+            search.on_change = rebuild_picker
+            content_width = responsive_width()
+            browser_panel = ft.Row([
+                ft.Container(content=category_rows, width=88, padding=ft.Padding(left=0, top=0, right=4, bottom=0)),
+                ft.VerticalDivider(width=1, color="#D9E6E1"),
+                ft.Column(
+                    [subgroup_row, equipment_row, sort_row, results],
+                    width=max(190, content_width - 100),
+                    spacing=8,
+                ),
+            ], width=content_width, height=560, spacing=8)
+            picker = build_full_form_sheet(
+                FormViewContext(close_control=close_control, scroll_mode=_SCROLL_HIDDEN),
+                f"选择动作 · {len(catalog)} 个",
+                [search, browser_panel],
+                lambda event: None,
+                "选择动作",
+                footer_controls=[
+                    make_button("取消", on_click=lambda event: close_control(picker), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                ],
+            )
+            rebuild_picker()
+            open_control(picker)
+
+        action_picker_button.on_click = open_action_picker
+
         def update_custom_fields(e=None):
             challenge_type = str(type_box.value or "training_sessions")
-            action_box.visible = challenge_type == "max_weight"
+            spec = selected_custom.get("spec") or {}
+            action_selection_holder.visible = bool(spec.get("action_required")) or challenge_type == "max_weight"
+            action_picker_button.visible = action_selection_holder.visible
+            min_weight_box.visible = bool(spec.get("min_weight_required")) or challenge_type == "heavy_sets"
+            duration_box.visible = bool(spec.get("duration_required")) or challenge_type in {"effective_training_days", "effective_training_streak", "cardio_sessions"}
+            start_hour_box.visible = bool(spec.get("time_window_required")) or challenge_type == "time_window_sessions"
+            end_hour_box.visible = start_hour_box.visible
+            date_rule_box.visible = bool(spec.get("date_rule_required")) or challenge_type == "special_day_sessions"
+            special_dates_box.visible = date_rule_box.visible and str(date_rule_box.value or "") == "dates"
             daily_box.visible = challenge_type == "water_streak"
             indicator_box.visible = challenge_type == "nutrition_streak"
             metric_box.visible = challenge_type == "body_target"
             direction_box.visible = challenge_type == "body_target"
             units = {
                 "training_volume": "kg", "max_weight": "kg", "training_sessions": "次",
-                "training_days": "天", "training_streak": "天", "exercise_reps": "次", "water_streak": "天",
+                "training_days": "天", "training_streak": "天", "exercise_reps": "次", "training_sets": "组",
+                "heavy_sets": "组", "effective_training_days": "天", "effective_training_streak": "天",
+                "cardio_sessions": "次", "time_window_sessions": "次", "special_day_sessions": "次", "water_streak": "天",
                 "nutrition_streak": "天",
             }
             if challenge_type == "body_target":
@@ -417,27 +786,91 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
 
         type_box.on_change = update_custom_fields
         metric_box.on_change = update_custom_fields
-        custom_holder.content = ft.Column([
+        date_rule_box.on_change = update_custom_fields
+        custom_form_holder = ft.Container(expand=True, visible=False)
+        custom_catalog_holder = ft.Container(expand=True)
+        custom_spec_title = ft.Text("", size=18, weight="bold", color=TEXT)
+        custom_spec_description = small_text("")
+        custom_form_holder.content = ft.Column([
+            make_button("← 返回自定义类型", on_click=lambda e: show_custom_catalog(), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+            custom_spec_title,
+            custom_spec_description,
             small_text("自定义挑战为金色，不参与推荐等级链。"),
             title_box,
             declaration_box,
-            type_box,
             lane_box,
             ft.Row([target_box, unit_box], spacing=8),
             ft.Row([start_box, end_box], spacing=8),
-            action_box,
+            action_selection_holder,
+            action_picker_button,
+            min_weight_box,
+            duration_box,
+            ft.Row([start_hour_box, end_hour_box], spacing=8),
+            date_rule_box,
+            special_dates_box,
             daily_box,
             indicator_box,
             metric_box,
             direction_box,
         ], spacing=9, scroll=_SCROLL_HIDDEN, expand=True)
-        update_custom_fields()
+
+        def show_custom_catalog():
+            selected_custom["spec"] = None
+            custom_catalog_holder.visible = True
+            custom_form_holder.visible = False
+            footer_custom.visible = False
+            try:
+                page.update()
+            except Exception:
+                pass
+
+        def open_custom_spec(spec, *, preserve_values=False):
+            selected_custom["spec"] = dict(spec)
+            if not preserve_values:
+                selected_action.update({"id": "", "name": ""})
+                selected_action_text.value = "未选择动作"
+            type_box.value = str(spec.get("challenge_type") or "training_sessions")
+            default_unit = str(spec.get("unit") or "次")
+            allowed_units = ("kg", "lbs") if default_unit == "kg" else (default_unit,)
+            unit_box.field.options = [ft.dropdown.Option(value) for value in allowed_units]
+            unit_box.field.disabled = len(allowed_units) == 1
+            unit_box.value = str(preset.get("unit") or default_unit) if preserve_values else default_unit
+            if not preserve_values:
+                title_field.value = str(spec.get("title") or "自定义挑战").split(" (")[0]
+            custom_spec_title.value = str(spec.get("title") or "自定义挑战")
+            custom_spec_description.value = str(spec.get("description") or "")
+            custom_catalog_holder.visible = False
+            custom_form_holder.visible = True
+            footer_custom.visible = selected_mode["value"] == "custom"
+            update_custom_fields()
+
+        catalog_controls = []
+        for category in CUSTOM_CHALLENGE_CATALOG:
+            catalog_controls.append(ft.Text(str(category["group"]), size=17, weight="bold", color=TEXT))
+            for spec in category["items"]:
+                catalog_controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Text(str(spec["title"]), size=15, color=TEXT),
+                            small_text(str(spec["description"])),
+                        ], spacing=3, expand=True),
+                        ft.Text("›", size=28, color="#A8B0AD"),
+                    ], spacing=8),
+                    padding=14,
+                    bgcolor="#F9FBFA",
+                    border=ft.Border.all(1, "#E0E5E3"),
+                    border_radius=10,
+                    on_click=lambda e, spec=spec: open_custom_spec(spec),
+                ))
+        custom_catalog_holder.content = ft.Column(catalog_controls, spacing=10, scroll=_SCROLL_HIDDEN, expand=True)
+        custom_holder.content = ft.Column([custom_catalog_holder, custom_form_holder], spacing=0, expand=True)
+        show_custom_catalog()
 
         def select_mode(value):
             selected_mode["value"] = value
             recommended_holder.visible = value == "recommended"
             custom_holder.visible = value == "custom"
-            footer_custom.visible = value == "custom"
+            footer_custom.visible = value == "custom" and selected_custom.get("spec") is not None
             footer_cancel.expand = value != "custom"
             tabs.controls.clear()
             tabs.controls.extend([
@@ -454,7 +887,12 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                 select_mode("custom")
                 snack("请填写自定义挑战信息")
                 return
+            spec = selected_custom.get("spec") or {}
             challenge_type = str(type_box.value or "")
+            action_id = str(selected_action.get("id") or "").strip()
+            if spec.get("action_required") and not action_id:
+                snack("请选择一个训练动作")
+                return
             payload = {
                 "title": str(title_field.value or "").strip(),
                 "declaration": str(declaration_field.value or "").strip(),
@@ -464,12 +902,27 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                 "unit": str(unit_box.value or ""),
                 "start_date": str(start_field.value or "").strip(),
                 "end_date": str(end_field.value or "").strip(),
-                "action_id": str(action_field.value or "").strip(),
+                "action_id": action_id,
+                "action_name": str(selected_action.get("name") or ""),
+                "min_weight": to_float(min_weight_field.value, 0),
+                "min_duration_min": to_float(duration_field.value, 0),
+                "start_hour": to_float(start_hour_field.value, 0),
+                "end_hour": to_float(end_hour_field.value, 24),
+                "date_rule": str(date_rule_box.value or "weekend"),
+                "special_dates": [item.strip() for item in str(special_dates_field.value or "").replace("，", ",").split(",") if item.strip()],
                 "daily_target": to_float(daily_field.value, 0),
                 "indicator": str(indicator_box.value or "protein"),
                 "metric": str(metric_box.value or "weight"),
-                "direction": str(direction_box.value or "at_most"),
+                "direction": (
+                    str(direction_box.value or "at_most")
+                    if challenge_type == "body_target"
+                    else "at_least"
+                ),
             }
+            if retry_source:
+                for key in ("template_id", "chain_id", "group", "level", "level_name", "level_color", "config"):
+                    if key in retry_source:
+                        payload[key] = retry_source[key]
             try:
                 challenge = create_challenge(payload, now=iso_now())
             except ValueError as exc:
@@ -478,10 +931,35 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             save_created(challenge)
 
         footer_custom.on_click = save_custom
-        select_mode("recommended")
+        if retry_source:
+            footer_custom.content.controls[-1].value = "重新挑战"
+            select_mode("custom")
+            challenge_type = str(preset.get("challenge_type") or "training_sessions")
+            action_id = str(preset.get("action_id") or "")
+            matching_specs = [
+                spec
+                for category in CUSTOM_CHALLENGE_CATALOG
+                for spec in category["items"]
+                if str(spec.get("challenge_type") or "") == challenge_type
+            ]
+            retry_spec = next(
+                (
+                    spec for spec in matching_specs
+                    if bool(spec.get("action_required")) == bool(action_id)
+                ),
+                matching_specs[0] if matching_specs else {
+                    "title": TYPE_LABELS.get(challenge_type, "自定义挑战"),
+                    "description": "编辑目标后重新开始挑战",
+                    "challenge_type": challenge_type,
+                    "unit": str(preset.get("unit") or "次"),
+                },
+            )
+            open_custom_spec(retry_spec, preserve_values=True)
+        else:
+            select_mode("recommended")
         sheet = build_full_form_sheet(
             FormViewContext(close_control=close_control, scroll_mode=_SCROLL_HIDDEN),
-            "新建挑战",
+            "编辑后重新挑战" if retry_source else "新建挑战",
             [tabs, recommended_holder, custom_holder],
             save_custom,
             "创建自定义挑战",
@@ -489,12 +967,79 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         )
         open_control(sheet)
 
+    def open_retry_challenge(item):
+        source = dict(item or {})
+        if not source.get("id"):
+            return
+        nested = source.get("config", {}) if isinstance(source.get("config"), dict) else {}
+        preset = {**nested, **source}
+        today = datetime.date.today()
+        try:
+            old_start = datetime.date.fromisoformat(str(source.get("start_date") or ""))
+            old_end = datetime.date.fromisoformat(str(source.get("end_date") or ""))
+            duration_days = max(1, (old_end - old_start).days + 1)
+        except ValueError:
+            duration_days = 31
+        preset["start_date"] = today.isoformat()
+        preset["end_date"] = (today + datetime.timedelta(days=duration_days - 1)).isoformat()
+        open_new_challenge(
+            initial_lane=str(source.get("lane") or "training"),
+            preset=preset,
+            retry_source=source,
+        )
+
+    def open_challenge_detail(item):
+        progress = challenge_progress(item, records, today=datetime.date.today().isoformat())
+        try:
+            end_date = datetime.date.fromisoformat(str(item.get("end_date") or ""))
+            remaining = max(0, (end_date - datetime.date.today()).days)
+            remaining_text = f"剩余 {remaining} 天"
+        except ValueError:
+            remaining_text = "持续记录中"
+        declaration = str(item.get("declaration") or "").strip()
+        content = ft.Column([
+            ft.Row([
+                ft.Text(str(item.get("level_name") or "自定义"), size=12, weight="bold", color=str(item.get("level_color") or YELLOW)),
+                small_text(TYPE_LABELS.get(str(item.get("challenge_type") or ""), "目标挑战")),
+            ], alignment="spaceBetween"),
+            ft.Text(str(item.get("title") or "目标挑战"), size=20, weight="bold", color=TEXT),
+            small_text(declaration) if declaration else ft.Container(height=0),
+            ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"{progress['current']:g} {progress['unit']}", size=20, weight="bold", color=TEXT),
+                        small_text("当前进度"),
+                    ], horizontal_alignment="center", spacing=4),
+                    padding=12, bgcolor="#F8FAFC", border_radius=8, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"{progress['target']:g} {progress['unit']}", size=20, weight="bold", color=TEXT),
+                        small_text("目标值"),
+                    ], horizontal_alignment="center", spacing=4),
+                    padding=12, bgcolor="#F8FAFC", border_radius=8, expand=True,
+                ),
+            ], spacing=8),
+            ft.Row([
+                ft.Text(f"{progress['percent']:g}%", size=17, weight="bold", color=PRIMARY),
+                small_text(remaining_text),
+            ], alignment="spaceBetween"),
+            ft.ProgressBar(value=max(0, min(1, progress["percent"] / 100)), color=PRIMARY, bgcolor="#E4EAE8", height=7),
+            small_text(f"{item.get('start_date', '')} 至 {item.get('end_date', '')}"),
+            small_text(f"所属赛道：{LANE_LABELS.get(str(item.get('lane') or ''), '未分类')}"),
+        ], spacing=12)
+        dialog = dialog_base(
+            "挑战详情",
+            content,
+            [make_button("关闭", on_click=lambda e: close_control(dialog), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True)],
+            on_close=lambda e=None: close_control(dialog),
+        )
+        open_control(dialog)
+
     def render_challenge_panel():
         if repositories.goal_challenges is None:
             return render_legacy_compatibility_wall()
         stored, _ = sync_challenges()
-        if stored.get("pending_celebrations"):
-            schedule_challenge_celebration()
 
         def toggle_delete(e=None):
             challenge_ui["delete_mode"] = not challenge_ui["delete_mode"]
@@ -508,6 +1053,25 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                 challenge_ui["selected"].add(identity)
             refresh()
 
+        pending_ids = set(stored.get("pending_celebrations", []))
+        pending_success = [
+            item for item in stored.get("completed", [])
+            if str(item.get("id") or "") in pending_ids
+        ]
+        visible_failed = [
+            item for item in stored.get("failed", [])
+            if not item.get("retried_at")
+        ]
+
+        def open_panel_item(item):
+            identity = str(item.get("id") or "")
+            if item.get("awaiting_confirmation") or identity in pending_ids:
+                show_next_challenge_celebration()
+            elif item.get("status") == "failed":
+                show_failure_dialog([item])
+            else:
+                open_challenge_detail(item)
+
         return build_goal_challenge_panel(
             stored.get("active", []),
             on_new=lambda e=None: open_new_challenge(),
@@ -517,6 +1081,9 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             selected_ids=challenge_ui["selected"],
             on_select=select_delete,
             on_delete_confirm=remove_selected_challenges,
+            on_open=open_panel_item,
+            pending_success=pending_success,
+            failed=visible_failed,
         )
 
     def render_me():

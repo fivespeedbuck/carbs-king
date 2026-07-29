@@ -1,4 +1,4 @@
-﻿"""Reusable Flet controls for the diet information architecture."""
+"""Reusable Flet controls for the diet information architecture."""
 
 from __future__ import annotations
 

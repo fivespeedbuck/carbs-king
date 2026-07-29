@@ -62,7 +62,7 @@ CARDIO_METRIC_LABELS = {
     "speed_kph": "速度 km/h",
     "incline_percent": "坡度 %",
     "resistance_level": "阻力/档位",
-    "cadence_rpm": "?? rpm",
+    "cadence_rpm": "踏频 rpm",
     "strides_per_minute": "步频 spm",
     "stroke_rate_spm": "桨频 spm",
     "steps_per_minute": "爬楼步频 spm",
@@ -2097,7 +2097,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             refresh()
 
         note_field = mobile_text_field(label="训练备注", value=tr.get("summary_note", ""), expand=True, on_blur=save_training_note, on_submit=save_training_note)
-        fatigue_dd = mobile_dropdown(label="??", value=tr.get("fatigue_status", "状态一般"), options=[ft.dropdown.Option(x) for x in FATIGUE_OPTIONS], on_change=lambda e: (tr.update({"fatigue_status": e.control.value}), save_current(), refresh()), expand=True)
+        fatigue_dd = mobile_dropdown(label="状态", value=tr.get("fatigue_status", "状态一般"), options=[ft.dropdown.Option(x) for x in FATIGUE_OPTIONS], on_change=lambda e: (tr.update({"fatigue_status": e.control.value}), save_current(), refresh()), expand=True)
 
         return card(ft.Column([
             ft.Row([section_title("训练记录"), make_button("添加", on_click=lambda e: open_training_dialog(), icon=ft.Icons.ADD)], alignment="spaceBetween"),

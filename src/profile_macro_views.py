@@ -1,4 +1,4 @@
-﻿"""Macro-mode summary controls for the profile feature."""
+"""Macro-mode summary controls for the profile feature."""
 
 from __future__ import annotations
 
@@ -11,6 +11,11 @@ from ui_components import GREEN, PRIMARY, PRIMARY_SOFT, make_button, section_tit
 
 
 GOAL_OPTIONS = ("减脂", "保持", "增肌")
+GOAL_CALORIE_FACTOR_TEXT = {
+    "减脂": "0.90 / 0.80 / 0.70",
+    "保持": "1.10 / 1.00 / 0.90",
+    "增肌": "1.15 / 1.05 / 0.95",
+}
 
 
 def build_carb_cycle_goal_section(current_goal: str, on_change: Callable[[str], None]) -> ft.Control:
@@ -73,7 +78,10 @@ def build_macro_panel(
             small_text(profile_message) if not profile_ready else ft.Container(height=0),
             *rows,
             small_text(
-                "当前显示自动计算倍率，仅供查看。" if auto_selected
+                (
+                    f"高/中/低碳热量系数：{GOAL_CALORIE_FACTOR_TEXT.get(current_goal, GOAL_CALORIE_FACTOR_TEXT['减脂'])}。"
+                    "蛋白按去脂体重，脂肪分别占目标热量 25% / 30% / 35%，碳水补足剩余热量。"
+                ) if auto_selected
                 else "当前显示自定义倍率，可点击右上角编辑。"
             ) if profile_ready else ft.Container(height=0),
         ], spacing=7),

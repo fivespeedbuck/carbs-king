@@ -47,16 +47,17 @@ supplement_library.json
 user_profile.json
 import_safety_backups/
 src/storage/
-# Flet packages the application from src/.  Exercise animations must therefore
-# be versioned under src/assets as well as the runtime source assets.
-!src/assets/
-!src/assets/exercises/
-!src/assets/exercises/**
+# Flet packages the application from src/.  The build script mirrors the
+# canonical root assets/ tree here immediately before packaging.
+/src/assets/
 
 # Version packages are attached to GitHub Releases, not committed
 *.zip
 release_candidates/*
 outputs/
+
+# Local build and preview logs are disposable workspace artifacts.
+/logs/
 
 # Operating system files
 .DS_Store

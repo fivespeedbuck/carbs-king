@@ -511,10 +511,14 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('CHANNEL_ID = "rest_cycle_alerts_v2"', receiver)
         self.assertIn('android.resource://${context.packageName}/raw/rest_coin', receiver)
         native_sound = root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
-        foreground_sound = root / "src/assets/rest_coin.mp3"
+        foreground_sound = root / "assets/rest_coin.mp3"
+        build_script = (root / "build_apk_update.ps1").read_text(encoding="utf-8-sig")
         self.assertTrue(native_sound.is_file())
         self.assertTrue(foreground_sound.is_file())
         self.assertEqual(native_sound.read_bytes(), foreground_sound.read_bytes())
+        self.assertIn("verify-source", build_script)
+        self.assertIn("verify-mirror", build_script)
+        self.assertIn("verify-apk", build_script)
         self.assertEqual(len(native_sound.read_bytes()), 81546)
         self.assertEqual(
             hashlib.sha256(native_sound.read_bytes()).hexdigest().upper(),

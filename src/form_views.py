@@ -34,6 +34,7 @@ def build_dialog(title, content, actions=None, on_close=None):
         content=content,
         actions=actions or [],
         actions_alignment=ft.MainAxisAlignment.CENTER,
+        actions_overflow_button_spacing=8,
         bgcolor="#F7FFFFFF",
         barrier_color="#520F1F1A",
     )

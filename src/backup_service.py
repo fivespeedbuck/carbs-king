@@ -1,4 +1,4 @@
-﻿"""Full backup validation, snapshots, restore, and rollback."""
+"""Full backup validation, snapshots, restore, and rollback."""
 
 from __future__ import annotations
 

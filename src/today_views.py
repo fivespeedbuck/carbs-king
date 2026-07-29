@@ -101,7 +101,7 @@ def build_today_dashboard(
         [small_text(str(model.targets.get("profile_message", "请完善个人资料后计算营养目标。")))]
         if not profile_ready
         else [
-            macro_progress_bar("??", model.macros["carb"], target_min=model.targets["carb_min"], target_max=model.targets["carb_max"], kind="carb", width=bar_width),
+            macro_progress_bar("碳水", model.macros["carb"], target_min=model.targets["carb_min"], target_max=model.targets["carb_max"], kind="carb", width=bar_width),
             macro_progress_bar("蛋白", model.macros["protein"], target_min=model.targets["protein_min"], target_max=model.targets["protein_max"], kind="protein", width=bar_width),
             macro_progress_bar("脂肪", model.macros["fat"], target_min=model.targets["fat_min"], target_max=model.targets["fat_max"], kind="fat", width=bar_width),
         ]

@@ -1,4 +1,4 @@
-﻿"""Typed runtime state shared by feature controllers and the app shell."""
+"""Typed runtime state shared by feature controllers and the app shell."""
 
 from __future__ import annotations
 

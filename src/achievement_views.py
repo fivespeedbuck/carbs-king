@@ -65,6 +65,9 @@ def build_achievement_celebration(
     """Build a compact mobile celebration card for one newly unlocked achievement."""
     title = str(achievement.get("title") or "新成就")
     description = str(achievement.get("description") or "完成了一项新的挑战。")
+    accent_color = str(achievement.get("level_color") or PRIMARY)
+    description_lines = max(1, description.count("\n") + 1)
+    description_height = min(170, max(54, 32 + description_lines * 24))
     content = ft.Container(
         width=286,
         content=ft.Column([
@@ -83,22 +86,15 @@ def build_achievement_celebration(
                 width=68,
                 height=68,
                 alignment=ft.Alignment.CENTER,
-                bgcolor=PRIMARY,
+                bgcolor=accent_color,
                 border_radius=8,
-                border=thin_border(PRIMARY),
+                border=thin_border(accent_color),
             ),
             ft.Text(headline, size=14, weight="bold", color=GREEN),
             ft.Text(title, size=24, weight="bold", color=TEXT, text_align="center"),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("达成条件", size=12, weight="bold", color=SUB),
-                    ft.Text(description, size=14, color=TEXT, text_align="center"),
-                ], spacing=5, horizontal_alignment="center"),
-                bgcolor=PRIMARY_SOFT,
-                border=thin_border(BORDER),
-                border_radius=8,
-                padding=12,
-            ),
+            ft.Column([
+                ft.Text(description, size=14, color=TEXT, text_align="center", max_lines=max(2, description_lines + 1), overflow="ellipsis"),
+            ], width=286, height=description_height, spacing=5, horizontal_alignment="center", scroll=ft.ScrollMode.HIDDEN),
             ft.Text(
                 message or "这是你认真训练和持续记录换来的成果。继续保持，下一枚也不远了。",
                 size=13,

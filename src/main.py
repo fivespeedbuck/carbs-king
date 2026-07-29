@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import json
 import datetime
 import asyncio
@@ -45,7 +45,7 @@ from ui_components import (
 )
 
 APP_NAME = "碳水大王"
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 MEALS = ["早餐", "午餐", "晚餐", "练前", "练后", "偷吃"]
 
 
@@ -182,6 +182,8 @@ def main(page: ft.Page):
         try:
             closed = page.pop_dialog()
             if closed is not None:
+                control.open = False
+                page.update()
                 return
         except Exception:
             pass
@@ -623,7 +625,7 @@ def main(page: ft.Page):
                 dashboard_control.value = (
                     f"训练开始于 {active_date} · {clock_text(elapsed_seconds(session))}"
                     if active_date != state.get("date")
-                    else f"宸插畬鎴?{completed}/{planned} 缁?· {clock_text(elapsed_seconds(session))}"
+                    else f"已完成 {completed}/{planned} 组 · {clock_text(elapsed_seconds(session))}"
                 )
                 try:
                     dashboard_control.update()
