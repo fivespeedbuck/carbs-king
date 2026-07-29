@@ -351,6 +351,19 @@ class GoalChallengeServiceTests(unittest.TestCase):
         one_time.update({"status": "completed", "completed_at": "2026-07-28T10:00:00"})
         self.assertFalse(any(item["chain_id"] == "starter_monthly_5" for item in visible_recommendations({"completed": [one_time]})))
 
+    def test_recommended_challenge_dates_start_today_and_run_forward(self):
+        templates = {item.chain_id: item for item in recommended_templates(recommendation_profile())}
+
+        monthly = create_challenge(templates["monthly_100t"], now="2026-07-28T09:00:00")
+        seven_days = create_challenge(templates["seven_day_training_streak"], now="2026-07-28T09:00:00")
+        five_days = create_challenge(templates["five_day_intense_streak"], now="2026-07-28T09:00:00")
+        three_days = create_challenge(templates["starter_three_day_streak"], now="2026-07-28T09:00:00")
+
+        self.assertEqual((monthly["start_date"], monthly["end_date"]), ("2026-07-28", "2026-08-26"))
+        self.assertEqual((seven_days["start_date"], seven_days["end_date"]), ("2026-07-28", "2026-08-03"))
+        self.assertEqual((five_days["start_date"], five_days["end_date"]), ("2026-07-28", "2026-08-01"))
+        self.assertEqual((three_days["start_date"], three_days["end_date"]), ("2026-07-28", "2026-07-30"))
+
     def test_new_custom_training_metrics_use_real_duration_sets_and_cardio(self):
         records = {
             "2026-07-27": {"training": {"sessions": [{

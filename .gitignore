@@ -50,6 +50,7 @@ src/storage/
 # Flet packages the application from src/.  The build script mirrors the
 # canonical root assets/ tree here immediately before packaging.
 /src/assets/
+/storage/
 
 # Version packages are attached to GitHub Releases, not committed
 *.zip

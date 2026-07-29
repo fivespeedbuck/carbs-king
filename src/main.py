@@ -29,6 +29,7 @@ from navigation_service import MAIN_NAV_VIEWS, reset_transient_navigation_state
 from navigation_views import build_bottom_navigation
 from nutrition_service import create_nutrition_service
 from profile_controller import ProfileControllerDependencies, create_profile_controller
+from theme_service import apply_theme, normalize_theme
 from training_experience_service import rest_remaining_seconds
 from training_models import TrainingSession
 from training_controller import TrainingControllerDependencies, create_training_controller
@@ -339,6 +340,9 @@ def main(page: ft.Page):
             state["bodyfat"] = f"{latest_body['bodyfat']:g}"
     state["height"] = str(saved_profile.get("height", state["height"]))
     state["age"] = str(saved_profile.get("age", state["age"]))
+    state["age_reference_year"] = int(saved_profile.get("age_reference_year", datetime.date.today().year) or datetime.date.today().year)
+    state["theme_color"] = normalize_theme(saved_profile.get("theme_color", "green"))
+    apply_theme(page, state["theme_color"])
     state["sex"] = str(saved_profile.get("sex", state["sex"]))
     state["activity_habit"] = str(saved_profile.get("activity_habit", state["activity_habit"]))
     state["waist_cm"] = str(saved_profile.get("waist_cm", state.get("waist_cm", "")))

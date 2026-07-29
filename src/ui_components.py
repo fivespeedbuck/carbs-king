@@ -14,18 +14,19 @@ import flet as ft
 
 BG = "#F4F7F6"
 CARD = "#FFFFFF"
-PRIMARY = "#116E59"
-PRIMARY_SOFT = "#F1F7F5"
+PRIMARY = ft.Colors.PRIMARY
+PRIMARY_SOFT = ft.Colors.PRIMARY_CONTAINER
 TEXT = "#182420"
 SUB = "#4F5D58"
 RED = "#B83A3A"
 ORANGE = "#B96A18"
-GREEN = "#155A43"
+GREEN = ft.Colors.ON_PRIMARY_CONTAINER
 SKY_BLUE = "#277EA8"
 BAR_BG = "#E4EAE8"
 YELLOW = "#B98518"
+ON_PRIMARY = ft.Colors.ON_PRIMARY
 BORDER = "#CDD9D5"
-SURFACE = "#F7FAF9"
+SURFACE = "#F3F5F5"
 INPUT_LABEL_HEIGHT = 36
 INPUT_FIELD_HEIGHT = 52
 INPUT_LABEL_SPACING = 4
@@ -134,7 +135,7 @@ def thin_border(color: str = BORDER) -> ft.Border:
 
 def make_button(text, on_click=None, icon=None, bgcolor=None, color=None, expand=False, height=48):
     """Readable mobile button with a clear touch target and visible boundary."""
-    fg = color or "#FFFFFF"
+    fg = color or ON_PRIMARY
     bg = bgcolor or PRIMARY
     children = []
     if icon is not None:
@@ -409,7 +410,7 @@ def pill(text, color=PRIMARY):
 
 __all__ = [
     "BG", "CARD", "PRIMARY", "PRIMARY_SOFT", "TEXT", "SUB", "RED", "ORANGE",
-    "GREEN", "SKY_BLUE", "BAR_BG", "YELLOW", "BORDER", "SURFACE",
+    "GREEN", "SKY_BLUE", "BAR_BG", "YELLOW", "ON_PRIMARY", "BORDER", "SURFACE",
     "INPUT_LABEL_HEIGHT", "INPUT_FIELD_HEIGHT", "INPUT_LABEL_SPACING",
     "FIELD_GRID_SPACING", "FIELD_GRID_COLLAPSE_WIDTH",
     "LabeledInput", "input_is_focused", "make_button", "thin_border", "card", "page_card",

@@ -45,6 +45,7 @@ def build_profile_details(
     metrics: ft.Control,
     macro_panel: ft.Control,
     backup_panel: ft.Control,
+    theme_panel: ft.Control | None = None,
     viewport_width: int | float | None = None,
 ) -> ft.Control:
     weight_box, bodyfat_box, height_box, age_box = field_boxes
@@ -85,6 +86,7 @@ def build_profile_details(
         ft.Row([option_button("规律训练", activity_habit, on_activity_change), option_button("高频训练", activity_habit, on_activity_change)], spacing=8),
         metrics,
         macro_panel,
+        theme_panel if theme_panel is not None else ft.Container(height=0),
         backup_panel,
     ], spacing=10))
 

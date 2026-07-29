@@ -451,7 +451,7 @@ def create_recovery_controller(deps: RecoveryControllerDependencies) -> Recovery
             cb.on_change = on_change
             amount.on_change = on_change
 
-            bg = "#EDF9F4" if checked else "#FAFAFA"
+            bg = PRIMARY_SOFT if checked else "#FAFAFA"
             supp_controls.append(ft.Container(content=ft.Row([
                 ft.Container(width=4, height=42, bgcolor=PRIMARY if checked else "#DDDDDD", border_radius=3),
                 ft.Row([cb], width=34),

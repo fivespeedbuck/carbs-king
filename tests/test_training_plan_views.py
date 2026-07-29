@@ -129,7 +129,7 @@ class TrainingPlanViewContractsTests(unittest.TestCase):
         finish_section = CONTROLLER_SOURCE[finish_start:finish_end]
         self.assertIn("if not incomplete:\n            play_completion_audio()", finish_section)
         self.assertNotIn("if incomplete:\n            play_completion_audio()", finish_section)
-        self.assertTrue((Path(__file__).parents[1] / "src" / "assets" / "training_complete.mp3").is_file())
+        self.assertTrue((Path(__file__).parents[1] / "assets" / "training_complete.mp3").is_file())
 
 
 class TodayCompletedTrainingViewTests(unittest.TestCase):

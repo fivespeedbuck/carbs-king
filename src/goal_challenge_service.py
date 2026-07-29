@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import calendar
 import datetime as _dt
 import uuid
 from collections.abc import Mapping, Sequence
@@ -421,13 +420,13 @@ def normalize_challenge_state(value: Any) -> dict[str, Any]:
 
 def _dates_for_template(base: Mapping[str, Any], now_date: str) -> tuple[str, str]:
     config = base.get("config", {}) if isinstance(base.get("config"), Mapping) else {}
-    if config.get("calendar_month"):
-        current = _dt.date.fromisoformat(now_date)
-        last_day = calendar.monthrange(current.year, current.month)[1]
-        return current.replace(day=1).isoformat(), current.replace(day=last_day).isoformat()
-    days = max(1, int(_number(config.get("window_days"), base.get("target", 30))))
-    start = (_dt.date.fromisoformat(now_date) - _dt.timedelta(days=days - 1)).isoformat()
-    return start, now_date
+    configured_days = 30 if config.get("calendar_month") else _number(
+        config.get("window_days"), base.get("target", 30)
+    )
+    days = max(1, int(configured_days))
+    start = _dt.date.fromisoformat(now_date)
+    end = start + _dt.timedelta(days=days - 1)
+    return start.isoformat(), end.isoformat()
 
 
 def create_challenge(

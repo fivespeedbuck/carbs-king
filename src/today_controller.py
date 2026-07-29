@@ -48,7 +48,12 @@ class TodayController:
         self.deps.daily_records.load((selected + datetime.timedelta(days=delta)).strftime("%Y-%m-%d"))
 
     def open_calendar_picker(self) -> None:
-        picker = ft.DatePicker()
+        picker = ft.DatePicker(
+            locale=ft.Locale("zh", "CN"),
+            help_text="选择日期",
+            cancel_text="取消",
+            confirm_text="确定",
+        )
 
         def on_change(e=None):
             value = getattr(picker, "value", None)

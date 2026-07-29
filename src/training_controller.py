@@ -1199,7 +1199,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 content=ft.Image(src=media_src, height=190, fit="contain"),
                 height=206,
                 alignment=ft.Alignment(0, 0),
-                bgcolor="#F5FAF7",
+                bgcolor=SURFACE,
                 border_radius=12,
                 padding=8,
             ))

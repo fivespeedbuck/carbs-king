@@ -17,16 +17,15 @@ from analytics_model import (
     CALENDAR_KCAL_BAND_TARGET,
     ORANGE,
     PRIMARY,
-    PRIMARY_SOFT,
     RED,
     SUB,
-    SURFACE,
     TEXT,
     WHITE,
     _mapping,
     _shift_month,
 )
 from analytics_ui import _border, _card, _chip, _metric, _text, _value_or_empty
+from ui_components import PRIMARY as THEME_PRIMARY, PRIMARY_SOFT, SURFACE
 
 
 CALENDAR_CELL_HEIGHT = 92
@@ -246,7 +245,7 @@ def _render_calendar(
                 height=CALENDAR_CELL_HEIGHT,
                 padding=3,
                 bgcolor=PRIMARY_SOFT if selected else WHITE,
-                border=_border(PRIMARY if selected else state_color if state != "unrecorded" else BORDER, 2 if selected else 1),
+                border=_border(THEME_PRIMARY if selected else state_color if state != "unrecorded" else BORDER, 2 if selected else 1),
                 border_radius=6,
                 expand=True,
                 tooltip=item.get("event_text") or None,

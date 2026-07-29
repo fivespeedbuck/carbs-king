@@ -7,8 +7,9 @@ from typing import Any
 
 import flet as ft
 
-from analytics_model import DataPageConfig, ORANGE, SUB, SURFACE, TEXT, _mapping
+from analytics_model import DataPageConfig, ORANGE, _mapping
 from analytics_ui import _card, _metric, _text
+from ui_components import SUB, SURFACE, TEXT
 
 def _render_summary(model: Mapping[str, Any]) -> ft.Container:
     summary = _mapping(model.get("summary"))

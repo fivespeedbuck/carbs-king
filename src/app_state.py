@@ -48,6 +48,8 @@ class ProfileState:
     bodyfat: str = ""
     height: str = ""
     age: str = ""
+    age_reference_year: int = 0
+    theme_color: str = "green"
     sex: str = ""
     activity_habit: str = ""
     waist_cm: str = ""
@@ -147,6 +149,8 @@ class AppState(MutableMapping[str, Any]):
             "circumference": (self.daily, "circumference"),
             "height": (self.profile, "height"),
             "age": (self.profile, "age"),
+            "age_reference_year": (self.profile, "age_reference_year"),
+            "theme_color": (self.profile, "theme_color"),
             "sex": (self.profile, "sex"),
             "activity_habit": (self.profile, "activity_habit"),
             "waist_cm": (self.profile, "waist_cm"),

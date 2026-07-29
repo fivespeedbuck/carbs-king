@@ -252,7 +252,7 @@ def recommended_templates(profile: Mapping[str, Any] | None = None) -> tuple[Cha
     templates += _chain(
         "seven_day_training_streak", "可重复完成", "training", "training_streak",
         "钢铁意志 · 连续 7 天训练", (7,), "天",
-        window_days=30, repeatable_same=True,
+        window_days=7, repeatable_same=True,
     )
     templates += _chain(
         "monthly_20_training_days", "可重复完成", "training", "training_days",
@@ -277,7 +277,7 @@ def recommended_templates(profile: Mapping[str, Any] | None = None) -> tuple[Cha
     templates += _chain(
         "five_day_intense_streak", "可重复完成", "training", "effective_training_streak",
         "魔鬼周 · 连续 5 天高强度打卡", (5,), "天",
-        min_duration_min=45, window_days=30, repeatable_same=True,
+        min_duration_min=45, window_days=5, repeatable_same=True,
     )
     templates += _chain(
         "monthly_cardio_12", "可重复完成", "training", "cardio_sessions",
@@ -291,7 +291,7 @@ def recommended_templates(profile: Mapping[str, Any] | None = None) -> tuple[Cha
     )
     templates += _chain(
         "starter_three_day_streak", "新手起步", "training", "training_streak",
-        "三日连胜 · 连续训练 3 天", (3,), "天", window_days=30, one_time=True,
+        "三日连胜 · 连续训练 3 天", (3,), "天", window_days=3, one_time=True,
     )
     templates += _chain(
         "starter_volume_5000", "新手起步", "training", "training_volume",

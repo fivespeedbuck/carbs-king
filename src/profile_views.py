@@ -7,7 +7,7 @@ from typing import Any
 
 import flet as ft
 
-from ui_components import BAR_BG, BORDER, GREEN, PRIMARY, PRIMARY_SOFT, SUB, TEXT, YELLOW, page_card, make_button, section_title, small_text, thin_border
+from ui_components import BAR_BG, BORDER, GREEN, PRIMARY, PRIMARY_SOFT, SUB, SURFACE, TEXT, YELLOW, page_card, make_button, section_title, small_text, thin_border
 
 from goal_challenge_definitions import LANE_LABELS, LANES, level_info
 
@@ -53,11 +53,11 @@ def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None, 
     end = ft.Text(
         end_label,
         size=11,
-        color="#E0822B" if item.get("awaiting_confirmation") else color,
+        color=color,
         weight="bold",
     )
     content = ft.Column([
-        ft.Row([leading, ft.Text(str(item.get("title") or "目标挑战"), size=14, weight="bold", color=TEXT, expand=True, max_lines=1, overflow="ellipsis"), end], spacing=6),
+        ft.Row([leading, ft.Text(str(item.get("title") or "目标挑战"), size=14, weight="bold", color=color, expand=True, max_lines=1, overflow="ellipsis"), end], spacing=6),
         small_text(f"所属赛道：{LANE_LABELS.get(str(item.get('lane') or ''), '未分类')}", color=GREEN),
         small_text(_challenge_text(item)),
         ft.ProgressBar(value=max(0, min(1, float(item.get("progress_percent", 0) or 0) / 100)), color=color, bgcolor=BAR_BG, height=6),
@@ -71,8 +71,8 @@ def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None, 
         content=content,
         padding=10,
         margin=ft.Margin(left=0, top=0, right=0, bottom=8),
-        bgcolor="#FFFDF7" if color == YELLOW else "#F9FBFA",
-        border=thin_border(color),
+        bgcolor=SURFACE,
+        border=thin_border(PRIMARY if item.get("status") != "failed" else color),
         border_radius=8,
         on_click=(None if delete_mode or on_open is None else lambda event: on_open(item)),
     )
@@ -112,7 +112,7 @@ def build_goal_challenge_panel(
             ], horizontal_alignment="center", spacing=6),
             expand=True,
             padding=14,
-            bgcolor="#F9FBFA",
+            bgcolor=SURFACE,
             border=thin_border(BORDER),
             border_radius=8,
             on_click=on_new,
@@ -195,7 +195,7 @@ def build_achievement_wall(
                 ft.ProgressBar(value=progress, color=color, bgcolor=BAR_BG, height=5),
                 small_text("已解锁" if unlocked else f"{current:g} / {target:g}"),
             ], spacing=5),
-            bgcolor="#F9FBFA" if not unlocked else "#FFF9EB",
+            bgcolor=SURFACE if not unlocked else "#FFF9EB",
             border=thin_border(color if unlocked else BORDER),
             border_radius=8,
             height=116,

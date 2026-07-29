@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+from datetime import date
 from pathlib import Path
 
 from app_defaults import DEFAULT_MACRO_MULTIPLIERS
@@ -113,12 +114,36 @@ def save_json(path: Path, data):
     temp_path.replace(path)
 
 
+def normalize_profile_age(data: dict, *, today: date | None = None) -> bool:
+    """Advance a stored age once per New Year without requiring a birthday."""
+    today_year = (today or date.today()).year
+    previous_age = data.get("age")
+    previous_reference_year = data.get("age_reference_year")
+    try:
+        reference_year = int(previous_reference_year or today_year)
+    except (TypeError, ValueError):
+        reference_year = today_year
+    age_raw = str(previous_age or "").strip()
+    try:
+        age_value = int(float(age_raw))
+    except (TypeError, ValueError):
+        age_value = None
+    if reference_year > today_year:
+        reference_year = today_year
+    if age_value is not None and today_year > reference_year:
+        data["age"] = str(age_value + today_year - reference_year)
+    data["age_reference_year"] = today_year
+    return data.get("age") != previous_age or data.get("age_reference_year") != previous_reference_year
+
+
 def load_user_profile():
     default = {
         "weight": "",
         "bodyfat": "",
         "height": "",
         "age": "",
+        "age_reference_year": 0,
+        "theme_color": "green",
         "sex": "",
         "activity_habit": "",
         "waist_cm": "",
@@ -171,6 +196,10 @@ def load_user_profile():
         data["macro_mode"] = "auto"
     if data.get("macro_goal") not in ["减脂", "保持", "增肌"]:
         data["macro_goal"] = "减脂"
+    # 年龄不保存生日，按每年元旦递增。旧版本没有参考年份时从首次读取年份开始计算，
+    # 避免在升级当天凭空补算多年年龄；之后每次跨年只会递增一次并写回。
+    if normalize_profile_age(data):
+        save_json(PROFILE_FILE, data)
     return data
 
 def save_user_profile(data):
@@ -179,5 +208,5 @@ def save_user_profile(data):
 __all__ = [
     "ACHIEVEMENT_FILE", "APP_DIR", "FOOD_FILE", "GOAL_CHALLENGE_FILE",
     "PROFILE_FILE", "RECORD_FILE", "SUPP_FILE", "TRAINING_FILE", "load_json",
-    "load_user_profile", "save_json", "save_user_profile",
+    "load_user_profile", "normalize_profile_age", "save_json", "save_user_profile",
 ]

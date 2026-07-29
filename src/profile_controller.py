@@ -49,14 +49,15 @@ from profile_views import build_achievement_wall, build_completed_challenges, bu
 from profile_backup_views import build_backup_panel
 from profile_details_views import build_profile_details, build_profile_metrics
 from profile_macro_views import build_carb_cycle_goal_section, build_macro_panel
+from profile_theme_views import build_theme_panel
 from repositories import AppRepositories
 from training_experience_service import exercise_usage_stats, sort_exercises
 from training_picker_views import (
     build_category_sidebar, build_exercise_card, build_exercise_help, build_sort_row,
 )
 from ui_components import (
-    GREEN, PRIMARY, PRIMARY_SOFT, TEXT, YELLOW, labeled_plain_field, make_button,
-    mobile_dropdown, small_text, three_field_grid, two_field_grid,
+    GREEN, PRIMARY, PRIMARY_SOFT, SURFACE, TEXT, YELLOW, labeled_plain_field, make_button,
+    mobile_dropdown, set_input_focused, small_text, three_field_grid, two_field_grid,
 )
 
 
@@ -143,6 +144,8 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             "bodyfat": state.get("bodyfat", ""),
             "height": state.get("height", ""),
             "age": state.get("age", ""),
+            "age_reference_year": int(state.get("age_reference_year") or datetime.date.today().year),
+            "theme_color": str(state.get("theme_color", "green")),
             "sex": state.get("sex", ""),
             "activity_habit": state.get("activity_habit", ""),
             "waist_cm": state.get("waist_cm", ""),
@@ -434,6 +437,9 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         open_control(dialog)
 
     def open_new_challenge(initial_lane=None, preset=None, retry_source=None, event=None):
+        if len(load_challenges().get("active", [])) >= 3:
+            snack("最多只能同时进行 3 个挑战")
+            return
         dialog_width = responsive_width()
         selected_mode = {"value": "recommended"}
         selected_custom = {"spec": None}
@@ -467,7 +473,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                     updated = mark_failed_retried(updated, str(retry_source["id"]), now=iso_now())
                 save_challenges(updated)
             except ValueError as exc:
-                snack(str(exc))
+                snack("最多只能同时进行 3 个挑战" if "最多三项" in str(exc) else str(exc))
                 return False
             close_sheet()
             refresh()
@@ -540,7 +546,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                     recommendation_controls.append(ft.Container(
                         content=ft.Column(details, spacing=6),
                         padding=10,
-                        bgcolor="#F9FBFA",
+                        bgcolor=SURFACE,
                         border=ft.Border.all(1, level_colors[level]),
                         border_radius=8,
                         on_click=lambda e, template=template: create_from_template(template),
@@ -861,7 +867,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                         ft.Text("›", size=28, color="#A8B0AD"),
                     ], spacing=8),
                     padding=14,
-                    bgcolor="#F9FBFA",
+                    bgcolor=SURFACE,
                     border=ft.Border.all(1, "#E0E5E3"),
                     border_radius=10,
                     on_click=lambda e, spec=spec: open_custom_spec(spec),
@@ -1111,6 +1117,19 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             save_profile_from_state()
             save_current()
 
+        def persist_dimensions(event=None):
+            """Save height and age when the user finishes editing either field."""
+            set_input_focused(False)
+            assign_visible_fields()
+            state["age_reference_year"] = datetime.date.today().year
+            save_profile_from_state()
+            save_current()
+            field = getattr(event, "control", None)
+            snack("身高已保存" if field is height_field else "年龄已保存")
+
+        height_field.on_blur = persist_dimensions
+        age_field.on_blur = persist_dimensions
+
         def set_sex(value):
             persist_visible_profile(sex_value=value)
             refresh()
@@ -1118,6 +1137,16 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         def set_activity(value):
             persist_visible_profile(habit_value=value)
             refresh()
+
+        def set_theme(value):
+            state["theme_color"] = value
+            save_profile_from_state()
+            try:
+                from theme_service import apply_theme
+                apply_theme(page, value)
+                page.update()
+            except Exception:
+                pass
 
         def set_macro_mode(mode):
             state["macro_mode"] = mode
@@ -1238,6 +1267,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             on_activity_change=set_activity,
             metrics=build_profile_metrics(targets),
             macro_panel=macro_box,
+            theme_panel=build_theme_panel(state.get("theme_color", "green"), set_theme),
             backup_panel=build_backup_panel(export_handler, import_backup_handler, clear_personal_data),
             viewport_width=responsive_width(),
         )
@@ -1294,6 +1324,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             state["bodyfat"] = str(bodyfat_field.value or "").strip()
             state["height"] = str(height_field.value or "").strip()
             state["age"] = str(age_field.value or "").strip()
+            state["age_reference_year"] = datetime.date.today().year
             state["sex"] = selected["sex"]
             state["activity_habit"] = selected["activity_habit"]
             state["macro_goal"] = selected["macro_goal"]
@@ -1335,6 +1366,16 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         state.profile.bodyfat = str(current_profile.get("bodyfat", state.profile.bodyfat))
         state.profile.height = str(current_profile.get("height", state.profile.height))
         state.profile.age = str(current_profile.get("age", state.profile.age))
+        state.profile.theme_color = str(current_profile.get("theme_color", state.profile.theme_color))
+        try:
+            from theme_service import apply_theme
+            apply_theme(page, state.profile.theme_color)
+        except Exception:
+            pass
+        try:
+            state.profile.age_reference_year = int(current_profile.get("age_reference_year") or datetime.date.today().year)
+        except (TypeError, ValueError):
+            state.profile.age_reference_year = datetime.date.today().year
         state.profile.sex = str(current_profile.get("sex", state.profile.sex))
         state.profile.activity_habit = str(current_profile.get("activity_habit", state.profile.activity_habit))
         state.profile.waist_cm = str(current_profile.get("waist_cm", state.profile.waist_cm))

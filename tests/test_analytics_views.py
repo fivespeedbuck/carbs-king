@@ -943,7 +943,7 @@ class AnalyticsFletViewTests(unittest.TestCase):
         view = build_data_page_view({}, end_date="2026-07-21")
 
         self.assertEqual(view.__class__.__name__, "Column")
-        self.assertEqual(len(view.controls), 5)
+        self.assertEqual(len(view.controls), 4)
 
     def test_circumference_page_omits_per_metric_record_count_cards(self):
         records = {
@@ -985,6 +985,8 @@ class AnalyticsFletViewTests(unittest.TestCase):
         self.assertIn("趋势", switch_texts)
         self.assertIn("月历", switch_texts)
         self.assertIn("汇总", switch_texts)
+        for label in ("体重", "体脂", "围度", "饮食", "训练", "恢复"):
+            self.assertIn(label, switch_texts)
 
     def test_period_buttons_invoke_the_real_requested_window(self):
         selected = []
@@ -1010,7 +1012,7 @@ class AnalyticsFletViewTests(unittest.TestCase):
         )
 
         self.assertEqual(view.__class__.__name__, "Column")
-        self.assertEqual(len(view.controls), 5)
+        self.assertEqual(len(view.controls), 4)
 
     def test_calendar_previous_month_button_invokes_month_callback(self):
         selected = []
@@ -1020,7 +1022,7 @@ class AnalyticsFletViewTests(unittest.TestCase):
             config=DataPageConfig(active_tab="月历", calendar_month="2026-07"),
             on_calendar_month_change=selected.append,
         )
-        calendar_card = view.controls[3]
+        calendar_card = view.controls[2]
         month_row = calendar_card.content.controls[1]
 
         month_row.controls[0].on_click(None)
@@ -1038,7 +1040,7 @@ class AnalyticsFletViewTests(unittest.TestCase):
         )
 
         self.assertEqual(view.__class__.__name__, "Column")
-        self.assertEqual(len(view.controls), 5)
+        self.assertEqual(len(view.controls), 4)
 
     def test_main_hook_snippet_uses_single_reusable_component(self):
         hook = build_main_data_page_hook()

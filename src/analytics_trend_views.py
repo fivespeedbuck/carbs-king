@@ -15,6 +15,7 @@ from analytics_model import (
     PURPLE, SUB, SURFACE, _mapping, _number,
 )
 from analytics_ui import _card, _chip, _metric, _text, _value_or_empty
+from ui_components import SURFACE
 
 def _chart_title(chart_kind: str) -> str:
     return dict(CHART_OPTIONS).get(chart_kind, "体重")
@@ -619,7 +620,7 @@ def _render_readable_chart(
             top=bubble_top,
             width=bubble_width,
             padding=ft.Padding.symmetric(horizontal=10, vertical=7),
-            bgcolor="#F7FAF9",
+            bgcolor=SURFACE,
             border=ft.Border.all(1, BORDER),
             border_radius=7,
             shadow=ft.BoxShadow(blur_radius=8, color="#22000000"),

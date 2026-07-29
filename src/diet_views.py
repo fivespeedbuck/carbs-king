@@ -9,7 +9,10 @@ from typing import Any
 import flet as ft
 
 from diet_service import DIET_VIEW_LABELS, DIET_VIEWS, DietView, DietViewState, normalize_diet_view
-from ui_components import INPUT_FIELD_HEIGHT, INPUT_LABEL_HEIGHT, INPUT_LABEL_SPACING, LabeledInput
+from ui_components import (
+    BORDER, GREEN, INPUT_FIELD_HEIGHT, INPUT_LABEL_HEIGHT, INPUT_LABEL_SPACING,
+    LabeledInput, ON_PRIMARY, PRIMARY, PRIMARY_SOFT, SUB, TEXT,
+)
 
 
 DIET_TAB_HEIGHT = 48
@@ -17,13 +20,6 @@ DIET_INPUT_LABEL_HEIGHT = INPUT_LABEL_HEIGHT
 DIET_INPUT_FIELD_HEIGHT = INPUT_FIELD_HEIGHT
 DIET_INPUT_SPACING = INPUT_LABEL_SPACING
 DIET_PAGE_GUTTER = 0
-
-PRIMARY = "#116E59"
-PRIMARY_SOFT = "#F1F7F5"
-BORDER = "#CDD9D5"
-TEXT = "#182420"
-SUB = "#4F5D58"
-
 
 @dataclass(frozen=True, slots=True)
 class DietShellRenderers:
@@ -53,7 +49,7 @@ def diet_tab_button(
             DIET_VIEW_LABELS[view],
             size=14,
             weight="bold",
-            color="#FFFFFF" if selected else PRIMARY,
+            color=ON_PRIMARY if selected else GREEN,
             text_align="center",
             max_lines=1,
             overflow="ellipsis",

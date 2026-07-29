@@ -10,7 +10,7 @@ import flet as ft
 
 from app_utils import to_float
 from training_experience_service import preview_session_exercise_block_order
-from ui_components import GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, page_card, make_button, section_title, small_text, thin_border
+from ui_components import CARD, GREEN, ON_PRIMARY, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, page_card, make_button, section_title, small_text, thin_border
 
 
 _METRIC_LABELS = {
@@ -31,15 +31,15 @@ def build_empty_training(actions: EmptyTrainingActions) -> ft.Control:
     return ft.Column([
         ft.Container(
             content=ft.Column([
-                ft.Icon(ft.Icons.FITNESS_CENTER, size=54, color="#FFFFFF"),
-                ft.Text("今天练什么？", size=25, weight="bold", color="#FFFFFF"),
-                ft.Text("从上次训练继续，或创建一场自由训练", size=14, color="#EAFBF5", weight="bold", text_align="center"),
+                ft.Icon(ft.Icons.FITNESS_CENTER, size=54, color=ON_PRIMARY),
+                ft.Text("今天练什么？", size=25, weight="bold", color=ON_PRIMARY),
+                ft.Text("从上次训练继续，或创建一场自由训练", size=14, color=ON_PRIMARY, weight="bold", text_align="center"),
                 ft.Row([
-                    make_button("复用历史训练", on_click=actions.reuse_history, bgcolor="#FFFFFF", color=GREEN, expand=True),
-                    make_button("自由训练", on_click=actions.create_free, bgcolor="#125F4D", color="#FFFFFF", expand=True),
+                    make_button("复用历史训练", on_click=actions.reuse_history, bgcolor=CARD, color=GREEN, expand=True),
+                    make_button("自由训练", on_click=actions.create_free, bgcolor=PRIMARY, color=ON_PRIMARY, expand=True),
                 ], spacing=8),
             ], horizontal_alignment="center", spacing=14),
-            bgcolor="#116E59", border_radius=12, padding=24,
+            bgcolor=PRIMARY, border_radius=12, padding=24,
             margin=ft.Margin(left=0, top=8, right=0, bottom=8),
         ),
         page_card(ft.Column([
@@ -357,10 +357,10 @@ def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingA
 
     return ft.Column([
         ft.Container(content=ft.Column([
-            ft.Row([ft.Column([small_text("训练计划", color="#EAFBF5"), ft.Text("当前的训练", size=25, weight="bold", color="#FFFFFF")], spacing=2), ft.Icon(ft.Icons.FITNESS_CENTER, size=42, color="#FFFFFF")], alignment="spaceBetween"),
-            ft.Text(f"{len(exercises)} 个动作 · {sum(len(item.get('sets', [])) for item in exercises if item.get('recording_mode', 'strength') == 'strength')} 个力量组", size=14, color="#EAFBF5", weight="bold"),
-            make_button("开始训练", on_click=actions.start, icon=ft.Icons.PLAY_ARROW, bgcolor="#FFFFFF", color=GREEN, expand=True, height=58),
-        ], spacing=12), bgcolor="#116E59", border_radius=12, padding=20,
+            ft.Row([ft.Column([small_text("训练计划", color=ON_PRIMARY), ft.Text("当前的训练", size=25, weight="bold", color=ON_PRIMARY)], spacing=2), ft.Icon(ft.Icons.FITNESS_CENTER, size=42, color=ON_PRIMARY)], alignment="spaceBetween"),
+            ft.Text(f"{len(exercises)} 个动作 · {sum(len(item.get('sets', [])) for item in exercises if item.get('recording_mode', 'strength') == 'strength')} 个力量组", size=14, color=ON_PRIMARY, weight="bold"),
+            make_button("开始训练", on_click=actions.start, icon=ft.Icons.PLAY_ARROW, bgcolor=CARD, color=GREEN, expand=True, height=58),
+        ], spacing=12), bgcolor=PRIMARY, border_radius=12, padding=20,
             margin=ft.Margin(left=0, top=8, right=0, bottom=8)),
         page_card(ft.Column([
             ft.Row([section_title("动作安排"), make_button("添加动作", on_click=actions.add_exercise, icon=ft.Icons.ADD, bgcolor=PRIMARY_SOFT, color=GREEN)], alignment="spaceBetween"),

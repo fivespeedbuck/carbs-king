@@ -14,6 +14,8 @@ import flet as ft
 
 from ui_components import (
     BORDER,
+    CARD,
+    ON_PRIMARY,
     ORANGE,
     PRIMARY,
     SKY_BLUE,
@@ -118,21 +120,21 @@ def build_today_dashboard(
             ], alignment="spaceBetween", vertical_alignment="start"),
             *macro_content,
         ], spacing=8),
-        bgcolor="#FFFFFF",
+        bgcolor=CARD,
         border=thin_border(),
         border_radius=12,
         padding=18,
         margin=ft.Margin(left=0, top=0, right=0, bottom=0),
     )
 
-    training_subtitle = ft.Text(model.training_subtitle, size=14, color="#EAFBF5", weight="bold")
+    training_subtitle = ft.Text(model.training_subtitle, size=14, color=ON_PRIMARY, weight="bold")
     training_card = ft.Container(
         content=ft.Row([
-            ft.Container(content=ft.Icon(model.training_icon, size=32, color="#FFFFFF"), width=56, height=56, bgcolor="#0E604E", border_radius=14, alignment=ft.Alignment.CENTER),
-            ft.Column([ft.Text(model.training_title, size=20, weight="bold", color="#FFFFFF"), training_subtitle], expand=True, spacing=4),
-            ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#FFFFFF"),
+            ft.Container(content=ft.Icon(model.training_icon, size=32, color=ON_PRIMARY), width=56, height=56, bgcolor=PRIMARY, border_radius=14, alignment=ft.Alignment.CENTER),
+            ft.Column([ft.Text(model.training_title, size=20, weight="bold", color=ON_PRIMARY), training_subtitle], expand=True, spacing=4),
+            ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ON_PRIMARY),
         ], spacing=12, vertical_alignment="center"),
-        bgcolor="#116E59",
+        bgcolor=PRIMARY,
         border_radius=12,
         padding=18,
         margin=ft.Margin(left=0, top=0, right=0, bottom=0),
@@ -147,7 +149,7 @@ def build_today_dashboard(
                 ft.Text(f"已记 {count} 项" if count else "未记录 +", size=14, color=PRIMARY if count else SUB, weight="bold", max_lines=1, overflow="ellipsis"),
             ], horizontal_alignment="center", alignment="center", spacing=3),
             height=66,
-            bgcolor="#FFFFFF",
+            bgcolor=CARD,
             border=thin_border(PRIMARY if count else BORDER),
             border_radius=10,
             expand=True,
@@ -161,7 +163,7 @@ def build_today_dashboard(
             ft.Row([meal_tile(meal) for meal in meals[:3]], spacing=8),
             ft.Row([meal_tile(meal) for meal in meals[3:]], spacing=8),
         ], spacing=10),
-        bgcolor="#FFFFFF",
+        bgcolor=CARD,
         border=thin_border(),
         border_radius=12,
         padding=16,
@@ -177,7 +179,7 @@ def build_today_dashboard(
                 ft.Column([small_text("睡眠"), ft.Text(model.sleep_text, size=15, weight="bold", color=TEXT)], expand=True),
             ], spacing=8),
         ], spacing=12),
-        bgcolor="#FFFFFF",
+        bgcolor=CARD,
         border=thin_border(),
         border_radius=12,
         padding=16,

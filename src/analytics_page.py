@@ -9,7 +9,8 @@ from typing import Any
 import flet as ft
 
 from analytics_calendar_views import _render_calendar
-from analytics_model import BODY_PART_FILTERS, CHART_OPTIONS, DataPageConfig, PERIOD_OPTIONS, SUB, VIEW_TABS, build_data_page_model
+from analytics_model import BODY_PART_FILTERS, CHART_OPTIONS, DataPageConfig, PERIOD_OPTIONS, VIEW_TABS, build_data_page_model
+from ui_components import SUB
 from analytics_summary_views import _render_raw_list, _render_summary
 from analytics_trend_views import _render_trend_chart
 from analytics_ui import _card, _chip, _text
@@ -83,8 +84,15 @@ def build_data_page_view(
     return ft.Column(
         [
             _render_weekly_review(model),
-            _card(ft.Column([ft.Row([_text("数据", size=20, weight="bold"), _text("默认7天，可切30/90", size=12, color=SUB, weight="bold")], alignment="spaceBetween"), period_row, tab_row], spacing=10)),
-            chart_row if cfg.active_tab == "趋势" else ft.Container(height=0),
+            _card(ft.Column([
+                ft.Row([
+                    _text("数据", size=20, weight="bold"),
+                    _text("默认7天，可切30/90", size=12, color=SUB, weight="bold"),
+                ], alignment="spaceBetween"),
+                period_row,
+                tab_row,
+                chart_row if cfg.active_tab == "趋势" else ft.Container(height=0),
+            ], spacing=10)),
             body,
             _render_raw_list(model, on_toggle_raw),
         ],

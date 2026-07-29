@@ -174,7 +174,18 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn('TEXT = "#182420"', UI_SOURCE)
         self.assertIn('SUB = "#4F5D58"', UI_SOURCE)
         self.assertIn('CARD = "#FFFFFF"', UI_SOURCE)
-        self.assertIn('PRIMARY_SOFT = "#F1F7F5"', UI_SOURCE)
+        self.assertIn("PRIMARY_SOFT = ft.Colors.PRIMARY_CONTAINER", UI_SOURCE)
+
+    def test_date_picker_uses_simplified_chinese_labels(self):
+        self.assertIn('locale=ft.Locale("zh", "CN")', TODAY_CONTROLLER_SOURCE)
+        self.assertIn('help_text="选择日期"', TODAY_CONTROLLER_SOURCE)
+        self.assertIn('cancel_text="取消"', TODAY_CONTROLLER_SOURCE)
+        self.assertIn('confirm_text="确定"', TODAY_CONTROLLER_SOURCE)
+
+    def test_primary_surfaces_use_theme_tokens_instead_of_fixed_green(self):
+        self.assertNotIn('PRIMARY = "#116E59"', DIET_SOURCE)
+        self.assertNotIn('bgcolor="#116E59"', TODAY_SOURCE)
+        self.assertIn("bgcolor=PRIMARY", TODAY_SOURCE)
 
     def test_p0_buttons_and_tabs_keep_48dp_touch_targets(self):
         self.assertIn("def make_button(text, on_click=None, icon=None, bgcolor=None, color=None, expand=False, height=48):", UI_SOURCE)

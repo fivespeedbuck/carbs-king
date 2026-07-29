@@ -7,7 +7,7 @@ from typing import Any
 
 import flet as ft
 
-from analytics_model import BORDER, PRIMARY, PRIMARY_SOFT, SUB, SURFACE, TEXT, WHITE
+from ui_components import BORDER, CARD as WHITE, PRIMARY, PRIMARY_SOFT, SUB, SURFACE, TEXT, ON_PRIMARY
 
 def _text(value: Any, *, size: int = 13, color: str = TEXT, weight: str | None = None) -> ft.Text:
     return ft.Text(str(value), size=size, color=color, weight=weight)
@@ -24,7 +24,7 @@ def _border(color: str, width: int = 1) -> ft.Border:
 
 def _chip(label: str, selected: bool, on_click: Callable[[Any], None] | None = None) -> ft.Container:
     return ft.Container(
-        content=ft.Text(label, size=14, weight="bold", color=WHITE if selected else PRIMARY, text_align="center", max_lines=1, overflow="ellipsis"),
+        content=ft.Text(label, size=14, weight="bold", color=ON_PRIMARY if selected else PRIMARY, text_align="center", max_lines=1, overflow="ellipsis"),
         height=48,
         padding=ft.Padding(left=10, top=0, right=10, bottom=0),
         bgcolor=PRIMARY if selected else PRIMARY_SOFT,

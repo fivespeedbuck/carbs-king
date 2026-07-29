@@ -1,6 +1,7 @@
 import copy
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
 
 import flet as ft
@@ -13,6 +14,7 @@ from app_defaults import CIRCUMFERENCE_FIELDS, DEFAULT_MACRO_MULTIPLIERS  # noqa
 from app_state import AppState  # noqa: E402
 from nutrition_service import create_nutrition_service  # noqa: E402
 from profile_details_views import build_profile_details, build_profile_metrics  # noqa: E402
+from storage_service import normalize_profile_age  # noqa: E402
 
 
 MEALS = ("早餐", "午餐", "晚餐", "练前", "练后", "偷吃")
@@ -201,6 +203,30 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertIn("two_field_grid(weight_box, bodyfat_box", details)
         self.assertIn("two_field_grid(height_box, age_box", details)
 
+    def test_height_and_age_fields_auto_save_when_editing_finishes(self):
+        controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8-sig")
+
+        self.assertIn("height_field.on_blur = persist_dimensions", controller)
+        self.assertIn("age_field.on_blur = persist_dimensions", controller)
+        self.assertIn('state["age_reference_year"] = datetime.date.today().year', controller)
+        self.assertIn('snack("身高已保存" if field is height_field else "年龄已保存")', controller)
+
+    def test_age_advances_once_each_new_year(self):
+        profile = {"age": "30", "age_reference_year": 2025}
+
+        self.assertTrue(normalize_profile_age(profile, today=date(2026, 1, 1)))
+        self.assertEqual(profile, {"age": "31", "age_reference_year": 2026})
+        self.assertFalse(normalize_profile_age(profile, today=date(2026, 12, 31)))
+        self.assertEqual(profile["age"], "31")
+        self.assertTrue(normalize_profile_age(profile, today=date(2028, 1, 1)))
+        self.assertEqual(profile, {"age": "33", "age_reference_year": 2028})
+
+    def test_legacy_age_starts_new_year_tracking_without_guessing(self):
+        profile = {"age": "30"}
+
+        self.assertTrue(normalize_profile_age(profile, today=date(2026, 7, 29)))
+        self.assertEqual(profile, {"age": "30", "age_reference_year": 2026})
+
     def test_profile_gender_options_keep_male_and_female_labels(self):
         details = (ROOT / "src" / "profile_details_views.py").read_text(encoding="utf-8-sig")
 
@@ -216,6 +242,13 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertIn("recommended_lane_box.on_change = change_recommendation_lane", controller)
         self.assertIn("filter_recommendations_by_lane(recommendation_templates, selected_lane)", controller)
         self.assertNotIn('mobile_dropdown("创建到赛道"', controller)
+
+    def test_all_challenge_creation_entries_show_the_three_item_limit(self):
+        controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8")
+
+        self.assertIn('if len(load_challenges().get("active", [])) >= 3:', controller)
+        self.assertGreaterEqual(controller.count('snack("最多只能同时进行 3 个挑战")'), 1)
+        self.assertIn('"最多三项" in str(exc)', controller)
 
     def test_custom_challenge_page_uses_grouped_catalog_and_metric_fields(self):
         definitions = (ROOT / "src" / "goal_challenge_definitions.py").read_text(encoding="utf-8")

@@ -8,7 +8,7 @@ from typing import Any
 import flet as ft
 
 from app_utils import to_float
-from ui_components import GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, make_button, small_text, thin_border
+from ui_components import GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, make_button, small_text, thin_border
 
 
 CUSTOM_CARDIO_METRIC_FIELDS = (
@@ -115,14 +115,14 @@ def build_exercise_help(exercise: Mapping[str, Any], width: int, scroll_mode: An
     media = ft.Container(
         content=ft.Image(src=media_src, fit="contain", height=210) if media_src else ft.Icon(ft.Icons.FITNESS_CENTER, size=56, color=GREEN),
         alignment=ft.Alignment.CENTER,
-        bgcolor="#F5FAF7",
+        bgcolor=SURFACE,
         border_radius=12,
         padding=8,
     )
     details = [
         media,
         ft.Text(f"器械 · {exercise.get('equipment', '其他')}", size=13, color=SUB),
-        ft.Container(content=ft.Text(f"目标肌群 · {target}", size=13, color=GREEN, weight="bold"), bgcolor="#EAF7EF", border_radius=10, padding=10),
+        ft.Container(content=ft.Text(f"目标肌群 · {target}", size=13, color=GREEN, weight="bold"), bgcolor=SURFACE, border_radius=10, padding=10),
         ft.Text("动作要点", size=15, weight="bold", color=TEXT),
         *cues,
     ]

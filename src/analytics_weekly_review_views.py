@@ -7,8 +7,9 @@ from typing import Any
 
 import flet as ft
 
-from analytics_model import SUB, SURFACE, _mapping
+from analytics_model import _mapping
 from analytics_ui import _card, _text
+from ui_components import SUB, SURFACE
 
 
 def _render_weekly_review(model: Mapping[str, Any]) -> ft.Control:
