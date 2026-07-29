@@ -56,9 +56,9 @@
 ## 远端发布注意事项
 
 - GitHub `main` 在本阶段收尾时由用户授权快进合并。
-- GitHub Release `v1.2.3` 上 71,915,571 字节的 APK 是已知错误包，内含 LFS 指针。
-- 不得继续交付该错误包。
-- 替换 Release 前必须再次核对本地 APK 的大小、SHA-256、包名、versionCode、签名和内层资源统计。
+- GitHub Release `v1.2.3` 的错误 71,915,571 字节 APK 已删除并替换为 Build 75。
+- 当前 Release 只有一个 `carbs_king.apk`，大小 201,518,971 字节，SHA-256 与本地 Build 75 一致。
+- Release URL：`https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3`
 
 ## 下一阶段
 

@@ -15,7 +15,7 @@
 
 - 当前本地交付线：`1.2.3 / Build 75`；完整阶段结果见 `CURRENT_HANDOFF.md` 和 `STAGE_RETROSPECTIVE_2026-07-29.md`。
 - `pyproject.toml` 当前准备下一次 Build 76；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
-- GitHub Release `v1.2.3` 上 71,915,571 字节 APK 是已知错误包，内含 LFS 指针；替换前不得继续交付。
+- GitHub Release `v1.2.3` 的 71,915,571 字节 LFS 指针 APK 已删除，当前已上传 Build 75；后续替换仍必须核对 SHA-256 和内层资源。
 - Android 更新必须沿用既有签名；先核验包名、版本、签名、ZIP 对齐、媒体资源数量，再交付。
 - APK 不提交 Git；通过 GitHub Release 上传。动作媒体已使用 Git LFS，普通 Git 推送大媒体容易因代理出现 HTTP 408。
 - 发布前必须同步 README、CHANGELOG、Release 更新说明、版本号、Build 与 APK 资产文件名。
