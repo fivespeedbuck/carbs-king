@@ -179,7 +179,7 @@ def build_action_arrangement_card(
     ]
     if completed_count is not None:
         detail_controls.append(small_text(f"已完成 {completed_count} 组"))
-    return ft.Container(
+    inner_card = ft.Container(
         content=ft.Row([
             ft.Container(
                 content=ft.Text(str(position), color="#FFFFFF", weight="bold"),
@@ -220,9 +220,18 @@ def build_action_arrangement_card(
             ], spacing=0, tight=True),
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         bgcolor="#FFFFFF",
-        border=thin_border(),
-        border_radius=10,
+        border=None,
+        border_radius=9,
         padding=10,
+    )
+    # ReorderableListView can clip a card's one-pixel edge during a drag.  An
+    # outer frame keeps all four sides visible in the mobile action manager.
+    return ft.Container(
+        content=inner_card,
+        bgcolor="#FFFFFF",
+        border=thin_border(),
+        border_radius=11,
+        padding=1,
         data="action-arrangement-card",
         key=f"action-{exercise_id}",
     )
@@ -430,7 +439,7 @@ def build_action_arrangement_list(
             delete_exercise=delete_exercise,
             completed_count=(completed_counts.get(exercise_id, 0) if completed_counts is not None else None),
         )
-        register_block(exercise_id, row_card, 94)
+        register_block(exercise_id, row_card, 112 if completed_counts is not None else 104)
 
     # ``ft.Container`` is not a stable runtime class in every supported Flet
     # environment, so do not use it in ``isinstance``.  These controls are
@@ -450,7 +459,7 @@ def build_action_arrangement_list(
         show_default_drag_handles=False,
         build_controls_on_demand=False,
         auto_scroll=True,
-        height=min(max_height, max(94, estimated_height + max(0, len(block_controls) - 1) * 8)),
+        height=min(max_height, max(104, estimated_height + max(0, len(block_controls) - 1) * 8)),
         on_reorder=reorder_blocks,
         data=data,
     )

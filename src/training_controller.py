@@ -459,26 +459,30 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         custom_exercises = load_custom_exercises()
         catalog = exercise_catalog(custom_exercises)
         categories = tuple(dict.fromkeys([*EXERCISE_CATEGORIES, *(item.get("category", "其他") for item in custom_exercises)]))
+        # Leave more of the phone width to the filters and results while
+        # keeping the body-part rail readable.
+        equipment_panel_width = max(226, dialog_width - 64)
         # Rendering a whole body-part at once can mean hundreds of cards in
         # the web canvas. Keep the picker responsive and reveal more on demand.
         list_holder = ft.GridView(
-            max_extent=280,
-            # The 2.5 ratio keeps the existing icon coordinates while raising
-            # the card bottom so the space below “+” matches the space above
-            # “?”. The fixed title and bottom detail zones still fit in 110px.
-            child_aspect_ratio=2.5,
+            # Force one mobile column.  ``max_extent`` lets Flet switch to two
+            # narrow columns at some phone widths, so keep the deliberate
+            # large-card right margin as GridView padding instead.
+            runs_count=1,
+            # Phone cards need a real lower breathing area beneath the add
+            # button and prescription, rather than inheriting desktop-tight
+            # proportions from the original grid.
+            child_aspect_ratio=2.25,
             spacing=8,
             run_spacing=8,
             expand=True,
             build_controls_on_demand=True,
             cache_extent=180,
+            padding=ft.Padding(left=0, top=0, right=8, bottom=0),
         )
         load_more_holder = ft.Column(spacing=6)
         category_rows = ft.Column(spacing=3, width=68, scroll=_SCROLL_HIDDEN)
         subgroup_rows = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
-        # Leave more of the phone width to the filters and results while
-        # keeping the body-part rail readable.
-        equipment_panel_width = max(226, dialog_width - 64)
         equipment_rows = ft.Column(spacing=6, width=equipment_panel_width)
         selection_status = ft.Text("已选择 0 个动作", size=13, color=SUB, weight="bold")
         search_notice = ft.Text("", size=12, color=ORANGE, visible=False)
@@ -2416,12 +2420,19 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         cycle = session.get("rest_cycle") if isinstance(session, dict) else None
         if not isinstance(cycle, dict):
             return False
-        finished, _should_notify = finish_rest_cycle(cycle, now or datetime.datetime.now())
+        finished, should_notify = finish_rest_cycle(cycle, now or datetime.datetime.now())
         if finished == cycle:
             return False
         session["rest_cycle"] = finished
         session["rest_until"] = ""
         persist_session(session, record_date=record_date)
+        if should_notify:
+            # A visible app must always attempt its bundled player.  The
+            # notifier ignores this call while paused/hidden, where the native
+            # AlarmManager remains responsible for delivery.
+            trigger_foreground = getattr(rest_notifier, "trigger_foreground", None)
+            if callable(trigger_foreground):
+                trigger_foreground(str(finished.get("id", "")))
         return True
 
     def adjust_rest(seconds):

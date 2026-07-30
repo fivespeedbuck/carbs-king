@@ -159,13 +159,13 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn("height=48,", TRAINING_SOURCE)
         self.assertIn("border_radius=24,", TRAINING_SOURCE)
 
-    def test_rest_completion_tick_only_persists_finished_state(self):
+    def test_rest_completion_tick_persists_then_plays_the_foreground_cue(self):
         start = TRAINING_CONTROLLER_SOURCE.index("    def complete_rest_if_elapsed")
         end = TRAINING_CONTROLLER_SOURCE.index("    def adjust_rest", start)
         section = TRAINING_CONTROLLER_SOURCE[start:end]
 
         self.assertIn("persist_session(session, record_date=record_date)", section)
-        self.assertNotIn("rest_notifier.trigger", section)
+        self.assertIn('trigger_foreground(str(finished.get("id", "")))', section)
         self.assertNotIn("rest_notifier.cancel", section)
         self.assertNotIn("play_rest_alert", TRAINING_CONTROLLER_SOURCE)
 
@@ -877,7 +877,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         self.assertFalse(reorder_list.show_default_drag_handles)
         self.assertEqual(reorder_list.controls[0].data, "action-arrangement-drag-region")
         first_card = reorder_list.controls[0].content
-        action_grid = first_card.content.controls[2]
+        action_grid = first_card.content.content.controls[2]
         self.assertEqual(
             [button.icon for button in action_grid.controls[0].controls],
             [ft.Icons.EDIT_OUTLINED, ft.Icons.ADD],
@@ -910,7 +910,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
             lambda control: getattr(control, "data", None) == "active-action-reorder-list",
         )
         first_card = reorder_list.controls[0].content
-        first_card.content.controls[2].controls[0].controls[1].on_click(None)
+        first_card.content.content.controls[2].controls[0].controls[1].on_click(None)
         group_sheet = opened[-1]
         checkboxes = self.controls_of_type(group_sheet, ft.Checkbox)
         self.assertEqual(len(checkboxes), 2)
@@ -944,7 +944,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
             opened[0],
             lambda control: getattr(control, "data", None) == "action-arrangement-card",
         )
-        card.content.controls[2].controls[0].controls[0].on_click(None)
+        card.content.content.controls[2].controls[0].controls[0].on_click(None)
         edit_sheet = opened[-1]
         edit_body = edit_sheet.content.content.controls[1].content
         self.assertEqual(edit_body.controls[1].value, "记录模式：力量")

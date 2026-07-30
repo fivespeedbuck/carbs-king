@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import inspect
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import flet as ft
@@ -25,6 +25,12 @@ from app_defaults import CIRCUMFERENCE_FIELDS, DEFAULT_MACRO_MULTIPLIERS
 from app_state import AppState
 from app_version import BUILD_NUMBER, VERSION_NAME
 from app_utils import to_float
+from apk_update_download import (
+    ApkUpdateError,
+    default_apk_destination,
+    download_apk,
+    open_android_installer,
+)
 from backup_controller import BackupController
 from controller_runtime import ControllerRuntime
 from form_views import FormViewContext, build_dialog, build_full_form_sheet
@@ -117,7 +123,10 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         challenge_completion_audio["service"] = None
     challenge_ui = {"delete_mode": False, "selected": set()}
     fallback_challenges: dict[str, Any] = {}
-    update_ui: dict[str, Any] = {"status": "idle", "latest": None, "error": ""}
+    update_ui: dict[str, Any] = {
+        "status": "idle", "latest": None, "error": "", "download_path": "",
+        "downloaded_bytes": 0, "total_bytes": 0,
+    }
 
     def start_update_check(event=None):
         if update_ui["status"] == "checking":
@@ -149,29 +158,75 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             refresh()
 
     def open_update_download(event=None):
+        if update_ui.get("status") == "downloading":
+            return
         release = update_ui.get("latest")
         release = release if isinstance(release, dict) else {}
-        url = str(release.get("apk_url") or release.get("page_url") or "")
+        url = str(release.get("apk_url") or "")
         if not url:
             snack("没有可用的安装包下载地址")
             return
-        launcher = getattr(page, "launch_url", None) or getattr(page, "open_url", None)
-        if not callable(launcher):
-            snack("当前环境无法打开下载页")
-            return
 
-        async def launch():
+        destination = default_apk_destination(str(release.get("apk_name") or "carbs_king.apk"))
+        update_ui.update({
+            "status": "downloading", "error": "", "download_path": "",
+            "downloaded_bytes": 0, "total_bytes": int(release.get("size") or 0),
+        })
+
+        async def download():
+            loop = asyncio.get_running_loop()
+
+            def on_progress(downloaded: int, total: int) -> None:
+                def apply_progress() -> None:
+                    update_ui["downloaded_bytes"] = downloaded
+                    update_ui["total_bytes"] = total or int(release.get("size") or 0)
+                    try:
+                        refresh()
+                    except (AttributeError, RuntimeError):
+                        pass
+                loop.call_soon_threadsafe(apply_progress)
+
             try:
-                result = launcher(url)
-                if inspect.isawaitable(result):
-                    await result
-            except Exception:
-                snack("无法打开下载页，请稍后重试")
+                artifact = await asyncio.to_thread(
+                    download_apk,
+                    url,
+                    destination,
+                    expected_size=int(release.get("size") or 0),
+                    expected_sha256=str(release.get("sha256") or ""),
+                    on_progress=on_progress,
+                )
+                update_ui.update({
+                    "status": "downloaded", "download_path": str(artifact.path),
+                    "downloaded_bytes": artifact.bytes_downloaded,
+                    "total_bytes": artifact.total_bytes,
+                })
+                open_update_installer()
+            except (ApkUpdateError, OSError, ValueError) as exc:
+                update_ui.update({"status": "error", "error": f"下载失败：{str(exc)[:80]}"})
+            finally:
+                try:
+                    refresh()
+                except (AttributeError, RuntimeError):
+                    pass
 
         try:
-            page.run_task(launch)
+            page.run_task(download)
         except (AttributeError, RuntimeError, TypeError):
-            snack("当前环境无法打开下载页")
+            update_ui.update({"status": "error", "error": "当前运行环境无法启动下载"})
+        refresh()
+
+    def open_update_installer(event=None):
+        path = str(update_ui.get("download_path") or "")
+        if not path:
+            snack("安装包尚未下载完成")
+            return
+        try:
+            result = open_android_installer(Path(path))
+            update_ui["status"] = "install_permission" if result == "permission" else "installing"
+        except ApkUpdateError as exc:
+            update_ui.update({"status": "downloaded", "error": str(exc)})
+            snack(str(exc))
+        refresh()
 
     def play_challenge_completion_audio():
         audio = challenge_completion_audio["service"]
@@ -1347,6 +1402,9 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                 error=str(update_ui.get("error") or ""),
                 on_check=start_update_check,
                 on_download=open_update_download,
+                on_install=open_update_installer,
+                downloaded_bytes=int(update_ui.get("downloaded_bytes") or 0),
+                total_bytes=int(update_ui.get("total_bytes") or 0),
             ),
             viewport_width=responsive_width(),
         )

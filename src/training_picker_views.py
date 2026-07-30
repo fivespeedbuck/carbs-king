@@ -225,8 +225,9 @@ def build_exercise_card(
         padding=10,
         ink=True,
         on_click=on_toggle,
-        # The final row reserves a stable place for personal training history.
-        height=168 if on_delete is not None else 150,
+        # Reserve explicit bottom space on the phone picker.  Without it the
+        # prescription and add control read as visually glued to the card edge.
+        height=176 if on_delete is not None else 164,
         expand=True,
     )
 

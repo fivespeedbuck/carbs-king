@@ -60,7 +60,9 @@ class Build76RegressionTests(unittest.TestCase):
         self.assertIn('sort_exercises(results, usage_stats, selected["sort"])', self.training)
 
     def test_equipment_filters_pack_visible_rows_and_keep_more_reachable(self):
-        self.assertIn("child_aspect_ratio=2.5", self.training)
+        self.assertIn("child_aspect_ratio=2.25", self.training)
+        self.assertIn("runs_count=1", self.training)
+        self.assertIn("right=8", self.training)
         self.assertIn("def pack_equipment_controls(items, ordered_count):", self.training)
         self.assertIn("for row_index, used in enumerate(used_widths):", self.training)
         self.assertIn('compact_row = ft.Row(', self.training)
@@ -154,6 +156,8 @@ class Build76RegressionTests(unittest.TestCase):
         self.assertIn("settings_sections.append(backup_panel)", self.details)
         self.assertIn("settings_sections.append(update_panel)", self.details)
         self.assertIn("update_panel=build_update_panel(", self.profile)
+        self.assertIn("download_apk,", self.profile)
+        self.assertIn("open_android_installer", self.profile)
 
     def test_theme_and_challenge_panels_use_neutral_borderless_surfaces(self):
         self.assertIn("bgcolor=SURFACE", self.theme)
