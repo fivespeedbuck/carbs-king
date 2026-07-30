@@ -26,3 +26,9 @@
 2. 切后台和锁屏后分别做一次自然到点测试。
 3. 在“我 → 应用更新”下载下一次发布包，确认进度、校验失败提示和系统安装界面。
 4. 在“添加动作”和“调整动作顺序”确认卡片宽度、底部间距和四边框。
+
+## GitHub 发布结果
+
+- 源码 PR [#7](https://github.com/fivespeedbuck/carbs-king/pull/7) 已合并到 `main`。
+- `v1.2.3` Release 已更新为 Build 79，远端仅保留 `carbs_king.apk`。
+- 远端资产状态为 `uploaded`，大小 `201,667,039`，digest 为 `sha256:26cf622ff2b6b3f0c310a27092c914db6f3036eac58c75b2f47322b2223374ae`。

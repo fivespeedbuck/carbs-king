@@ -5,8 +5,9 @@
 ## 当前状态
 
 - 正式目录：`D:\carbs-king`
+- 源码 PR [#7](https://github.com/fivespeedbuck/carbs-king/pull/7) 已合并到 `main`。
 - Build 79 已完成全量测试、APK 资源门禁、原生提醒/应用内安装运行时门禁、包名、版本和签名校验。
-- 待发布：合并本次源码后，替换 GitHub `v1.2.3` Release 的单一 `carbs_king.apk`，并核对远端 size/digest。
+- GitHub `v1.2.3` Release 已替换为 Build 79，远端仅保留单一 `carbs_king.apk`，size/digest 已核对一致。
 - 构建脚本已把 `pyproject.toml` 与 `src/app_version.py` 预备为下一次 Build 80。
 
 ## 最终 APK
@@ -47,7 +48,7 @@
 
 ## 远端发布结果
 
-- `main/update_manifest.json` 必须显示 Build 79、201,667,039 字节和上述 SHA-256。
-- `v1.2.3` Release 最终只保留一个 `carbs_king.apk`。
-- 上传后远端 `size` 必须为 201,667,039，`digest` 必须为 `sha256:26cf622ff2b6b3f0c310a27092c914db6f3036eac58c75b2f47322b2223374ae`。
+- `main/update_manifest.json` 已显示 Build 79、201,667,039 字节和上述 SHA-256。
+- `v1.2.3` Release 仅保留一个 `carbs_king.apk`，状态为 `uploaded`。
+- 远端 `size` 为 201,667,039，`digest` 为 `sha256:26cf622ff2b6b3f0c310a27092c914db6f3036eac58c75b2f47322b2223374ae`。
 - Release URL：`https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3`
