@@ -20,6 +20,8 @@ from training_experience_service import (  # noqa: E402
     next_group_work,
     pause_rest_cycle,
     preview_session_exercise_block_order,
+    reorder_group_members,
+    remove_exercise_from_group,
     reorder_session_exercise_blocks,
     reorder_session_exercises,
     rest_remaining_seconds,
@@ -237,6 +239,29 @@ class ExerciseReorderTests(unittest.TestCase):
 
         moved_before_group = reorder_session_exercise_blocks(self.items, groups, "b", "c")
         self.assertEqual([item["id"] for item in moved_before_group], ["b", "a", "c"])
+
+    def test_group_member_reorder_changes_only_the_order_inside_the_group(self):
+        groups = create_exercise_group(
+            self.items, [], ["a", "c"], "superset", id_factory=lambda prefix: "group-stable"
+        )
+        reordered = reorder_group_members(self.items, groups, "c", "a")
+        normalized = normalize_exercise_groups(reordered, groups)
+
+        self.assertEqual([item["id"] for item in reordered], ["c", "a", "b"])
+        self.assertEqual(normalized[0]["exercise_ids"], ["c", "a"])
+        self.assertEqual(reordered[2]["id"], "b")
+
+    def test_removing_one_group_member_keeps_a_valid_remainder_or_dissolves_a_pair(self):
+        triple = create_exercise_group(
+            self.items, [], ["a", "b", "c"], "superset", id_factory=lambda prefix: "group-stable"
+        )
+        remaining = remove_exercise_from_group(self.items, triple, "b")
+        self.assertEqual(remaining[0]["exercise_ids"], ["a", "c"])
+        self.assertEqual(self.items[1].get("group_id", ""), "")
+
+        pair = create_exercise_group(self.items, [], ["a", "c"], "superset")
+        self.assertEqual(remove_exercise_from_group(self.items, pair, "a"), [])
+        self.assertTrue(all(not item.get("group_id") for item in self.items))
 
     def test_drag_preview_matches_final_drop_order_and_keeps_group_as_one_block(self):
         groups = create_exercise_group(

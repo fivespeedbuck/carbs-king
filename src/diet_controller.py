@@ -22,7 +22,8 @@ from food_library import FOOD_CATEGORIES, food_catalog, search_foods
 from form_views import FormViewContext, build_full_form_sheet
 from repositories import AppRepositories
 from ui_components import (
-    BORDER, GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, card, page_card, macro_progress_bar,
+    BORDER, GREEN, INPUT_FIELD_HEIGHT, INPUT_LABEL_HEIGHT, INPUT_LABEL_SPACING,
+    PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, card, page_card, macro_progress_bar,
     make_button, mobile_dropdown, mobile_text_field, quantity_unit_grid, section_title,
     small_text, thin_border, two_field_grid,
 )
@@ -30,6 +31,18 @@ from ui_components import (
 
 FOOD_UNIT_PRESETS = ("g", "ml", "个", "份")
 CUSTOM_UNIT_OPTION = "自定义"
+
+
+def compact_daily_summary(total: Mapping[str, Any]) -> str:
+    """Keep the phone-width daily total on one line with whole values."""
+    whole = {
+        key: max(0, int(to_float(total.get(key)) + 0.5))
+        for key in ("kcal", "carb", "protein", "fat")
+    }
+    return (
+        f"{whole['kcal']}kcal｜碳{whole['carb']}g｜"
+        f"蛋{whole['protein']}g｜脂{whole['fat']}g"
+    )
 
 
 def resolve_food_unit(selected_unit: Any, custom_unit: Any = "") -> str:
@@ -84,7 +97,7 @@ class DietController:
     open_add_food: Callable[..., None]
     open_food_editor: Callable[..., None]
     delete_food: Callable[[int], None]
-    food_shortcuts: Callable[..., tuple[list[dict[str, Any]], list[dict[str, Any]]]]
+    food_shortcuts: Callable[..., list[dict[str, Any]]]
 
 
 def create_diet_controller(deps: DietControllerDependencies) -> DietController:
@@ -128,14 +141,13 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         return "晚餐"
 
     def food_shortcuts(meal_name, limit=4):
-        """Return meal-aware frequent foods and true recent foods with last quantity."""
+        """Return meal-aware frequent foods with their last editable quantity."""
         today = date.today()
         cutoff = today - datetime.timedelta(days=29)
         meal_counts = Counter()
         global_counts = Counter()
         latest_items = {}
         latest_meal_items = {}
-        recent_candidates = []
         known_names = {str(food.get("name", "")) for food in foods}
 
         for record_date in sorted(records.keys(), reverse=True):
@@ -166,8 +178,6 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                         if meal == meal_name:
                             meal_names_for_day.add(name)
                     sort_key = str(item.get("added_at") or f"{record_date}T{index:06d}")
-                    if in_last_30_days and meal == meal_name:
-                        recent_candidates.append((sort_key, item))
                     if name not in latest_items or sort_key > latest_items[name][0]:
                         latest_items[name] = (sort_key, item)
                     if meal == meal_name and (name not in latest_meal_items or sort_key > latest_meal_items[name][0]):
@@ -183,17 +193,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             if latest:
                 common.append(latest[1])
 
-        recent = []
-        seen = set()
-        for _, item in sorted(recent_candidates, key=lambda pair: pair[0], reverse=True):
-            name = str(item.get("food", "")).strip()
-            if name in seen:
-                continue
-            seen.add(name)
-            recent.append(item)
-            if len(recent) >= limit:
-                break
-        return common, recent
+        return common
 
     def open_add_food_dialog(default_meal="午餐"):
         dialog_width = responsive_width()
@@ -201,15 +201,28 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         meal_dd = mobile_dropdown("餐次", default_meal, [ft.dropdown.Option(m) for m in MEALS], expand=True)
         search = mobile_text_field("搜索食物", expand=True)
         food_dd = mobile_dropdown("食物", None, [ft.dropdown.Option(f["name"]) for f in foods[:24]], expand=True)
-        # Keep the native dropdown on the same baseline and field height as
-        # the search TextField on Android.
-        food_dd.field.height = search.field.height
+        food_dd.field.menu_height = 300
 
         def current_unit():
             food = next((f for f in foods if f.get("name") == food_dd.value), None)
             return food.get("unit", "g") if food else "g"
 
         qty = mobile_text_field(f"数量（{current_unit()}）", keyboard_type=_KEYBOARD_NUMBER, expand=True)
+        # Flet's dense TextField paints a 48–50px outline even when its
+        # configured height is raised. Dropdowns are not subject to that
+        # compact-mode reduction, so make the paired text fields non-dense
+        # and give all four controls the same field-height contract.
+        aligned_input_height = INPUT_LABEL_HEIGHT + INPUT_LABEL_SPACING + INPUT_FIELD_HEIGHT
+        for control in (meal_dd, qty, search, food_dd):
+            control.height = aligned_input_height
+            control.controls[0].height = INPUT_LABEL_HEIGHT
+            control.spacing = INPUT_LABEL_SPACING
+            control.field.content_padding = 12
+        for control in (meal_dd, food_dd):
+            control.field.height = INPUT_FIELD_HEIGHT
+        for control in (qty, search):
+            control.field.height = INPUT_FIELD_HEIGHT
+            control.field.dense = False
 
         def choose_portion(grams):
             # Dishes are recorded by what was actually eaten, not the whole
@@ -284,22 +297,35 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                     state["meals"].setdefault(meal_name, [])
                     state["meals"][meal_name] = [saved for saved in state["meals"][meal_name] if not isinstance(saved, dict) or saved.get("id") != item_id]
                     refresh()
-                snack("已撤销快捷添加")
+                snack("已撤销添加")
 
             snack(f"已添加 {food['name']} {amount:g}{food.get('unit', 'g')}", "撤销", undo)
 
         def select_shortcut(item):
             name = str(item.get("food", ""))
+            # Keep the dropdown payload small. Sending the complete 2,000+
+            # food catalog on every shortcut click can stall the Flet client,
+            # and setting a value before its option exists creates a transient
+            # invalid Dropdown state. Add the selected food to the normal
+            # 24-item window first, then prefill the editable fields.
+            visible_names = [str(food.get("name", "")) for food in foods[:24]]
+            if name and name not in visible_names:
+                visible_names.insert(0, name)
+            food_dd.options = [ft.dropdown.Option(value) for value in visible_names if value]
             food_dd.value = name
             search.value = ""
             qty.value = f"{to_float(item.get('qty')):g}"
-            food_dd.options = [ft.dropdown.Option(f["name"]) for f in foods]
             update_qty_label()
             page.update()
 
-        shortcut_mode = {"value": "common"}
         shortcut_list = ft.Column(spacing=6)
-        shortcut_tabs = ft.Row(spacing=6)
+        shortcut_header = ft.Container(
+            content=ft.Text("常用", size=14, weight="bold", color="#FFFFFF", text_align="center"),
+            height=48,
+            bgcolor=PRIMARY,
+            border_radius=8,
+            alignment=ft.Alignment.CENTER,
+        )
 
         def shortcut_label(item):
             name = str(item.get("food", ""))
@@ -307,46 +333,22 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             return f"{name} · {qty_text}"
 
         def update_shortcuts(e=None):
-            common_foods, recent_foods = food_shortcuts(meal_dd.value or default_meal)
-            current = common_foods if shortcut_mode["value"] == "common" else recent_foods
+            current = food_shortcuts(meal_dd.value or default_meal)
             shortcut_list.controls.clear()
             if not current:
                 shortcut_list.controls.append(small_text("记录几次后，这里会出现快捷食物"))
             for item in current:
                 shortcut_list.controls.append(ft.Container(
-                    content=ft.Row([
-                        ft.Container(
-                            content=ft.Text(shortcut_label(item), size=12, weight="bold", color=GREEN, max_lines=1, overflow="ellipsis"),
-                            height=44, padding=ft.Padding(left=10, top=0, right=10, bottom=0),
-                            alignment=ft.Alignment.CENTER_LEFT, expand=True,
-                            on_click=lambda e, x=item: select_shortcut(x),
-                        ),
-                        ft.IconButton(icon=ft.Icons.ADD, icon_color="#FFFFFF", bgcolor=PRIMARY,
-                                      icon_size=19, tooltip="按上次份量立即添加",
-                                      on_click=lambda e, x=item: quick_add(x)),
-                    ], spacing=4),
+                    content=ft.Text(shortcut_label(item), size=12, weight="bold", color=GREEN, max_lines=1, overflow="ellipsis"),
+                    height=44,
                     bgcolor=PRIMARY_SOFT, border=thin_border(), border_radius=8,
-                    padding=ft.Padding(left=0, top=0, right=3, bottom=0),
+                    padding=ft.Padding(left=10, top=0, right=10, bottom=0),
+                    alignment=ft.Alignment.CENTER_LEFT,
+                    on_click=lambda e, x=item: select_shortcut(x),
                 ))
 
-            shortcut_tabs.controls = [
-                make_button("常用", on_click=lambda e: set_shortcut_mode("common"), bgcolor=PRIMARY if shortcut_mode["value"] == "common" else PRIMARY_SOFT, color="#FFFFFF" if shortcut_mode["value"] == "common" else GREEN, expand=True),
-                make_button("最近", on_click=lambda e: set_shortcut_mode("recent"), bgcolor=PRIMARY if shortcut_mode["value"] == "recent" else PRIMARY_SOFT, color="#FFFFFF" if shortcut_mode["value"] == "recent" else GREEN, expand=True),
-            ]
             if e is not None:
                 page.update()
-
-        def set_shortcut_mode(mode):
-            shortcut_mode["value"] = mode
-            update_shortcuts(True)
-
-        def quick_add(item):
-            food = next((f for f in foods if f.get("name") == item.get("food")), None)
-            amount = to_float(item.get("qty"), 0)
-            if not food or amount <= 0:
-                snack("快捷食物数据无效，请手动填写")
-                return
-            append_food(food, amount, meal_dd.value or default_meal, close_dialog=True)
 
         meal_dd.on_change = lambda e: update_shortcuts(True)
         update_shortcuts()
@@ -365,7 +367,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         dlg = full_form_sheet(
             "添加饮食",
             [
-                diet_shortcut_panel(shortcut_tabs, shortcut_list),
+                diet_shortcut_panel(shortcut_header, shortcut_list),
                 two_field_grid(meal_dd, qty, viewport_width=dialog_width),
                 portion_shortcuts,
                 two_field_grid(search, food_dd, viewport_width=dialog_width),
@@ -585,7 +587,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                 ], spacing=2), bgcolor="#FAFAFA", border_radius=8, padding=8, margin=2))
             if not any_record:
                 content_rows.append(ft.Container(content=small_text("暂无饮食记录"), bgcolor="#FAFAFA", border_radius=12, padding=10))
-            header_right = f"{total['kcal']} kcal｜碳 {total['carb']}g｜蛋白 {total['protein']}g｜脂肪 {total['fat']}g"
+            header_right = compact_daily_summary(total)
         else:
             raw_meal_items = state.get("meals", {}).get(selected_meal, []) if isinstance(state.get("meals"), dict) else []
             meal_items = [item for item in raw_meal_items if isinstance(item, dict)] if isinstance(raw_meal_items, list) else []
@@ -607,7 +609,15 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             ft.Container(content=ft.Column([
                 ft.Row([
                     ft.Text(selected_meal, size=13, weight="bold", color=TEXT),
-                    ft.Text(header_right, size=12, color=SUB, text_align="end", max_lines=2, overflow="ellipsis", expand=True),
+                    ft.Text(
+                        header_right,
+                        size=11 if selected_meal == "汇总" else 12,
+                        color=SUB,
+                        text_align="end",
+                        max_lines=1 if selected_meal == "汇总" else 2,
+                        overflow="ellipsis",
+                        expand=True,
+                    ),
                 ], spacing=8, vertical_alignment="start"),
                 ft.Column(content_rows, spacing=1),
             ], spacing=6), bgcolor="#FFFFFF", border_radius=8, padding=8),

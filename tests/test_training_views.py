@@ -43,6 +43,8 @@ def _actions():
         ask_complete=_noop,
         cancel_complete=_noop,
         move_exercise=_noop,
+        adjust_sets=_noop,
+        manage_actions=_noop,
     )
 
 
@@ -99,6 +101,7 @@ class ActiveTrainingViewTests(unittest.TestCase):
 
         self.assertIn("组间休息", texts)
         self.assertIn("下一个训练项", texts)
+        self.assertIn("调整训练顺序", texts)
         self.assertIn("杠铃卧推 · 第 3 组", texts)
         self.assertTrue(result.control.content.expand)
 
@@ -288,9 +291,71 @@ class ActiveTrainingViewTests(unittest.TestCase):
         )
         texts = _texts(result.control)
         self.assertIn("超级组", texts)
+        self.assertIn("组内第 1/2 个", texts)
+        self.assertIn("卧推", texts)
+        self.assertIn("划船", texts)
+        self.assertIn("下一个训练项", texts)
+        self.assertFalse(any(getattr(item, "data", None) == "active-group-strip" for item in _walk(result.control)))
+        self.assertTrue(any(getattr(item, "data", None) == "active-group-action-card" for item in _walk(result.control)))
         self.assertFalse(any(getattr(item, "data", None) == "active-cardio-metric-grid" for item in _walk(result.control)))
         source = (SRC / "training_views.py").read_text(encoding="utf-8-sig")
         self.assertIn('tooltip="动作技巧"', source)
+
+    def test_long_grouped_action_names_stay_single_line_inside_scrollable_group_card(self):
+        result = build_active_training(
+            _model(
+                group_label="超级组",
+                group_position_text="组内第 1/2 个",
+                group_members=(
+                    ("这是一个很长很长的超级组动作名称用于手机宽度验证", "a", True, False),
+                    ("另一个同样很长的动作名称用于验证", "b", False, False),
+                ),
+            ),
+            _actions(),
+        )
+        long_member = next(
+            item for item in _walk(result.control)
+            if isinstance(item, ft.Text) and item.value.startswith("这是一个很长")
+        )
+        group_card = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-group-action-card"
+        )
+        member_row = group_card.content.controls[1]
+        self.assertEqual(long_member.max_lines, 1)
+        self.assertEqual(long_member.overflow, ft.TextOverflow.ELLIPSIS)
+        self.assertEqual(long_member.size, 15)
+        self.assertEqual(group_card.content.controls[1].controls[0].padding.top, 4)
+        self.assertEqual(group_card.padding, 4)
+        self.assertIsNotNone(member_row.scroll)
+
+    def test_superset_rest_removes_the_extra_group_height_without_changing_single_action_rest(self):
+        result = build_active_training(
+            _model(
+                rest_status="running",
+                rest_seconds=88,
+                viewport_height=915,
+                group_label="超级组",
+                group_position_text="组内第 1/2 个",
+                group_members=(("卧推", "a", True, False), ("划船", "b", False, False)),
+            ),
+            _actions(),
+        )
+
+        rest_card = result.control.content.controls[-1]
+        self.assertEqual(rest_card.data, "active-rest-card")
+        self.assertNotIsInstance(rest_card, ft.Stack)
+        self.assertTrue(rest_card.expand)
+        self.assertEqual((rest_card.left, rest_card.top, rest_card.right, rest_card.bottom), (None, None, None, None))
+        rest_controls = rest_card.content.controls[1].controls
+        self.assertEqual(rest_controls[1].data, "active-rest-order-action")
+        rest_buttons = [
+            item for item in _walk(rest_card)
+            if isinstance(item, ft.Container) and item.on_click is not None and item.bgcolor == "#303B37"
+        ]
+        self.assertGreaterEqual(len(rest_buttons), 5)
+        self.assertIn("下一个训练项", _texts(rest_controls[2]))
+        self.assertFalse(any(getattr(item, "data", None) == "active-group-action-card" for item in _walk(rest_card)))
 
 
     def test_selected_completed_set_uses_gold_current_state_after_navigating_back(self):
@@ -316,6 +381,28 @@ class ActiveTrainingViewTests(unittest.TestCase):
         self.assertEqual(current_chip.border.top.color, "#FFD166")
         self.assertEqual(completed_chip.bgcolor, PRIMARY)
         self.assertIsNone(completed_chip.border)
+
+    def test_progress_uses_each_sets_real_completion_position(self):
+        result = build_active_training(
+            _model(
+                completed_sets=1,
+                planned_sets=4,
+                progress=0.25,
+                current_work_index=3,
+                work_completed=(False, False, True, False),
+            ),
+            _actions(),
+        )
+        progress = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-progress-completed"
+        )
+        current = next(
+            item for item in _walk(result.control)
+            if getattr(item, "data", None) == "active-progress-current"
+        )
+        self.assertEqual(progress.bgcolor, "#21A366")
+        self.assertEqual(current.bgcolor, "#FFD166")
 
     def test_superset_shows_current_member_border_and_gold_current_set_together(self):
         result = build_active_training(

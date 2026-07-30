@@ -7,7 +7,7 @@ from collections.abc import Callable
 import flet as ft
 
 from theme_service import THEME_OPTIONS, normalize_theme
-from ui_components import BORDER, SURFACE, page_card, section_title
+from ui_components import BORDER, SURFACE, section_title
 
 
 def build_theme_panel(current: str, on_change: Callable[[str], None]) -> ft.Control:
@@ -24,13 +24,15 @@ def build_theme_panel(current: str, on_change: Callable[[str], None]) -> ft.Cont
             ink=True,
             on_click=lambda e, value=key: on_change(value),
         ))
-    return page_card(
-        ft.Column([
+    return ft.Container(
+        content=ft.Column([
             section_title("主题色"),
             ft.Row(swatches, spacing=8, alignment="spaceBetween"),
         ], spacing=8),
+        bgcolor=SURFACE,
+        border=None,
+        border_radius=8,
         padding=12,
-        margin_bottom=8,
     )
 
 

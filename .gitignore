@@ -17,6 +17,7 @@ dist/
 .qa-*.png
 .qa-*.jpg
 flet-*.log
+.build*-preview*.log
 test-results/
 /screenshots/
 *.apk
@@ -51,6 +52,7 @@ src/storage/
 # canonical root assets/ tree here immediately before packaging.
 /src/assets/
 /storage/
+/.local-preview-data/
 
 # Version packages are attached to GitHub Releases, not committed
 *.zip

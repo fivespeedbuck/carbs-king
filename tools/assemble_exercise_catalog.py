@@ -37,6 +37,18 @@ MUSCLES = {
     "wrist extensors": "腕伸肌群", "wrist flexors": "腕屈肌群", "wrists": "手腕",
 }
 
+GLUTE_DOMINANT_NAME_TERMS = (
+    "glute", "hip extension", "hip thrust", "hip lift", "hip internal rotation",
+    "bridge", "pull through", "piriformis", "monster walk", "donkey kick",
+    "fire hydrant", "clamshell", "frog pump", "kickback", "kettlebell swing",
+    "pelvic tilt", "hip abduction", "hip adduction", "lifting (on hip)",
+    "reverse hyper",
+)
+
+CANONICAL_RECORD_OVERRIDES = json.loads(
+    (Path(__file__).resolve().parents[1] / "src" / "exercise_catalog_overrides.json").read_text(encoding="utf-8")
+)
+
 
 def normalize_display_name(value: str) -> str:
     """Remove spreadsheet spacing artefacts and normalize retained abbreviations."""
@@ -68,8 +80,12 @@ def category_for(row: dict) -> str:
     if category == "chest": return "胸"
     if category == "back": return "背"
     if category == "shoulders": return "肩"
+    if category in {"upper legs", "lower legs"}:
+        # The upstream target is the single primary muscle, not an app-level
+        # navigation category. A glute target must not move compound squats,
+        # leg presses, lunges, deadlifts, or step-ups out of the leg library.
+        return "臀部" if target == "glutes" and any(term in name for term in GLUTE_DOMINANT_NAME_TERMS) else "腿"
     if target == "glutes": return "臀部"
-    if category in {"upper legs", "lower legs"}: return "腿"
     if category == "waist":
         return "核心稳定" if any(word in name for word in ("plank", "dead bug", "bird dog", "pallof")) else "腹部"
     if category == "lower arms": return "小臂"
@@ -87,7 +103,12 @@ def subgroup_for(row: dict, category: str) -> str:
     if category == "胸": return "上胸" if "incline" in name else "下胸" if "decline" in name else "中胸"
     if category == "肩": return "后束" if any(word in name for word in ("rear", "reverse", "bent over")) else "中束" if any(word in name for word in ("lateral", "side raise")) else "前束" if "front" in name else "整体"
     if category == "背": return "背阔肌" if target == "lats" else "上背" if target in {"traps", "upper back", "levator scapulae"} else "下背" if target == "spine" else "整体"
-    if category == "腿": return {"quads": "股四头肌", "hamstrings": "腘绳肌", "glutes": "臀部", "calves": "小腿", "adductors": "内收肌", "abductors": "外展肌"}.get(target, "整体")
+    if category == "腿":
+        if any(term in name for term in ("squat", "leg press", "lunge", "step-up")):
+            return "股四头肌"
+        if any(term in name for term in ("deadlift", "good morning", "leg curl")):
+            return "腘绳肌"
+        return {"quads": "股四头肌", "hamstrings": "腘绳肌", "glutes": "整体", "calves": "小腿", "adductors": "内收肌", "abductors": "外展肌"}.get(target, "整体")
     if category in {"腹部", "核心稳定"}: return "腹斜肌" if "oblique" in name or "side" in name else "下腹" if "leg raise" in name else "核心" if category == "核心稳定" else "上腹"
     if category == "有氧": return EQUIPMENT.get(row["equipment"], "有氧")
     return "整体"
@@ -116,7 +137,7 @@ def main(workbook_path: Path, source_path: Path, output_path: Path, override_pat
         category = category_for(row)
         targets = [MUSCLES.get(str(row["target"]), str(row["target"]))]
         targets.extend(MUSCLES.get(str(item), str(item)) for item in row.get("secondary_muscles", []))
-        catalog.append({
+        record = {
             "id": f"dataset:{source_id}", "name": name, "category": category,
             "subgroup": subgroup_for(row, category), "equipment": EQUIPMENT.get(str(row["equipment"]), str(row["equipment"])),
             "target_muscles": list(dict.fromkeys(targets)), "cues": list(row.get("instruction_steps", {}).get("zh", [])),
@@ -125,7 +146,9 @@ def main(workbook_path: Path, source_path: Path, output_path: Path, override_pat
             "default_weight_kg": None, "default_reps": 10, "default_sets": 4,
             "recording_mode": "cardio" if category == "有氧" else "strength", "distance_enabled": category == "有氧",
             "cardio_metric_fields": [], "aliases": [], "default_duration_seconds": 1200 if category == "有氧" else None,
-        })
+        }
+        record.update(CANONICAL_RECORD_OVERRIDES.get(source_id, {}))
+        catalog.append(record)
     output_path.write_text(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"生成 {len(catalog)} 条动作：{output_path}")
 

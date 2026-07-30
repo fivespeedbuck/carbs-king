@@ -130,7 +130,7 @@ def build_today_dashboard(
     training_subtitle = ft.Text(model.training_subtitle, size=14, color=ON_PRIMARY, weight="bold")
     training_card = ft.Container(
         content=ft.Row([
-            ft.Container(content=ft.Icon(model.training_icon, size=32, color=ON_PRIMARY), width=56, height=56, bgcolor=PRIMARY, border_radius=14, alignment=ft.Alignment.CENTER),
+            ft.Container(content=ft.Icon(model.training_icon, size=36, color=PRIMARY), width=60, height=60, bgcolor=CARD, border_radius=16, alignment=ft.Alignment.CENTER),
             ft.Column([ft.Text(model.training_title, size=20, weight="bold", color=ON_PRIMARY), training_subtitle], expand=True, spacing=4),
             ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ON_PRIMARY),
         ], spacing=12, vertical_alignment="center"),

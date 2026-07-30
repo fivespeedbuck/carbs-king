@@ -46,6 +46,7 @@ def build_profile_details(
     macro_panel: ft.Control,
     backup_panel: ft.Control,
     theme_panel: ft.Control | None = None,
+    update_panel: ft.Control | None = None,
     viewport_width: int | float | None = None,
 ) -> ft.Control:
     weight_box, bodyfat_box, height_box, age_box = field_boxes
@@ -67,7 +68,7 @@ def build_profile_details(
             two_field_grid(*values[index:index + 2], viewport_width=viewport_width)
             for index in range(0, len(values), 2)
         ]
-    return page_card(ft.Column([
+    profile_card = page_card(ft.Column([
         section_title("我"),
         two_field_grid(weight_box, bodyfat_box, viewport_width=viewport_width),
         two_field_grid(height_box, age_box, viewport_width=viewport_width),
@@ -86,9 +87,15 @@ def build_profile_details(
         ft.Row([option_button("规律训练", activity_habit, on_activity_change), option_button("高频训练", activity_habit, on_activity_change)], spacing=8),
         metrics,
         macro_panel,
-        theme_panel if theme_panel is not None else ft.Container(height=0),
-        backup_panel,
     ], spacing=10))
+    settings_sections = [section_title("功能设置")]
+    if theme_panel is not None:
+        settings_sections.append(theme_panel)
+    settings_sections.append(backup_panel)
+    if update_panel is not None:
+        settings_sections.append(update_panel)
+    settings_card = page_card(ft.Column(settings_sections, spacing=10))
+    return ft.Column([profile_card, settings_card], spacing=0)
 
 
 __all__ = ["build_profile_details", "build_profile_metrics", "option_button"]

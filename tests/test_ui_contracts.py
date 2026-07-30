@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import flet as ft
+
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -133,7 +135,8 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn("return page_card(", DIET_CONTROLLER_SOURCE)
         self.assertIn("return page_card(", TRAINING_CONTROLLER_SOURCE)
         self.assertIn("return page_card(", PROFILE_SOURCE)
-        self.assertIn("return page_card(", PROFILE_DETAILS_SOURCE)
+        self.assertIn("profile_card = page_card(", PROFILE_DETAILS_SOURCE)
+        self.assertIn("settings_card = page_card(", PROFILE_DETAILS_SOURCE)
 
     def test_training_rest_card_exposes_full_controls_and_stays_visible_when_paused(self):
         self.assertIn('is_resting = model.rest_status in {"running", "paused"}', TRAINING_SOURCE)
@@ -246,13 +249,26 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertEqual(progress.height, 8)
         self.assertEqual(progress.clip_behavior.value, "hardEdge")
         self.assertEqual(progress.content.height, 8)
-        self.assertEqual(len(progress.content.controls), 3)
-        marker_row = progress.content.controls[1]
-        self.assertEqual(marker_row.controls[0].bgcolor, "#FFD166")
-        divider_row = progress.content.controls[2]
-        self.assertEqual(divider_row.height, 8)
-        self.assertEqual(len(divider_row.controls), 4)
+        self.assertEqual(len(progress.content.controls), 4)
+        self.assertEqual(progress.content.controls[0].bgcolor, "#FFD166")
+        self.assertEqual(progress.content.controls[1].bgcolor, "#21A366")
+        self.assertEqual(progress.content.controls[2].bgcolor, "#31413C")
         self.assertIn('color="#DCE9E4"', self.training_section)
+
+    def test_total_progress_marks_the_actual_completed_position_after_skipping_sets(self):
+        progress = _segmented_progress(
+            0.25,
+            4,
+            current_work_index=3,
+            work_completed=(False, False, True, False),
+        )
+        segments = progress.content.controls
+        self.assertEqual(
+            [segment.bgcolor for segment in segments],
+            ["#31413C", "#31413C", "#21A366", "#FFD166"],
+        )
+        self.assertEqual(segments[2].data, "active-progress-completed")
+        self.assertEqual(segments[3].data, "active-progress-current")
 
     def test_active_training_end_button_is_visible_safe_and_bound_to_confirmation_flow(self):
         self.assertIn("end_button = ft.Container", self.training_section)
@@ -298,7 +314,7 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertNotIn("height=", finish_section)
 
     def test_add_exercise_dialog_defaults_to_frequent_sort_and_reuses_sort_service(self):
-        start = TRAINING_CONTROLLER_SOURCE.index("    def open_add_exercise_dialog():")
+        start = TRAINING_CONTROLLER_SOURCE.index("    def open_add_exercise_dialog(after_save=None):")
         end = TRAINING_CONTROLLER_SOURCE.index("    def reuse_history_session", start)
         section = TRAINING_CONTROLLER_SOURCE[start:end]
         self.assertIn('"sort": "frequent"', section)
@@ -308,7 +324,7 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertIn('on_select("frequent")', TRAINING_PICKER_SOURCE)
 
     def test_exercise_picker_supports_multi_select_and_batch_defaults(self):
-        start = TRAINING_CONTROLLER_SOURCE.index("    def open_add_exercise_dialog():")
+        start = TRAINING_CONTROLLER_SOURCE.index("    def open_add_exercise_dialog(after_save=None):")
         end = TRAINING_CONTROLLER_SOURCE.index("    def planned_exercise", start)
         section = TRAINING_CONTROLLER_SOURCE[start:end]
 
@@ -338,8 +354,15 @@ class TrainingUiContractTests(unittest.TestCase):
             selected=True,
         )
         action_column = control.content.controls[-1]
+        detail_column = control.content.controls[0]
         help_button, toggle_button = action_column.controls[0], action_column.controls[-1]
 
+        self.assertTrue(control.ink)
+        self.assertIsNotNone(control.on_click)
+        self.assertEqual(control.content.vertical_alignment, training_controller_module.ft.CrossAxisAlignment.STRETCH)
+        self.assertEqual(detail_column.alignment, training_controller_module.ft.MainAxisAlignment.SPACE_BETWEEN)
+        self.assertEqual(detail_column.controls[0].controls[0].height, 32)
+        self.assertEqual(len(detail_column.controls[1].controls), 2)
         self.assertEqual(help_button.icon, training_controller_module.ft.Icons.HELP_OUTLINE)
         self.assertEqual(toggle_button.icon, training_controller_module.ft.Icons.CHECK_CIRCLE)
         help_button.on_click(None)
@@ -497,7 +520,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         state["training_exercise_index"] = exercise_index
         state["training_set_index"] = set_index
         runtime = ControllerRuntime(
-            page=SimpleNamespace(width=430, height=860),
+            page=SimpleNamespace(width=430, height=860, update=lambda: None),
             refresh=lambda: None,
             snack=lambda *args, **kwargs: None,
             navigate=lambda target: None,
@@ -561,6 +584,31 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
 
         return patch.object(training_controller_module, "build_active_training", side_effect=capture)
 
+    @staticmethod
+    def find_control(control, predicate):
+        if predicate(control):
+            return control
+        content = getattr(control, "content", None)
+        if content is not None:
+            match = ActiveTrainingRuntimeRegressionTests.find_control(content, predicate)
+            if match is not None:
+                return match
+        for child in getattr(control, "controls", []) or []:
+            match = ActiveTrainingRuntimeRegressionTests.find_control(child, predicate)
+            if match is not None:
+                return match
+        return None
+
+    @staticmethod
+    def controls_of_type(control, control_type):
+        matches = [control] if isinstance(control, control_type) else []
+        content = getattr(control, "content", None)
+        if content is not None:
+            matches.extend(ActiveTrainingRuntimeRegressionTests.controls_of_type(content, control_type))
+        for child in getattr(control, "controls", []) or []:
+            matches.extend(ActiveTrainingRuntimeRegressionTests.controls_of_type(child, control_type))
+        return matches
+
     def test_cardio_session_without_strength_sets_renders_without_weight_validation(self):
         cardio = {
             "id": "cardio",
@@ -599,6 +647,31 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
 
         self.assertIsNotNone(view)
         self.assertEqual(captures[-1][0].weight_text, "自重")
+
+    def test_bodyweight_tap_opens_blank_editor_and_blank_save_keeps_bodyweight(self):
+        bodyweight = self.strength_exercise("pushup", "俯卧撑", [False])
+        bodyweight["sets"][0]["weight_kg"] = None
+        opened_controls = []
+        controller, state = self.build_controller(
+            self.active_session([bodyweight]),
+            opened_controls=opened_controls,
+        )
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            captures[-1][1].edit_weight(None)
+
+        self.assertEqual(len(opened_controls), 1)
+        weight_field = self.controls_of_type(opened_controls[0], ft.TextField)[0]
+        self.assertEqual(weight_field.value, "")
+        self.assertEqual(weight_field.hint_text, "自重留空")
+        confirm_button = opened_controls[0].actions[0].content.controls[1]
+        confirm_button.on_click(None)
+        self.assertEqual(
+            state["training"]["session"]["exercises"][0]["sets"][0]["weight_kg"],
+            0.0,
+        )
 
     def test_completing_ordinary_set_advances_and_rerenders_after_invalid_future_set_data(self):
         current = self.strength_exercise("bench", "杠铃卧推", [False])
@@ -768,6 +841,166 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
 
         self.assertEqual(state["training_exercise_index"], 1)
         self.assertEqual(state["training_set_index"], 0)
+
+    def test_active_training_can_add_and_remove_only_unfinished_sets(self):
+        bench = self.strength_exercise("bench", "杠铃卧推", [True, False])
+        controller, state = self.build_controller(self.active_session([bench]), set_index=1)
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            actions = captures[-1][1]
+            actions.adjust_sets(1)
+            self.assertEqual(len(state["training"]["session"]["exercises"][0]["sets"]), 3)
+            actions.adjust_sets(-1)
+
+        sets = state["training"]["session"]["exercises"][0]["sets"]
+        self.assertEqual(len(sets), 2)
+        self.assertTrue(sets[0]["completed"])
+        self.assertFalse(sets[1]["completed"])
+
+    def test_active_training_opens_fullscreen_action_order_manager(self):
+        bench = self.strength_exercise("bench", "杠铃卧推", [False])
+        incline = self.strength_exercise("incline", "上斜卧推", [False])
+        opened = []
+        controller, _state = self.build_controller(
+            self.active_session([bench, incline]),
+            opened_controls=opened,
+        )
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            captures[-1][1].manage_actions(None)
+
+        self.assertEqual(len(opened), 1)
+        reorder_list = self.find_control(
+            opened[0],
+            lambda control: getattr(control, "data", None) == "active-action-reorder-list",
+        )
+        self.assertIsInstance(reorder_list, ft.ReorderableListView)
+        self.assertFalse(reorder_list.show_default_drag_handles)
+        self.assertEqual(reorder_list.controls[0].data, "action-arrangement-drag-region")
+        first_card = reorder_list.controls[0].content
+        action_grid = first_card.content.controls[2]
+        self.assertEqual(
+            [button.icon for button in action_grid.controls[0].controls],
+            [ft.Icons.EDIT_OUTLINED, ft.Icons.ADD],
+        )
+        self.assertIsInstance(action_grid.controls[1].controls[0], ft.ReorderableDragHandle)
+        self.assertEqual(action_grid.controls[1].controls[1].icon, ft.Icons.DELETE_OUTLINE)
+
+        reorder_list.on_reorder(SimpleNamespace(old_index=0, new_index=1))
+        self.assertEqual(
+            [item["id"] for item in _state["training"]["session"]["exercises"]],
+            ["incline", "bench"],
+        )
+
+    def test_active_group_save_rebuilds_the_open_manager_immediately(self):
+        bench = self.strength_exercise("bench", "杠铃卧推", [False])
+        incline = self.strength_exercise("incline", "上斜卧推", [False])
+        opened = []
+        controller, _state = self.build_controller(
+            self.active_session([bench, incline]),
+            opened_controls=opened,
+        )
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            captures[-1][1].manage_actions(None)
+
+        reorder_list = self.find_control(
+            opened[0],
+            lambda control: getattr(control, "data", None) == "active-action-reorder-list",
+        )
+        first_card = reorder_list.controls[0].content
+        first_card.content.controls[2].controls[0].controls[1].on_click(None)
+        group_sheet = opened[-1]
+        checkboxes = self.controls_of_type(group_sheet, ft.Checkbox)
+        self.assertEqual(len(checkboxes), 2)
+        checkboxes[1].value = True
+        save_button = group_sheet.content.content.controls[2].content.controls[1]
+        save_button.on_click(None)
+
+        refreshed_list = self.find_control(
+            opened[0],
+            lambda control: getattr(control, "data", None) == "active-action-reorder-list",
+        )
+        self.assertEqual(len(refreshed_list.controls), 1)
+        self.assertEqual(refreshed_list.controls[0].data, "action-arrangement-group-card")
+
+    def test_active_action_editor_preserves_every_set_through_last_completed_position(self):
+        bench = self.strength_exercise("bench", "杠铃卧推", [True, False, True, False, False])
+        for training_set, weight in zip(bench["sets"], (10, 20, 30, 40, 50)):
+            training_set.update({"weight_kg": weight, "reps": weight // 10 + 5})
+        opened = []
+        controller, state = self.build_controller(
+            self.active_session([bench]),
+            opened_controls=opened,
+        )
+        captures = []
+
+        with self.capture_render(controller, captures):
+            controller.render_page()
+            captures[-1][1].manage_actions(None)
+
+        card = self.find_control(
+            opened[0],
+            lambda control: getattr(control, "data", None) == "action-arrangement-card",
+        )
+        card.content.controls[2].controls[0].controls[0].on_click(None)
+        edit_sheet = opened[-1]
+        edit_body = edit_sheet.content.content.controls[1].content
+        self.assertEqual(edit_body.controls[1].value, "记录模式：力量")
+        self.assertIsInstance(edit_body.controls[2], ft.ResponsiveRow)
+        self.assertNotIn(
+            "动作摘要",
+            [text.value for text in self.controls_of_type(edit_sheet, ft.Text)],
+        )
+        weight_field, reps_field, sets_field = self.controls_of_type(edit_sheet, ft.TextField)
+        self.assertEqual(weight_field.value, "40")
+        self.assertEqual(weight_field.hint_text, "自重留空")
+        self.assertEqual(weight_field.hint_style.color, "#98A39F")
+        self.assertNotIn("(", weight_field.hint_text)
+        self.assertNotIn(" ", weight_field.hint_text)
+        save_button = edit_sheet.content.content.controls[2].content.controls[1]
+
+        sets_field.value = "2"
+        save_button.on_click(None)
+        self.assertEqual(len(state["training"]["session"]["exercises"][0]["sets"]), 5)
+
+        weight_field.value = "55"
+        reps_field.value = "5"
+        sets_field.value = "4"
+        save_button.on_click(None)
+        updated_sets = state["training"]["session"]["exercises"][0]["sets"]
+        self.assertEqual(len(updated_sets), 4)
+        self.assertEqual([item["weight_kg"] for item in updated_sets[:3]], [10, 20, 30])
+        self.assertEqual((updated_sets[3]["weight_kg"], updated_sets[3]["reps"]), (55, 5))
+
+    def test_active_progress_preserves_the_real_completed_set_position(self):
+        bench = self.strength_exercise("bench", "杠铃卧推", [False, False, False, False])
+        controller, _state = self.build_controller(self.active_session([bench]))
+        captures = []
+
+        with self.capture_render(controller, captures), patch.object(
+            training_controller_module,
+            "is_rapid_repeat",
+            return_value=False,
+        ):
+            controller.render_page()
+            actions = captures[-1][1]
+            actions.select_set(2)
+            controller.render_page()
+            actions = captures[-1][1]
+            actions.ask_complete(None)
+            actions.complete_or_undo(None)
+            controller.render_page()
+
+        model = captures[-1][0]
+        self.assertEqual(model.current_work_index, 3)
+        self.assertEqual(model.work_completed, (False, False, True, False))
 
     def test_previous_and_next_navigate_each_set_within_one_exercise(self):
         bench = self.strength_exercise("bench", "杠铃卧推", [False, False, False])

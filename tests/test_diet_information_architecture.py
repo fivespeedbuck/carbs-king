@@ -1,9 +1,12 @@
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import flet as ft
 
+from app_state import AppState
+from controller_runtime import ControllerRuntime
 from diet_service import (
     DIET_VIEWS,
     FOOD_LIBRARY_VIEW,
@@ -21,8 +24,11 @@ from diet_service import (
 )
 from diet_controller import (
     CUSTOM_UNIT_OPTION,
+    DietControllerDependencies,
     FOOD_UNIT_PRESETS,
     bind_custom_unit_visibility,
+    compact_daily_summary,
+    create_diet_controller,
     resolve_food_unit,
 )
 from diet_views import (
@@ -101,6 +107,18 @@ class DietInformationArchitectureTests(unittest.TestCase):
 
 
 class DietViewComponentTests(unittest.TestCase):
+    def test_daily_summary_uses_compact_whole_values_for_one_phone_line(self):
+        summary = compact_daily_summary({
+            "kcal": 1255.4,
+            "carb": 114.2,
+            "protein": 111.8,
+            "fat": 30.0,
+        })
+
+        self.assertEqual(summary, "1255kcal｜碳114g｜蛋112g｜脂30g")
+        self.assertNotIn(".", summary)
+        self.assertIn('max_lines=1 if selected_meal == "汇总" else 2', DIET_CONTROLLER_SOURCE)
+
     def test_tabs_keep_fixed_touch_height_and_single_line_labels(self):
         selected = []
         row = diet_tabs(DietViewState(FOOD_LIBRARY_VIEW), selected.append)
@@ -168,6 +186,70 @@ class DietViewComponentTests(unittest.TestCase):
 
 
 class ResponsiveFieldLayoutTests(unittest.TestCase):
+    def test_common_food_click_only_prefills_editable_fields(self):
+        opened = []
+        meals = ("早餐", "午餐", "晚餐", "练前", "练后", "偷吃")
+        state = AppState.default(meals)
+        state["date"] = date.today().isoformat()
+        previous_date = (date.today() - timedelta(days=1)).isoformat()
+        records = {
+            previous_date: {
+                "meals": {
+                    "午餐": [{
+                        "food": "白米饭",
+                        "qty": 200,
+                        "added_at": f"{previous_date}T12:00:00",
+                    }],
+                },
+            },
+        }
+        runtime = ControllerRuntime(
+            page=SimpleNamespace(width=430, height=860, update=lambda: None),
+            refresh=lambda: None,
+            snack=lambda *args, **kwargs: None,
+            navigate=lambda target: None,
+            open_control=opened.append,
+            close_control=lambda control: None,
+            responsive_width=lambda *args, **kwargs: 340,
+            responsive_bar_width=lambda: 340,
+        )
+        repositories = SimpleNamespace(
+            foods=SimpleNamespace(load=lambda: [], save=lambda foods: None),
+            supplements=SimpleNamespace(load=lambda: [], save=lambda supplements: None),
+        )
+        controller = create_diet_controller(DietControllerDependencies(
+            state=state,
+            repositories=repositories,
+            records=records,
+            runtime=runtime,
+            persist_daily=lambda *args, **kwargs: None,
+            persist_records=lambda: None,
+            get_targets=lambda: {},
+            daily_total=lambda: {},
+            meals=meals,
+            keyboard_number=None,
+            scroll_hidden=None,
+        ))
+
+        controller.open_add_food("午餐")
+
+        dialog_body = opened[-1].content.content.controls[1].content
+        shortcut_panel = dialog_body.controls[0]
+        shortcut_item = shortcut_panel.controls[1].controls[0]
+        quantity_input = dialog_body.controls[1].controls[1].content
+        food_input = dialog_body.controls[3].controls[1].content
+        self.assertEqual(shortcut_panel.controls[0].content.value, "常用")
+        self.assertNotIn("最近", str(shortcut_panel))
+
+        shortcut_item.on_click(None)
+
+        self.assertEqual(food_input.field.value, "白米饭")
+        self.assertEqual(quantity_input.field.value, "200")
+        option_values = [option.key for option in food_input.field.options]
+        self.assertIn("白米饭", option_values)
+        self.assertLessEqual(len(option_values), 25)
+        self.assertEqual(state["meals"]["午餐"], [])
+
     def test_labels_use_fixed_two_line_slot_and_equal_field_height(self):
         short = mobile_text_field("数量", "1")
         long = mobile_text_field("这是一个需要换行的较长字段标签", "2")
@@ -294,18 +376,32 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
     def test_add_diet_form_pairs_meal_quantity_and_search_food(self):
         self.assertIn("two_field_grid(meal_dd, qty, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
         self.assertIn("two_field_grid(search, food_dd, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
+        self.assertIn("for control in (meal_dd, qty, search, food_dd):", DIET_CONTROLLER_SOURCE)
+        self.assertIn("control.height = aligned_input_height", DIET_CONTROLLER_SOURCE)
+        self.assertIn("for control in (meal_dd, food_dd):", DIET_CONTROLLER_SOURCE)
+        self.assertIn("for control in (qty, search):", DIET_CONTROLLER_SOURCE)
+        self.assertIn("control.field.height = INPUT_FIELD_HEIGHT", DIET_CONTROLLER_SOURCE)
+        self.assertIn("control.field.dense = False", DIET_CONTROLLER_SOURCE)
+        self.assertIn("control.field.content_padding = 12", DIET_CONTROLLER_SOURCE)
+        self.assertIn("food_dd.field.menu_height = 300", DIET_CONTROLLER_SOURCE)
 
-    def test_add_diet_shortcuts_are_first_and_stay_attached_to_their_tabs(self):
+    def test_add_diet_common_shortcuts_are_first_and_only_fill_editable_fields(self):
         dialog_start = DIET_CONTROLLER_SOURCE.index('dlg = full_form_sheet(\n            "添加饮食"')
         dialog_end = DIET_CONTROLLER_SOURCE.index("\n        open_control(dlg)", dialog_start)
         dialog_source = DIET_CONTROLLER_SOURCE[dialog_start:dialog_end]
 
-        shortcut_panel = dialog_source.index("diet_shortcut_panel(shortcut_tabs, shortcut_list)")
+        shortcut_panel = dialog_source.index("diet_shortcut_panel(shortcut_header, shortcut_list)")
         meal_and_quantity = dialog_source.index("two_field_grid(meal_dd, qty")
         search_and_food = dialog_source.index("two_field_grid(search, food_dd")
 
         self.assertLess(shortcut_panel, meal_and_quantity)
         self.assertLess(meal_and_quantity, search_and_food)
+        self.assertIn('content=ft.Text("常用"', DIET_CONTROLLER_SOURCE)
+        self.assertNotIn('make_button("最近"', DIET_CONTROLLER_SOURCE)
+        self.assertNotIn("def quick_add(item):", DIET_CONTROLLER_SOURCE)
+        self.assertIn("on_click=lambda e, x=item: select_shortcut(x)", DIET_CONTROLLER_SOURCE)
+        self.assertIn("food_dd.value = name", DIET_CONTROLLER_SOURCE)
+        self.assertIn("qty.value =", DIET_CONTROLLER_SOURCE)
 
     def test_supplements_exist_only_on_recovery_surface(self):
         for visible_text in ('"补剂库"', '"新增补剂"', '"今日补剂'):

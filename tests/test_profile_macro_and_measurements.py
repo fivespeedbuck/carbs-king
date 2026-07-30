@@ -203,13 +203,14 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertIn("two_field_grid(weight_box, bodyfat_box", details)
         self.assertIn("two_field_grid(height_box, age_box", details)
 
-    def test_height_and_age_fields_auto_save_when_editing_finishes(self):
+    def test_body_profile_fields_auto_save_when_editing_finishes(self):
         controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8-sig")
 
-        self.assertIn("height_field.on_blur = persist_dimensions", controller)
-        self.assertIn("age_field.on_blur = persist_dimensions", controller)
+        for field in ("weight_field", "bodyfat_field", "height_field", "age_field"):
+            self.assertIn(f"{field}.on_blur = persist_body_profile", controller)
         self.assertIn('state["age_reference_year"] = datetime.date.today().year', controller)
-        self.assertIn('snack("身高已保存" if field is height_field else "年龄已保存")', controller)
+        for message in ("体重已保存", "体脂已保存", "身高已保存", "年龄已保存"):
+            self.assertIn(message, controller)
 
     def test_age_advances_once_each_new_year(self):
         profile = {"age": "30", "age_reference_year": 2025}

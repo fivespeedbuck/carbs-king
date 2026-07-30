@@ -22,11 +22,17 @@ def _border(color: str, width: int = 1) -> ft.Border:
     return ft.Border(top=side, right=side, bottom=side, left=side)
 
 
-def _chip(label: str, selected: bool, on_click: Callable[[Any], None] | None = None) -> ft.Container:
+def _chip(
+    label: str,
+    selected: bool,
+    on_click: Callable[[Any], None] | None = None,
+    *,
+    horizontal_padding: int = 10,
+) -> ft.Container:
     return ft.Container(
         content=ft.Text(label, size=14, weight="bold", color=ON_PRIMARY if selected else PRIMARY, text_align="center", max_lines=1, overflow="ellipsis"),
         height=48,
-        padding=ft.Padding(left=10, top=0, right=10, bottom=0),
+        padding=ft.Padding(left=horizontal_padding, top=0, right=horizontal_padding, bottom=0),
         bgcolor=PRIMARY if selected else PRIMARY_SOFT,
         border=_border(PRIMARY if selected else BORDER),
         border_radius=8,

@@ -209,7 +209,7 @@ def create_recovery_controller(deps: RecoveryControllerDependencies) -> Recovery
             ft.Row([section_title("今日身体"), small_text("可分别标记实测")], alignment="spaceBetween"),
             responsive_field_grid([
                 ft.Column([weight, make_button("记录体重", on_click=lambda e: save_body_metric("weight"), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True)], spacing=6, expand=True),
-                ft.Column([bodyfat, make_button("记录体脂", on_click=lambda e: save_body_metric("bodyfat"), bgcolor="#E8F1F6", color=SKY_BLUE, expand=True)], spacing=6, expand=True),
+                ft.Column([bodyfat, make_button("记录体脂", on_click=lambda e: save_body_metric("bodyfat"), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True)], spacing=6, expand=True),
             ], columns=2, viewport_width=responsive_width()),
         ], spacing=10), padding=14)
         return ft.Column([

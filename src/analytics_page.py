@@ -55,13 +55,18 @@ def build_data_page_view(
         ],
         spacing=6,
     )
-    chart_row = ft.Row(
-        [
-            _chip(label, cfg.chart_kind == key, None if on_chart_change is None else lambda e, value=key: on_chart_change(value))
-            for key, label in CHART_OPTIONS
-        ],
-        spacing=6,
-    )
+    chart_chips = [
+        _chip(
+            str(label),
+            cfg.chart_kind == key,
+            None if on_chart_change is None else lambda e, value=key: on_chart_change(value),
+            horizontal_padding=4,
+        )
+        for key, label in CHART_OPTIONS
+    ]
+    # Keep the six domain switches in their original one-row position. The
+    # smaller internal padding leaves room for both Chinese glyphs on phones.
+    chart_row = ft.Row(chart_chips, spacing=6)
 
     body: ft.Control
     if cfg.active_tab == "月历":

@@ -116,6 +116,19 @@ if (-not $versionMatch.Success) {
 }
 $buildVersion = $versionMatch.Groups[1].Value
 
+$appVersionPath = Join-Path $PSScriptRoot "src\app_version.py"
+if (-not (Test-Path $appVersionPath)) {
+    throw "Runtime app version metadata was not found: $appVersionPath"
+}
+$appVersionText = Get-Content $appVersionPath -Raw -Encoding UTF8
+$runtimeBuildMatch = [regex]::Match($appVersionText, '(?m)^BUILD_NUMBER\s*=\s*(\d+)\s*$')
+if (-not $runtimeBuildMatch.Success) {
+    throw "BUILD_NUMBER was not found in src/app_version.py"
+}
+if ([int]$runtimeBuildMatch.Groups[1].Value -ne $buildNumber) {
+    throw "pyproject.toml and src/app_version.py build numbers do not match."
+}
+
 Write-Host "Building com.chenyang.carbs_king, build number $buildNumber..."
 $buildArgs = @(
     "build", "apk",
@@ -167,5 +180,12 @@ $nextProjectText = [regex]::Replace(
     "build_number = $nextBuildNumber"
 )
 [System.IO.File]::WriteAllText($pyprojectPath, $nextProjectText, $utf8NoBom)
+
+$nextAppVersionText = [regex]::Replace(
+    $appVersionText,
+    '(?m)^BUILD_NUMBER\s*=\s*\d+\s*$',
+    "BUILD_NUMBER = $nextBuildNumber"
+)
+[System.IO.File]::WriteAllText($appVersionPath, $nextAppVersionText, $utf8NoBom)
 
 Write-Host "APK complete. Next build number prepared: $nextBuildNumber"
