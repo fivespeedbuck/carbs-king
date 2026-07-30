@@ -16,6 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RECEIVER_CLASS = "com.chenyang.carbs_king.restalarm.RestAlarmReceiver"
 PLUGIN_CLASS = "com.chenyang.carbs_king.restalarm.CarbsKingRestAlarmPlugin"
+UPDATE_PROVIDER_CLASS = "androidx.core.content.FileProvider"
 ACTION = "com.chenyang.carbs_king.REST_ALARM"
 CHANNEL_ID = "rest_cycle_alerts_v3"
 PERMISSIONS = (
@@ -23,6 +24,7 @@ PERMISSIONS = (
     "android.permission.VIBRATE",
     "android.permission.WAKE_LOCK",
     "android.permission.USE_EXACT_ALARM",
+    "android.permission.REQUEST_INSTALL_PACKAGES",
 )
 
 
@@ -48,7 +50,7 @@ def _find_packaged_blob(apk: Path, expected: bytes) -> str:
 def verify_outputs(manifest: str, resources: str, dex: str) -> dict[str, object]:
     missing_manifest = [
         token
-        for token in (*PERMISSIONS, RECEIVER_CLASS, ACTION)
+        for token in (*PERMISSIONS, RECEIVER_CLASS, ACTION, UPDATE_PROVIDER_CLASS)
         if token not in manifest
     ]
     if missing_manifest:
@@ -72,9 +74,11 @@ def verify_outputs(manifest: str, resources: str, dex: str) -> dict[str, object]
 def verify_sources(repo_root: Path = REPO_ROOT) -> dict[str, object]:
     receiver = repo_root / "android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/carbs_king/restalarm/RestAlarmReceiver.kt"
     python_adapter = repo_root / "src/rest_notification.py"
+    update_installer = repo_root / "src/apk_update_download.py"
     native_sound = repo_root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
     flet_sound = repo_root / "assets/rest_coin.mp3"
-    for path in (receiver, python_adapter, native_sound, flet_sound):
+    update_manifest = repo_root / "android/rest_alarm_plugin/android/src/main/AndroidManifest.xml"
+    for path in (receiver, python_adapter, update_installer, native_sound, flet_sound, update_manifest):
         if not path.is_file():
             raise ApkRuntimeGateError(f"required source is missing: {path}")
     receiver_text = receiver.read_text(encoding="utf-8")
@@ -85,6 +89,12 @@ def verify_sources(repo_root: Path = REPO_ROOT) -> dict[str, object]:
         raise ApkRuntimeGateError(f"Kotlin and Python must both use {CHANNEL_ID}")
     if native_sound.read_bytes() != flet_sound.read_bytes():
         raise ApkRuntimeGateError("native and Flet rest sounds differ")
+    manifest_text = update_manifest.read_text(encoding="utf-8")
+    installer_text = update_installer.read_text(encoding="utf-8")
+    if "REQUEST_INSTALL_PACKAGES" not in manifest_text:
+        raise ApkRuntimeGateError("Android APK installer permission is missing")
+    if "FileProvider.getUriForFile" not in installer_text or 'f"{package_name}.provider"' not in installer_text:
+        raise ApkRuntimeGateError("APK installer does not reuse Flet's content URI provider")
     return {"channel_id": CHANNEL_ID, "sound_sha256": _sha256(native_sound)}
 
 

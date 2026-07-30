@@ -92,7 +92,8 @@ class TrainingPlanViewContractsTests(unittest.TestCase):
         )
 
         for card in (before, active):
-            title = card.content.controls[1].controls[0]
+            self.assertIsNotNone(card.border)
+            title = card.content.content.controls[1].controls[0]
             self.assertEqual(title.data, "action-arrangement-title")
             self.assertLess(title.size, 16)
             self.assertGreaterEqual(title.size, 10)

@@ -428,6 +428,11 @@ class RestNotifier:
         self._schedule_tokens: dict[str, object] = {}
         self._native_owned_cycle_ids: set[str] = set()
         self._foreground_delivered_ids: set[str] = set()
+        # The native alarm remains the fallback for background and lock-screen
+        # delivery.  When Flet is visibly in front, however, the bundled
+        # player is the reliable, immediately testable path and must not be
+        # suppressed merely because an AlarmManager request was accepted.
+        self._app_is_foreground = True
         self._notified_cycle_ids = {
             str(cycle_id).strip() for cycle_id in notified_cycle_ids if str(cycle_id).strip()
         }
@@ -441,6 +446,23 @@ class RestNotifier:
             "audio", audio_factory, src=bell_asset, volume=1.0
         )
         self.haptic = self._create_service("haptic", haptic_factory)
+        self._observe_lifecycle()
+
+    def _observe_lifecycle(self) -> None:
+        """Keep foreground delivery scoped to a visible, interactive app."""
+        try:
+            previous_handler = getattr(self.page, "on_app_lifecycle_state_change", None)
+
+            def on_lifecycle(event: Any) -> None:
+                state = str(getattr(event, "state", "")).casefold()
+                with self._lock:
+                    self._app_is_foreground = state in {"show", "resume", "restart"}
+                if callable(previous_handler):
+                    previous_handler(event)
+
+            self.page.on_app_lifecycle_state_change = on_lifecycle
+        except Exception as exc:
+            self._setup_errors.append(f"app lifecycle setup: {exc}")
 
     def _create_system_notifier(self, factory: Callable[[], Any | None] | None) -> Any | None:
         if factory is None:
@@ -593,7 +615,7 @@ class RestNotifier:
         )
 
     async def _deliver_foreground_and_finalize(self, cycle_id: str) -> RestNotificationResult:
-        """Deliver only the non-native foreground fallback once."""
+        """Deliver the visible-app cue once, then remove a duplicate alarm."""
         result = await self._deliver_foreground(cycle_id)
         if result.sound_played or result.system_notification_succeeded:
             self.cancel(cycle_id, release_claim=False)
@@ -603,15 +625,18 @@ class RestNotifier:
         return result
 
     def trigger_foreground(self, cycle_id: str) -> Any | None:
-        """Play a non-native fallback without taking ownership from AlarmManager."""
+        """Play the in-app cue when the app is currently visible.
+
+        This intentionally runs even after a native alarm was scheduled.  A
+        scheduled alarm only proves Android accepted a PendingIntent; it does
+        not prove a foreground user heard it.  Once the local player starts,
+        canceling the still-pending alarm prevents a second cue.
+        """
         normalized = str(cycle_id or "").strip()
         if not normalized:
             return None
         with self._lock:
-            # AlarmManager owns Android delivery once successfully scheduled.
-            # Flet's play() completion only confirms command dispatch, not that
-            # the user heard audio, so it must never cancel the native alarm.
-            if normalized in self._native_owned_cycle_ids:
+            if not self._app_is_foreground:
                 return None
             if normalized in self._foreground_delivered_ids:
                 return None

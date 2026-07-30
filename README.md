@@ -2,11 +2,11 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 78**
+- 当前版本：**1.2.3 / Build 79**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-[![下载 Build 78 APK](https://img.shields.io/badge/下载-Build_78_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+[![下载 Build 79 APK](https://img.shields.io/badge/下载-Build_79_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -103,17 +103,17 @@
 
 覆盖更新需要同时满足：包名相同、签名证书相同、Build 不低于已安装版本。官方 v62 使用固定备份密钥签名，包名保持为 `com.chenyang.carbs_king`。
 
-> Build 78 已完成自动化测试、APK 签名、资源与原生提醒结构检查，但 OriginOS 的后台限制、全新安装后的备份恢复和锁屏提醒仍应以 iQOO 11S 真机结果为准。
+> Build 79 已完成自动化测试、APK 签名、资源与原生提醒结构检查，但 OriginOS 的后台限制、全新安装后的备份恢复和锁屏提醒仍应以 iQOO 11S 真机结果为准。
 
 ## 休息提醒与系统边界
 
-Build 78 使用 Android 原生 `BroadcastReceiver + AlarmManager` 调度组间休息提醒：
+Build 79 使用 Android 原生 `BroadcastReceiver + AlarmManager` 调度组间休息提醒：
 
-- 正常情况下可在锁屏、应用退到后台或应用进程被系统回收后发送通知；已成功安排的原生闹钟是唯一到点交付者，前台刷新不会再抢先播放或取消它。
+- 应用保持可见时，倒计时结束会直接播放内置提示音；切到后台、锁屏或应用失焦时，继续使用原生闹钟通知。
 - 提醒使用内置 `rest_coin` 声音和高优先级中文通知渠道；首次训练休息前会检查通知和精确闹钟权限。
 - 通知声音和振动遵守 Android 的静音、勿扰模式及通知渠道设置。
 - 如果用户主动“强行停止”应用，Android 会禁止该应用已安排的闹钟；重新打开应用后才能恢复后续调度。
-- Build 78 不包含手机重启后的未完成提醒恢复机制。
+- Build 79 不包含手机重启后的未完成提醒恢复机制。
 - OriginOS 等系统的电池优化策略可能影响实际准时性，建议允许通知、精确闹钟，并根据真机情况调整后台电量管理。
 
 ## 数据持久化与备份
@@ -152,9 +152,9 @@ flet run
 
 ## 测试与质量
 
-Build 78 的最终自动检查结果：
+Build 79 的最终自动检查结果：
 
-- `440 passed`
+- `444 passed`
 - `441 subtests passed`
 - Python 语法编译检查通过
 - Git 差异格式检查通过
@@ -185,7 +185,7 @@ Windows 下可以运行：
 - 优先使用项目专属的备份签名密钥。
 - 资源与原生提醒门禁通过后，才把 `pyproject.toml` 和 `src/app_version.py` 中的 Build 自动加一，为下次更新做准备。
 
-当前发布包为 `1.2.3 / Build 78`，构建脚本已把下一次 Build 预备为 `79`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
+当前发布包为 `1.2.3 / Build 79`，构建脚本已把下一次 Build 预备为 `80`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
 
 ## 目录结构
 
@@ -206,7 +206,7 @@ carbs-king/
 ## 版本与 Release
 
 - [v1.2.3 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
-- [Build 78 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+- [Build 79 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 

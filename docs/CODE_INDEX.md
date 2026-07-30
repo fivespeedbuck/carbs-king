@@ -32,6 +32,7 @@
 - 训练游标和顶部进度：`src/training_experience_service.py`、`src/training_views.py`。
 - 休息、音频和训练完成：`src/rest_notification.py`、`src/training_experience_service.py`、`src/training_controller.py`、`src/training_summary_views.py`、`android/rest_alarm_plugin/`。
 - APK 原生提醒运行时门禁：`tools/apk_runtime_gate.py`、`tests/test_apk_runtime_gate.py`、`build_apk_update.ps1`。
+- 应用内 APK 下载、校验与系统安装交接：`src/apk_update_download.py`、`src/profile_controller.py`、`src/profile_update_views.py`、`tests/test_apk_update_download.py`。
 
 ## 饮食与更新功能定位
 

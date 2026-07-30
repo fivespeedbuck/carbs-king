@@ -204,7 +204,7 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
             }],
         )
 
-    async def test_native_alarm_remains_the_only_owner_when_foreground_tick_arrives(self):
+    async def test_foreground_tick_plays_the_bundled_cue_and_cancels_native_duplicate(self):
         page = FakePage()
         system = FakeSystemNotifier()
         alarm = FakeAlarmScheduler()
@@ -220,12 +220,29 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         future = notifier.trigger_foreground("rest-visible")
         duplicate = notifier.trigger_foreground("rest-visible")
 
-        self.assertIsNone(future)
+        result = await future
         self.assertIsNone(duplicate)
-        self.assertEqual(notifier.audio.play_count, 0)
+        self.assertTrue(result.sound_played)
+        self.assertEqual(notifier.audio.play_count, 1)
         self.assertEqual(system.posts, [])
         self.assertEqual(alarm.delivered, [])
-        self.assertEqual(alarm.cancels, [])
+        self.assertEqual(len(alarm.cancels), 1)
+
+    async def test_hidden_app_does_not_play_foreground_cue(self):
+        page = FakePage()
+        notifier = RestNotifier(
+            page,
+            audio_factory=FakeAudio,
+            haptic_factory=FakeHaptic,
+            system_factory=None,
+            alarm_scheduler_factory=None,
+        )
+        page.on_app_lifecycle_state_change(type("Event", (), {"state": "pause"})())
+
+        result = notifier.trigger_foreground("rest-hidden")
+
+        self.assertIsNone(result)
+        self.assertEqual(notifier.audio.play_count, 0)
 
     async def test_non_android_foreground_fallback_still_plays_once(self):
         page = FakePage()

@@ -17,8 +17,10 @@ class ApkRuntimeGateTests(unittest.TestCase):
             "android.permission.VIBRATE",
             "android.permission.WAKE_LOCK",
             "android.permission.USE_EXACT_ALARM",
+            "android.permission.REQUEST_INSTALL_PACKAGES",
             "com.chenyang.carbs_king.restalarm.RestAlarmReceiver",
             "com.chenyang.carbs_king.REST_ALARM",
+            "androidx.core.content.FileProvider",
         ))
         result = verify_outputs(
             manifest,
@@ -35,12 +37,16 @@ class ApkRuntimeGateTests(unittest.TestCase):
             root = Path(directory)
             receiver = root / "android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/carbs_king/restalarm/RestAlarmReceiver.kt"
             adapter = root / "src/rest_notification.py"
+            installer = root / "src/apk_update_download.py"
             native = root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
             flet = root / "assets/rest_coin.mp3"
-            for path in (receiver, adapter, native, flet):
+            manifest = root / "android/rest_alarm_plugin/android/src/main/AndroidManifest.xml"
+            for path in (receiver, adapter, installer, native, flet, manifest):
                 path.parent.mkdir(parents=True, exist_ok=True)
             receiver.write_text("R.raw.rest_coin rest_cycle_alerts_v3", encoding="utf-8")
             adapter.write_text("rest_cycle_alerts_v3", encoding="utf-8")
+            installer.write_text('FileProvider.getUriForFile f"{package_name}.provider"', encoding="utf-8")
+            manifest.write_text("REQUEST_INSTALL_PACKAGES", encoding="utf-8")
             native.write_bytes(b"sound")
             flet.write_bytes(b"sound")
 
