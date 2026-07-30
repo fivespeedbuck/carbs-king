@@ -7,7 +7,7 @@ from typing import Any
 
 import flet as ft
 
-from ui_components import GREEN, PRIMARY_SOFT, RED, make_button, section_title, small_text
+from ui_components import GREEN, PRIMARY_SOFT, RED, SURFACE, make_button, section_title, small_text
 
 
 def build_backup_panel(
@@ -43,7 +43,8 @@ def build_backup_panel(
             ),
             small_text("清除个人记录，但保留食物库、补剂库和动作库。"),
         ], spacing=8),
-        bgcolor="#F8FAFC",
+        bgcolor=SURFACE,
+        border=None,
         border_radius=8,
         padding=12,
     )

@@ -43,6 +43,7 @@ class ActiveTrainingModel:
     confirm_complete: bool = False
     viewport_height: float = 860.0
     current_work_index: int = 0
+    work_completed: Sequence[bool] = ()
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,8 @@ class ActiveTrainingActions:
     ask_complete: Callable[[Any], None]
     cancel_complete: Callable[[Any], None]
     move_exercise: Callable[[int], None]
+    adjust_sets: Callable[[int], None]
+    manage_actions: Callable[[Any], None]
 
 
 @dataclass(frozen=True)
@@ -74,34 +77,49 @@ class ActiveTrainingResult:
     rest_control: ft.Text
 
 
-def _segmented_progress(value: float, planned_work_items: int, current_work_index: int = 0) -> ft.Container:
+def _segmented_progress(
+    value: float,
+    planned_work_items: int,
+    current_work_index: int = 0,
+    work_completed: Sequence[bool] = (),
+) -> ft.Container:
     work_items = max(0, int(planned_work_items or 0))
-    track = ft.ProgressBar(value=max(0.0, min(1.0, float(value or 0))), color="#21A366", bgcolor="#31413C", height=8)
-    overlays: list[ft.Control] = [track]
-    if work_items:
-        selected = max(0, min(work_items - 1, int(current_work_index or 0)))
-        overlays.append(ft.Row([
-            ft.Container(
-                expand=True,
-                height=8,
-                bgcolor="#FFD166" if index == selected else None,
-                data="active-progress-current" if index == selected else None,
-            )
+    selected = max(0, min(work_items - 1, int(current_work_index or 0))) if work_items else -1
+    if work_completed:
+        completion_flags = [
+            bool(work_completed[index]) if index < len(work_completed) else False
             for index in range(work_items)
-        ], spacing=0, height=8))
-    if work_items > 1:
-        overlays.append(ft.Row([
-            ft.Container(
-                expand=True,
-                height=8,
-                border=ft.Border(right=ft.BorderSide(width=1, color="#DCE9E4")) if index < work_items - 1 else None,
-            )
-            for index in range(work_items)
-        ], spacing=0, height=8))
+        ]
+    else:
+        completed_prefix = max(
+            0,
+            min(work_items, int(round(max(0.0, min(1.0, float(value or 0))) * work_items))),
+        )
+        completion_flags = [index < completed_prefix for index in range(work_items)]
+
+    segments = ft.Row([
+        ft.Container(
+            expand=True,
+            height=8,
+            bgcolor=(
+                "#FFD166" if index == selected
+                else "#21A366" if completion_flags[index]
+                else "#31413C"
+            ),
+            border=ft.Border(right=ft.BorderSide(width=1, color="#DCE9E4")) if index < work_items - 1 else None,
+            data=(
+                "active-progress-current" if index == selected
+                else "active-progress-completed" if completion_flags[index]
+                else "active-progress-pending"
+            ),
+        )
+        for index in range(work_items)
+    ], spacing=0, height=8)
     return ft.Container(
-        content=ft.Stack(overlays, height=8, clip_behavior=ft.ClipBehavior.HARD_EDGE),
+        content=segments,
         height=8,
         border_radius=4,
+        bgcolor="#31413C",
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
     )
 
@@ -164,12 +182,13 @@ def _build_cardio_metric_grid(model: ActiveTrainingModel, actions: ActiveTrainin
 
 def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingActions) -> ActiveTrainingResult:
     compact = float(model.viewport_height or 0) < 820
+    grouped_compact = compact or bool(model.group_label)
     is_cardio = model.recording_mode == "cardio"
     surface_padding = 8 if compact else 12
     surface_spacing = 8 if compact else 12
-    card_padding = 14 if compact else 20
-    card_spacing = 10 if compact else 14
-    primary_button_height = 52 if compact else 64
+    card_padding = 10 if model.group_label else 14 if compact else 20
+    card_spacing = 4 if model.group_label else 10 if compact else 14
+    primary_button_height = 48 if model.group_label else 52 if compact else 64
     elapsed = ft.Text(model.elapsed_text, size=42 if compact else 50, weight="bold", color="#FFFFFF", text_align="center")
     rest = ft.Text(str(model.rest_seconds), size=88 if compact else 104, weight="bold", color="#FFD166", text_align="center")
     set_chips = []
@@ -218,7 +237,12 @@ def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingAct
             alignment=ft.MainAxisAlignment.CENTER,
             spacing=0,
         ),
-        _segmented_progress(model.progress, model.planned_sets, model.current_work_index),
+        _segmented_progress(
+            model.progress,
+            model.planned_sets,
+            model.current_work_index,
+            model.work_completed,
+        ),
     ]
     is_resting = model.rest_status in {"running", "paused"}
     next_work_card = ft.Container(
@@ -239,7 +263,7 @@ def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingAct
         bgcolor="#252F2C",
         border=thin_border("#3D4A46"),
         border_radius=12,
-        padding=12,
+        padding=6 if model.group_label else 12,
     )
     rest_card = ft.Container(
             content=ft.Column([
@@ -253,77 +277,108 @@ def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingAct
                 ),
                 ft.Column([
                         ft.Row([
-                        make_button("-10秒", on_click=lambda e: actions.adjust_rest(-10), bgcolor="#4A5652", color="#FFFFFF", expand=True, height=56),
-                        make_button("继续" if model.rest_status == "paused" else "暂停", on_click=actions.toggle_rest, bgcolor="#4A5652", color="#FFFFFF", expand=True, height=56),
-                        make_button("+10秒", on_click=lambda e: actions.adjust_rest(10), bgcolor="#4A5652", color="#FFFFFF", expand=True, height=56),
-                        make_button("跳过", on_click=actions.skip_rest, bgcolor="#4A5652", color="#FFFFFF", expand=True, height=56),
+                        make_button("-10秒", on_click=lambda e: actions.adjust_rest(-10), bgcolor="#303B37", color="#FFFFFF", expand=True, height=56),
+                        make_button("继续" if model.rest_status == "paused" else "暂停", on_click=actions.toggle_rest, bgcolor="#303B37", color="#FFFFFF", expand=True, height=56),
+                        make_button("+10秒", on_click=lambda e: actions.adjust_rest(10), bgcolor="#303B37", color="#FFFFFF", expand=True, height=56),
+                        make_button("跳过", on_click=actions.skip_rest, bgcolor="#303B37", color="#FFFFFF", expand=True, height=56),
                         ], spacing=8),
+                        ft.Row([
+                            make_button(
+                                "调整训练顺序",
+                                on_click=actions.manage_actions,
+                                bgcolor="#303B37",
+                                color="#FFFFFF",
+                                expand=True,
+                                height=48,
+                            ),
+                        ], data="active-rest-order-action"),
                         next_work_card,
-                ], spacing=4),
+                ], spacing=8),
             ], spacing=4),
             bgcolor="#252F2C",
             border_radius=16,
             padding=12 if compact else 20,
-            left=0,
-            top=0,
-            right=0,
-            bottom=0,
+            left=None if model.group_label else 0,
+            top=None if model.group_label else 0,
+            right=None if model.group_label else 0,
+            bottom=None if model.group_label else 0,
             data="active-rest-card",
         )
 
-    work_card = ft.Container(
+    normal_action_header = ft.Row([
+        ft.Text(
+            model.exercise_name or "当前动作",
+            size=32 if compact else 36,
+            weight="bold",
+            color="#FFFFFF",
+            expand=True,
+            max_lines=2,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        ),
+        ft.Column([
+            ft.IconButton(
+                icon=ft.Icons.HELP_OUTLINE,
+                icon_color="#CDE9DF",
+                tooltip="动作技巧",
+                width=42,
+                height=42,
+                on_click=actions.show_help,
+            ),
+            ft.Text(
+                f"动作 {model.exercise_index + 1}/{model.exercise_count}",
+                size=12,
+                color="#D8E2DF",
+                weight="bold",
+                text_align="center",
+            ),
+        ], horizontal_alignment="center", spacing=0),
+    ], alignment="spaceBetween", vertical_alignment="start")
+    group_action_card = ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Text(
-                    model.exercise_name or "当前动作",
-                    size=32 if compact else 36,
-                    weight="bold",
-                    color="#FFFFFF",
-                    expand=True,
-                    max_lines=2,
-                    overflow=ft.TextOverflow.ELLIPSIS,
-                ),
-                ft.Column([
+                ft.Text(model.group_label, size=18, color="#FFD166", weight="bold"),
+                ft.Row([
+                    ft.Text(model.group_position_text, size=15, color="#D8E2DF", weight="bold"),
                     ft.IconButton(
                         icon=ft.Icons.HELP_OUTLINE,
                         icon_color="#CDE9DF",
                         tooltip="动作技巧",
-                        width=42,
-                        height=42,
+                        width=32,
+                        height=32,
                         on_click=actions.show_help,
                     ),
-                    ft.Text(
-                        f"动作 {model.exercise_index + 1}/{model.exercise_count}",
-                        size=12,
-                        color="#D8E2DF",
+                ], spacing=2),
+            ], alignment="spaceBetween", vertical_alignment="center"),
+            ft.Row([
+                ft.Container(
+                    content=ft.Text(
+                        label,
+                        size=15,
+                        color="#FFFFFF" if is_current else "#D8E2DF",
                         weight="bold",
-                        text_align="center",
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
                     ),
-                ], horizontal_alignment="center", spacing=0),
-            ], alignment="spaceBetween", vertical_alignment="start"),
-            *([ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Text(model.group_label, size=13, color="#FFD166", weight="bold"),
-                        ft.Text(model.group_position_text, size=12, color="#D8E2DF", weight="bold"),
-                    ], alignment="spaceBetween"),
-                    ft.Row([
-                        ft.Container(
-                            content=ft.Text(label, size=12, color="#FFFFFF" if is_current else "#D8E2DF", weight="bold", max_lines=1, overflow="ellipsis"),
-                            bgcolor="#21A366" if is_current else "#38433F" if done else "#27312E",
-                            border=thin_border("#FFD166" if is_current else "#38433F"),
-                            border_radius=18,
-                            padding=ft.Padding(left=8, top=4, right=8, bottom=4),
-                            data="active-group-member-current" if is_current else "active-group-member",
-                        )
-                        for label, _member_id, is_current, done in model.group_members
-                    ], spacing=6, scroll=getattr(getattr(ft, "ScrollMode", object()), "HIDDEN", "hidden")),
-                ], spacing=6),
-                bgcolor="#252F2C",
-                border_radius=12,
-                padding=7 if is_cardio else 10,
-            )] if model.group_label else []),
+                    bgcolor="#21A366" if is_current else "#38433F" if done else "#27312E",
+                    border=thin_border("#FFD166" if is_current else "#38433F"),
+                    border_radius=20,
+                    padding=ft.Padding(left=12, top=4, right=12, bottom=4),
+                    data="active-group-member-current" if is_current else "active-group-member",
+                )
+                for label, _member_id, is_current, done in model.group_members
+            ], spacing=6, scroll=getattr(getattr(ft, "ScrollMode", object()), "HIDDEN", "hidden")),
+        ], spacing=2),
+        bgcolor="#252F2C",
+        border_radius=12,
+        padding=4,
+        data="active-group-action-card",
+    )
+
+    work_card = ft.Container(
+        content=ft.Column([
+            group_action_card if model.group_label else normal_action_header,
             *([ft.Row(set_chips, spacing=8, scroll=getattr(getattr(ft, "ScrollMode", object()), "HIDDEN", "hidden"))] if set_chips else []),
+
             *([ft.Row([
                 ft.IconButton(icon=ft.Icons.REMOVE, icon_color="#FFFFFF", bgcolor="#38433F", width=48, height=48, on_click=lambda e: actions.adjust_weight(-1)),
                 ft.Container(
@@ -378,17 +433,27 @@ def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingAct
                     height=primary_button_height,
                 )])
             ),
-            next_work_card,
             ft.Row([
                 make_button("上一组", on_click=lambda e: actions.move_exercise(-1), icon=ft.Icons.CHEVRON_LEFT, bgcolor="#303B37", color="#FFFFFF", expand=True),
                 make_button("下一组", on_click=lambda e: actions.move_exercise(1), icon=ft.Icons.CHEVRON_RIGHT, bgcolor="#303B37", color="#FFFFFF", expand=True),
             ], spacing=8),
+            *([ft.Row([
+                make_button("减一组", on_click=lambda e: actions.adjust_sets(-1), bgcolor="#303B37", color="#FFFFFF", expand=True),
+                make_button("加一组", on_click=lambda e: actions.adjust_sets(1), bgcolor="#303B37", color="#FFFFFF", expand=True),
+            ], spacing=8, data="active-training-set-actions")] if model.recording_mode == "strength" else []),
+            ft.Row([
+                make_button("调整训练顺序", on_click=actions.manage_actions, bgcolor="#303B37", color="#FFFFFF", expand=True),
+            ], data="active-training-order-action"),
+            next_work_card,
         ], spacing=6 if is_cardio else card_spacing),
         bgcolor="#1B2320",
         border_radius=16,
         padding=12 if is_cardio else card_padding,
     )
-    if is_resting:
+    if is_resting and model.group_label:
+        rest_card.expand = True
+        controls.append(rest_card)
+    elif is_resting:
         controls.append(ft.Stack([
             ft.Container(
                 content=work_card,

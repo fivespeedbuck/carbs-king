@@ -57,7 +57,7 @@ def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None, 
         weight="bold",
     )
     content = ft.Column([
-        ft.Row([leading, ft.Text(str(item.get("title") or "目标挑战"), size=14, weight="bold", color=color, expand=True, max_lines=1, overflow="ellipsis"), end], spacing=6),
+        ft.Row([leading, ft.Text(str(item.get("title") or "目标挑战"), size=14, weight="bold", color=TEXT, expand=True, max_lines=1, overflow="ellipsis"), end], spacing=6),
         small_text(f"所属赛道：{LANE_LABELS.get(str(item.get('lane') or ''), '未分类')}", color=GREEN),
         small_text(_challenge_text(item)),
         ft.ProgressBar(value=max(0, min(1, float(item.get("progress_percent", 0) or 0) / 100)), color=color, bgcolor=BAR_BG, height=6),
@@ -72,7 +72,7 @@ def _challenge_card(item, *, delete_mode=False, selected=False, on_select=None, 
         padding=10,
         margin=ft.Margin(left=0, top=0, right=0, bottom=8),
         bgcolor=SURFACE,
-        border=thin_border(PRIMARY if item.get("status") != "failed" else color),
+        border=None,
         border_radius=8,
         on_click=(None if delete_mode or on_open is None else lambda event: on_open(item)),
     )

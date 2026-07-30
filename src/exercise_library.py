@@ -285,7 +285,20 @@ def _load_offline_dataset() -> list[dict[str, Any]]:
         return []
     if not isinstance(values, list):
         return []
-    return [item for item in values if isinstance(item, dict) and str(item.get("name") or "").strip()]
+    catalog = [item for item in values if isinstance(item, dict) and str(item.get("name") or "").strip()]
+    # Keep reviewed naming/classification corrections separate from the large
+    # generated data file so a future upstream rebuild cannot silently undo
+    # them. IDs and media references remain unchanged.
+    override_path = Path(__file__).with_name("exercise_catalog_overrides.json")
+    try:
+        canonical_overrides = json.loads(override_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        canonical_overrides = {}
+    for item in catalog:
+        override = canonical_overrides.get(str(item.get("id") or "").removeprefix("dataset:"))
+        if override is not None:
+            item.update(override)
+    return catalog
 
 
 # The offline dataset replaces the previous small strength library.  Keep the

@@ -68,6 +68,9 @@ def _completed_exercise_detail(exercise) -> str:
         parts = ["有氧", f"{duration // 60}:{duration % 60:02d}"]
         if exercise.distance_km is not None:
             parts.append(f"{exercise.distance_km:g} km")
+        for metric_key in exercise.cardio_metric_fields:
+            if metric_key in exercise.cardio_metrics:
+                parts.append(f"{_METRIC_LABELS.get(metric_key, metric_key)} {exercise.cardio_metrics[metric_key]:g}")
         return " · ".join(parts)
     if mode == "timed":
         duration = max(0, int(exercise.duration_seconds or 0))
@@ -75,10 +78,150 @@ def _completed_exercise_detail(exercise) -> str:
     completed_sets = [item for item in exercise.sets if item.completed]
     if not completed_sets:
         return "未完成正式组"
-    last_set = completed_sets[-1]
-    weight = "自重" if not last_set.weight_kg else f"{last_set.weight_kg:g} kg"
-    reps = "--" if last_set.reps is None else str(last_set.reps)
-    return f"{len(completed_sets)}组 · {weight} × {reps}"
+    volume = sum((item.weight_kg or 0) * (item.reps or 0) for item in completed_sets)
+    return f"已完成 {len(completed_sets)}/{len(exercise.sets)} 组 · 总容量 {volume:g} kg"
+
+
+def _completed_strength_set_details(exercise) -> list[tuple[str, str]]:
+    """Format every completed strength set without collapsing varied inputs."""
+    details: list[tuple[str, str]] = []
+    for fallback_order, training_set in enumerate(exercise.sets, 1):
+        if not training_set.completed:
+            continue
+        order = training_set.order or fallback_order
+        label = f"第 {order} 组" + (" · 热身" if training_set.warmup else "")
+        reps = "--" if training_set.reps is None else str(training_set.reps)
+        if training_set.weight_kg:
+            volume = training_set.weight_kg * (training_set.reps or 0)
+            value = f"{training_set.weight_kg:g} kg × {reps} 次 = {volume:g} kg"
+        else:
+            value = f"自重 × {reps} 次"
+        details.append((label, value))
+    return details
+
+
+def _strength_set_detail_controls(exercise) -> list[ft.Control]:
+    return [
+        # Keep the label and actual value on separate lines. This gives the
+        # right-side action total its own width and prevents long set text
+        # from being compressed or ellipsized on a phone.
+        ft.Column([
+            ft.Text(label, size=12, color=SUB, weight="bold"),
+            ft.Text(value, size=12, color=TEXT, weight="bold"),
+        ], spacing=0, tight=True)
+        for label, value in _completed_strength_set_details(exercise)
+    ]
+
+
+def _exercise_result_value(exercise) -> str:
+    if exercise.recording_mode == "cardio":
+        return f"{exercise.distance_km:g} km" if exercise.distance_km is not None else "已完成"
+    if exercise.recording_mode == "timed":
+        return "已完成" if exercise.completed else "未完成"
+    volume = sum(
+        (item.weight_kg or 0) * (item.reps or 0)
+        for item in exercise.sets
+        if item.completed
+    )
+    return f"{volume:g} kg"
+
+
+def _exercise_result_card(exercise, *, show_value: bool, nested: bool = False) -> ft.Control:
+    details = _strength_set_detail_controls(exercise) if exercise.recording_mode == "strength" else []
+    trailing = _exercise_result_value(exercise) if show_value else (exercise.body_part or "")
+    if show_value and not nested:
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Column([
+                        ft.Text(exercise.name, size=15, weight="bold", color=TEXT),
+                        small_text(_completed_exercise_detail(exercise)),
+                    ], expand=True, spacing=3),
+                    ft.Text(trailing, size=15, weight="bold", color=PRIMARY),
+                ]),
+                *details,
+            ], spacing=6),
+            bgcolor="#FFFFFF",
+            border=thin_border(),
+            border_radius=10,
+            padding=12,
+            data="training-result-exercise-card",
+        )
+    return ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Text(
+                    exercise.name or "未命名动作",
+                    size=14 if nested else 15,
+                    weight="bold",
+                    color=TEXT,
+                    max_lines=1,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                    expand=True,
+                ),
+                ft.Text(
+                    trailing,
+                    size=12 if nested else 14,
+                    color=GREEN if not show_value else PRIMARY,
+                    weight="bold",
+                    max_lines=1,
+                ),
+            ], spacing=8),
+            ft.Text(_completed_exercise_detail(exercise), size=12, color=SUB),
+            *details,
+        ], spacing=3 if nested else 5),
+        bgcolor=SURFACE if nested else "#FFFFFF",
+        border=None if nested else thin_border(),
+        border_radius=6 if nested else 10,
+        padding=8 if nested else 12,
+        data="training-result-exercise-card",
+    )
+
+
+def _training_result_blocks(session: TrainingSession, *, show_value: bool) -> list[ft.Control]:
+    groups = {group.id: group for group in session.exercise_groups}
+    group_id_by_member = {
+        member_id: group.id
+        for group in session.exercise_groups
+        for member_id in group.exercise_ids
+    }
+    by_id = {exercise.id: exercise for exercise in session.exercises}
+    rendered: set[str] = set()
+    blocks: list[ft.Control] = []
+    for exercise in session.exercises:
+        if exercise.id in rendered:
+            continue
+        group = groups.get(exercise.group_id or group_id_by_member.get(exercise.id, ""))
+        member_ids = [member_id for member_id in group.exercise_ids if member_id in by_id] if group else []
+        if group and len(member_ids) >= 2:
+            if exercise.id != member_ids[0]:
+                continue
+            rendered.update(member_ids)
+            group_label = "超级组" if group.group_type == "superset" else "复合组"
+            blocks.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.LINK, color=PRIMARY, size=20),
+                        ft.Column([
+                            ft.Text(f"{group_label} · {len(member_ids)} 个动作", size=15, weight="bold", color=TEXT),
+                            small_text("组内动作按组合顺序完成"),
+                        ], spacing=1, expand=True),
+                    ], spacing=8),
+                    *[
+                        _exercise_result_card(by_id[member_id], show_value=show_value, nested=True)
+                        for member_id in member_ids
+                    ],
+                ], spacing=6),
+                bgcolor="#FFFFFF",
+                border=thin_border(PRIMARY),
+                border_radius=10,
+                padding=10,
+                data="training-result-group-card",
+            ))
+            continue
+        rendered.add(exercise.id)
+        blocks.append(_exercise_result_card(exercise, show_value=show_value, nested=not show_value))
+    return blocks
 
 
 def build_today_completed_training(
@@ -101,21 +244,7 @@ def build_today_completed_training(
                 body_parts.append(part)
         title = "+".join(body_parts) or "训练"
         duration = session.total_duration_min or 0
-        exercise_rows = [
-            ft.Container(
-                content=ft.Row([
-                    ft.Column([
-                        ft.Text(exercise.name or "未命名动作", size=14, weight="bold", color=TEXT, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                        ft.Text(_completed_exercise_detail(exercise), size=12, color=SUB, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ], spacing=1, expand=True),
-                    ft.Text(exercise.body_part or "", size=12, color=GREEN, weight="bold", max_lines=1),
-                ], spacing=8),
-                bgcolor=SURFACE,
-                border_radius=6,
-                padding=8,
-            )
-            for exercise in session.exercises
-        ]
+        exercise_rows = _training_result_blocks(session, show_value=False)
         session_cards.append(ft.Container(
             content=ft.Column([
                 ft.Row([
@@ -164,31 +293,7 @@ def build_training_summary(
     advice: str,
     actions: TrainingSummaryActions,
 ) -> ft.Control:
-    rows = []
-    for exercise in session.exercises:
-        mode = exercise.recording_mode
-        done = sum(1 for item in exercise.sets if item.completed)
-        volume = sum((item.weight_kg or 0) * (item.reps or 0) for item in exercise.sets if item.completed)
-        if mode == "cardio":
-            duration = max(0, int(exercise.duration_seconds or 0))
-            detail = f"{exercise.body_part} · 有氧 {duration // 60}:{duration % 60:02d}"
-            value = f"{exercise.distance_km:g} km" if exercise.distance_km is not None else "已完成"
-            for metric_key in exercise.cardio_metric_fields:
-                if metric_key in exercise.cardio_metrics:
-                    detail += f" · {_METRIC_LABELS.get(metric_key, metric_key)} {exercise.cardio_metrics[metric_key]:g}"
-        elif mode == "timed":
-            duration = max(0, int(exercise.duration_seconds or 0))
-            detail = f"{exercise.body_part} · 计时 {duration // 60}:{duration % 60:02d}"
-            value = "已完成" if exercise.completed else "未完成"
-        else:
-            detail = f"{exercise.body_part} · 已完成 {done}/{len(exercise.sets)} 组"
-            value = f"{volume:g} kg"
-        rows.append(ft.Container(
-            content=ft.Row([
-                ft.Column([ft.Text(exercise.name, size=15, weight="bold", color=TEXT), small_text(detail)], expand=True, spacing=3),
-                ft.Text(value, size=15, weight="bold", color=PRIMARY),
-            ]), bgcolor="#FFFFFF", border=thin_border(), border_radius=10, padding=12,
-        ))
+    rows = _training_result_blocks(session, show_value=True)
     return ft.Column([
         ft.Container(
             content=ft.Column([
@@ -200,7 +305,7 @@ def build_training_summary(
                     ft.Column([ft.Text(f"{volume_kg:g}", size=26, weight="bold", color="#FFFFFF"), ft.Text("总容量 kg", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
                 ], spacing=8),
             ], horizontal_alignment="center", spacing=12),
-            bgcolor="#173E35", border_radius=12, padding=22,
+            bgcolor=PRIMARY, border_radius=12, padding=22,
             margin=ft.Margin(left=0, top=8, right=0, bottom=8),
         ),
         page_card(ft.Column([section_title("动作明细"), *rows], spacing=8), padding=14),

@@ -410,6 +410,69 @@ def reorder_session_exercise_blocks(
     return reordered
 
 
+def reorder_group_members(
+    exercises: Sequence[Mapping[str, Any]],
+    groups: Sequence[Mapping[str, Any]],
+    dragged_id: str,
+    target_id: str,
+) -> list[dict[str, Any]]:
+    """Move one member inside its existing group without moving the group block."""
+    result = [copy.deepcopy(dict(item)) for item in exercises if isinstance(item, Mapping)]
+    if not dragged_id or not target_id or dragged_id == target_id:
+        return result
+    normalized_groups = normalize_exercise_groups(result, groups)
+    group = next(
+        (
+            item for item in normalized_groups
+            if dragged_id in item.get("exercise_ids", []) and target_id in item.get("exercise_ids", [])
+        ),
+        None,
+    )
+    if group is None:
+        return result
+    member_ids = list(group.get("exercise_ids", []))
+    old_index = member_ids.index(dragged_id)
+    new_index = member_ids.index(target_id)
+    moved_id = member_ids.pop(old_index)
+    member_ids.insert(new_index, moved_id)
+    member_set = set(member_ids)
+    by_id = {str(item.get("id") or ""): item for item in result}
+    reordered: list[dict[str, Any]] = []
+    inserted = False
+    for item in result:
+        exercise_id = str(item.get("id") or "")
+        if exercise_id in member_set:
+            if not inserted:
+                reordered.extend(by_id[member_id] for member_id in member_ids)
+                inserted = True
+            continue
+        reordered.append(item)
+    for index, item in enumerate(reordered, 1):
+        item["order"] = index
+    normalize_exercise_groups(reordered, normalized_groups)
+    return reordered
+
+
+def remove_exercise_from_group(
+    exercises: Sequence[Mapping[str, Any]],
+    groups: Sequence[Mapping[str, Any]],
+    exercise_id: str,
+) -> list[dict[str, Any]]:
+    """Remove one member while preserving every remaining valid group."""
+    retained: list[dict[str, Any]] = []
+    for raw_group in groups if isinstance(groups, Sequence) else []:
+        if not isinstance(raw_group, Mapping):
+            continue
+        member_ids = [
+            str(member_id)
+            for member_id in raw_group.get("exercise_ids", [])
+            if str(member_id) and str(member_id) != str(exercise_id)
+        ]
+        if len(member_ids) >= 2:
+            retained.append({**copy.deepcopy(dict(raw_group)), "exercise_ids": member_ids})
+    return normalize_exercise_groups(exercises, retained)
+
+
 def preview_session_exercise_block_order(
     exercises: Sequence[Mapping[str, Any]],
     groups: Sequence[Mapping[str, Any]],

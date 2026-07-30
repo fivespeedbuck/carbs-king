@@ -155,21 +155,27 @@ def build_exercise_card(
     return ft.Container(
         content=ft.Row([
             ft.Column([
-                # Reserve two text lines for every name. This keeps the
-                # equipment and training prescription aligned across the grid.
-                ft.Container(
-                    content=ft.Text(exercise["name"], size=14, weight="bold", color=TEXT, max_lines=2, overflow="ellipsis"),
-                    height=38,
-                    alignment=ft.Alignment(-1, 0),
-                ),
-                ft.Text(str(exercise.get("equipment") or "其他"), size=12, color=SUB, max_lines=1, overflow="ellipsis"),
-                ft.Text(default_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
-                ft.Container(
-                    content=ft.Text(usage_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
-                    height=18,
-                    alignment=ft.Alignment(-1, 0),
-                ),
-            ], expand=True, spacing=1),
+                ft.Column([
+                    # Every action name owns the same two-line slot, even when
+                    # the visible text only needs one line.
+                    ft.Container(
+                        content=ft.Text(exercise["name"], size=14, weight="bold", color=TEXT, max_lines=2, overflow="ellipsis"),
+                        height=32,
+                        alignment=ft.Alignment(-1, 0),
+                    ),
+                    ft.Container(
+                        content=ft.Text(usage_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
+                        height=18,
+                        alignment=ft.Alignment(-1, 0),
+                    ),
+                ], spacing=1),
+                # Keep equipment and prescription on the bottom baseline of
+                # every grid card, independent of action-name length.
+                ft.Column([
+                    ft.Text(str(exercise.get("equipment") or "其他"), size=12, color=SUB, max_lines=1, overflow="ellipsis"),
+                    ft.Text(default_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
+                ], spacing=1),
+            ], expand=True, spacing=1, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Column([
                 ft.IconButton(icon=ft.Icons.HELP_OUTLINE, tooltip="动作说明", icon_color=GREEN, width=44, height=44, icon_size=27, on_click=on_help),
                 *([ft.IconButton(
@@ -192,13 +198,15 @@ def build_exercise_card(
                     on_click=on_toggle,
                 ),
             ], width=44, spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+        ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.STRETCH),
         bgcolor=PRIMARY_SOFT if selected else "#FFFFFF",
         border=thin_border(PRIMARY) if selected else thin_border(),
         border_radius=12,
         padding=10,
+        ink=True,
+        on_click=on_toggle,
         # The final row reserves a stable place for personal training history.
-        height=178 if on_delete is not None else 168,
+        height=168 if on_delete is not None else 150,
         expand=True,
     )
 
@@ -252,9 +260,10 @@ def build_category_sidebar(
     on_select: Callable[[str], None],
 ) -> list[ft.Control]:
     """Left-side category rail for the visual exercise browser."""
+    display_labels = {"核心稳定": "核心"}
     return [
         ft.Container(
-            content=ft.Text(category, size=15, weight="bold" if selected == category else None, color="#FFFFFF" if selected == category else SUB),
+            content=ft.Text(display_labels.get(category, category), size=15, weight="bold" if selected == category else None, color="#FFFFFF" if selected == category else SUB),
             bgcolor=PRIMARY if selected == category else None,
             border_radius=8,
             padding=ft.Padding(left=8, top=12, right=8, bottom=12),

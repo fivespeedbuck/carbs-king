@@ -1,27 +1,26 @@
-# 当前交接：2026-07-29 Build 75 收尾
+# 当前交接：2026-07-30 Build 76 发布
 
 > 本文件只记录当前可执行事实。完整复盘见 `STAGE_RETROSPECTIVE_2026-07-29.md`，稳定产品约束见 `PROJECT_CONTEXT.md`。
 
 ## 当前状态
 
 - 正式目录：`D:\carbs-king`
-- 收尾分支：`codex/data-card-challenge-dates`
-- 当前批次等待提交、推送并快进合并到 `main`。
-- 用户已明确授权推送并快进合并到 `main`；禁止 force-push 和历史改写。
-- 全量回归：391 项通过。
-- 工作树在提交复盘文档后应保持干净。
+- 发布分支：`codex/build76-device-fixes`
+- Build 76 已完成自动测试、动作库审计、APK 资源门禁、包名、版本和签名校验。
+- 用户已明确授权提交、推送、合并到 `main` 并替换 GitHub Release；禁止 force-push 和历史改写。
+- 构建后源码已预备下一次 Build 77。
 
 ## 最终 APK
 
 - 文件：`build/apk/carbs_king.apk`
 - 包名：`com.chenyang.carbs_king`
 - versionName：`1.2.3`
-- versionCode：`75`
-- 大小：201,518,971 字节
-- SHA-256：`765E3EA57233BDA6D497048B652F7DC294BE21F457D9E6B001D8B7158D80210F`
+- versionCode：`76`
+- 大小：201,554,171 字节
+- SHA-256：`3205A3F4CA6D8739C5FDB5F73A64FF1AA1658D4DE3E7B265BB5131AD77F31892`
 - APK v2 签名有效；证书 SHA-256：`172A8B5C7A909A79FB483F83CF9FEA71FE6567937C900C1D47EAF0FD67AD75CE`
 - 证书与历史 Build 55 APK 一致，具备覆盖安装所需的签名连续性。
-- `pyproject.toml` 已准备下一次 Build 76。
+- `pyproject.toml` 与 `src/app_version.py` 已准备下一次 Build 77。
 
 ## 资源门禁
 
@@ -56,11 +55,10 @@
 ## 远端发布注意事项
 
 - GitHub `main` 在本阶段收尾时由用户授权快进合并。
-- GitHub Release `v1.2.3` 的错误 71,915,571 字节 APK 已删除并替换为 Build 75。
-- 当前 Release 只有一个 `carbs_king.apk`，大小 201,518,971 字节，SHA-256 与本地 Build 75 一致。
+- GitHub Release `v1.2.3` 使用单一 `carbs_king.apk`，目标为 Build 76。
+- 远端资产必须为 201,554,171 字节，SHA-256 必须与本地 Build 76 一致。
 - Release URL：`https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3`
 
 ## 下一阶段
 
-- 先在 iQOO 11S 真机安装 Build 75，重点确认 Android 中文日期选择器、主题持久化和输入框失焦保存提示。
-- GitHub Release `v1.2.3` 的错误 APK 仍未替换；替换前需用户单独确认。
+- 在 iQOO 11S 通过应用内更新入口下载 Build 76，确认 GitHub 网络访问、系统安装器拉起、覆盖安装和数据保留。

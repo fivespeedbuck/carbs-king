@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import inspect
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from achievement_service import (
 from achievement_views import build_achievement_celebration, sort_achievement_views
 from app_defaults import CIRCUMFERENCE_FIELDS, DEFAULT_MACRO_MULTIPLIERS
 from app_state import AppState
+from app_version import BUILD_NUMBER, VERSION_NAME
 from app_utils import to_float
 from backup_controller import BackupController
 from controller_runtime import ControllerRuntime
@@ -50,8 +52,10 @@ from profile_backup_views import build_backup_panel
 from profile_details_views import build_profile_details, build_profile_metrics
 from profile_macro_views import build_carb_cycle_goal_section, build_macro_panel
 from profile_theme_views import build_theme_panel
+from profile_update_views import build_update_panel
 from repositories import AppRepositories
 from training_experience_service import exercise_usage_stats, sort_exercises
+from update_service import fetch_latest_release, update_available
 from training_picker_views import (
     build_category_sidebar, build_exercise_card, build_exercise_help, build_sort_row,
 )
@@ -113,6 +117,61 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         challenge_completion_audio["service"] = None
     challenge_ui = {"delete_mode": False, "selected": set()}
     fallback_challenges: dict[str, Any] = {}
+    update_ui: dict[str, Any] = {"status": "idle", "latest": None, "error": ""}
+
+    def start_update_check(event=None):
+        if update_ui["status"] == "checking":
+            return
+        update_ui.update({"status": "checking", "error": ""})
+
+        async def run_check():
+            try:
+                release = await asyncio.to_thread(
+                    fetch_latest_release,
+                    use_cache=event is None,
+                )
+                update_ui["latest"] = release
+                update_ui["status"] = "available" if update_available(release) else "current"
+            except Exception as exc:
+                update_ui["status"] = "error"
+                update_ui["error"] = f"检查失败：{str(exc)[:80]}"
+            try:
+                refresh()
+            except (AttributeError, RuntimeError):
+                pass
+
+        try:
+            page.run_task(run_check)
+        except (AttributeError, RuntimeError, TypeError):
+            update_ui["status"] = "error"
+            update_ui["error"] = "当前运行环境无法启动更新检查"
+        if event is not None:
+            refresh()
+
+    def open_update_download(event=None):
+        release = update_ui.get("latest")
+        release = release if isinstance(release, dict) else {}
+        url = str(release.get("apk_url") or release.get("page_url") or "")
+        if not url:
+            snack("没有可用的安装包下载地址")
+            return
+        launcher = getattr(page, "launch_url", None) or getattr(page, "open_url", None)
+        if not callable(launcher):
+            snack("当前环境无法打开下载页")
+            return
+
+        async def launch():
+            try:
+                result = launcher(url)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                snack("无法打开下载页，请稍后重试")
+
+        try:
+            page.run_task(launch)
+        except (AttributeError, RuntimeError, TypeError):
+            snack("当前环境无法打开下载页")
 
     def play_challenge_completion_audio():
         audio = challenge_completion_audio["service"]
@@ -1117,18 +1176,26 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             save_profile_from_state()
             save_current()
 
-        def persist_dimensions(event=None):
-            """Save height and age when the user finishes editing either field."""
+        def persist_body_profile(event=None):
+            """Save the body/profile field that just finished editing."""
             set_input_focused(False)
             assign_visible_fields()
             state["age_reference_year"] = datetime.date.today().year
             save_profile_from_state()
             save_current()
             field = getattr(event, "control", None)
-            snack("身高已保存" if field is height_field else "年龄已保存")
+            labels = {
+                id(weight_field): "体重已保存",
+                id(bodyfat_field): "体脂已保存",
+                id(height_field): "身高已保存",
+                id(age_field): "年龄已保存",
+            }
+            snack(labels.get(id(field), "资料已保存"))
 
-        height_field.on_blur = persist_dimensions
-        age_field.on_blur = persist_dimensions
+        weight_field.on_blur = persist_body_profile
+        bodyfat_field.on_blur = persist_body_profile
+        height_field.on_blur = persist_body_profile
+        age_field.on_blur = persist_body_profile
 
         def set_sex(value):
             persist_visible_profile(sex_value=value)
@@ -1256,6 +1323,9 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             state["profile_circumference_expanded"] = not expanded
             refresh()
 
+        if update_ui["status"] == "idle":
+            start_update_check()
+
         return build_profile_details(
             [weight_box, bodyfat_box, height_box, age_box],
             sex=state.get("sex", ""),
@@ -1269,6 +1339,15 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             macro_panel=macro_box,
             theme_panel=build_theme_panel(state.get("theme_color", "green"), set_theme),
             backup_panel=build_backup_panel(export_handler, import_backup_handler, clear_personal_data),
+            update_panel=build_update_panel(
+                current_version=VERSION_NAME,
+                current_build=BUILD_NUMBER,
+                status=str(update_ui.get("status") or "idle"),
+                latest=update_ui.get("latest"),
+                error=str(update_ui.get("error") or ""),
+                on_check=start_update_check,
+                on_download=open_update_download,
+            ),
             viewport_width=responsive_width(),
         )
 

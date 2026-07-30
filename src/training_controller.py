@@ -28,16 +28,20 @@ from training_clock_service import finalize_session_clock, session_elapsed_secon
 from training_experience_service import (
     BODY_PART_ORDER, adjust_weight_kg, adjust_rest_cycle, copy_whole_session, create_exercise_group, exercise_usage_stats,
     finish_rest_cycle, format_weight_kg, history_training_cards, normalize_weight_input,
-    next_group_work, normalize_exercise_groups, pause_rest_cycle, rest_remaining_seconds,
+    next_group_work, normalize_exercise_groups, pause_rest_cycle, remove_exercise_from_group,
+    reorder_group_members, rest_remaining_seconds,
     reorder_session_exercise_blocks, resume_rest_cycle, skip_rest_cycle, sort_exercises, start_rest_cycle,
     undo_completed_set_result,
 )
 from training_models import TrainingSession, normalize_recording_mode
 from training_picker_views import (
     CUSTOM_CARDIO_METRIC_FIELDS, bind_dialog_close_button, bind_training_parameter_mode,
-    build_category_sidebar, build_exercise_card, build_exercise_help, build_sort_row,
+    build_category_sidebar, build_exercise_card, build_exercise_help,
 )
-from training_plan_views import EmptyTrainingActions, PlannedTrainingActions, build_empty_training, build_planned_training
+from training_plan_views import (
+    EmptyTrainingActions, PlannedTrainingActions,
+    build_action_arrangement_list, build_empty_training, build_planned_training,
+)
 from training_summary_views import (
     TrainingSummaryActions,
     TrainingWorkspaceTabsActions,
@@ -54,7 +58,7 @@ from training_views import ActiveTrainingActions, ActiveTrainingModel, build_act
 from ui_components import (
     GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, card, page_card,
     make_button, mobile_dropdown, mobile_text_field, responsive_field_grid,
-    section_title, small_text, thin_border, three_field_grid, two_field_grid,
+    section_title, set_input_focused, small_text, thin_border, three_field_grid, two_field_grid,
 )
 
 
@@ -442,7 +446,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             create_empty_session()
         return session_data()
 
-    def open_add_exercise_dialog():
+    def open_add_exercise_dialog(after_save=None):
         ensure_session()
         dialog_width = responsive_width()
         page_size = 24
@@ -455,8 +459,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         # the web canvas. Keep the picker responsive and reveal more on demand.
         list_holder = ft.GridView(
             max_extent=280,
-            # Four text rows need a taller virtual-grid cell on Android.
-            child_aspect_ratio=2.0,
+            # The 2.5 ratio keeps the existing icon coordinates while raising
+            # the card bottom so the space below “+” matches the space above
+            # “?”. The fixed title and bottom detail zones still fit in 110px.
+            child_aspect_ratio=2.5,
             spacing=8,
             run_spacing=8,
             expand=True,
@@ -464,37 +470,42 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             cache_extent=180,
         )
         load_more_holder = ft.Column(spacing=6)
-        category_rows = ft.Column(spacing=3, width=82, scroll=_SCROLL_HIDDEN)
+        category_rows = ft.Column(spacing=3, width=68, scroll=_SCROLL_HIDDEN)
         subgroup_rows = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
-        # The picker sidebar consumes part of the form width. Keep the
-        # equipment layout explicitly bounded to the remaining mobile width,
-        # rather than allowing an intrinsic Row to widen the whole panel.
-        equipment_panel_width = max(190, dialog_width - 100)
+        # Leave more of the phone width to the filters and results while
+        # keeping the body-part rail readable.
+        equipment_panel_width = max(226, dialog_width - 64)
         equipment_rows = ft.Column(spacing=6, width=equipment_panel_width)
-        equipment_scroll = {"offset": 0.0}
-
-        def remember_equipment_scroll(event):
-            equipment_scroll["offset"] = max(0.0, float(getattr(event, "pixels", 0.0) or 0.0))
-
-        equipment_compact_row = ft.Row(
-            spacing=6,
-            width=equipment_panel_width,
-            scroll=_SCROLL_HIDDEN,
-            on_scroll=remember_equipment_scroll,
-            scroll_interval=80,
-        )
-
-        def restore_equipment_scroll():
-            async def restore():
-                try:
-                    await equipment_compact_row.scroll_to(offset=equipment_scroll["offset"], duration=0)
-                except Exception:
-                    pass
-            page.run_task(restore)
         selection_status = ft.Text("已选择 0 个动作", size=13, color=SUB, weight="bold")
         search = mobile_text_field("搜索动作名称、器械或目标肌群", "", width=dialog_width)
         library_dlg = None
         pending_setup = {"dialog": None}
+        keyboard_focus_target = {"control": None}
+
+        def dismiss_search_focus(after_focus=None):
+            """Move real focus off the search field before another surface opens."""
+            set_input_focused(False)
+            target = keyboard_focus_target.get("control")
+            focus = getattr(target, "focus", None)
+
+            async def transfer_focus():
+                try:
+                    if callable(focus):
+                        await focus()
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
+                finally:
+                    if after_focus is not None:
+                        after_focus()
+
+            if callable(focus):
+                try:
+                    page.run_task(transfer_focus)
+                    return
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
+            if after_focus is not None:
+                after_focus()
 
         def after_library_dismiss(e=None):
             next_dialog = pending_setup.get("dialog")
@@ -593,13 +604,16 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             }
 
         def open_help(exercise):
-            help_dlg = dialog_base(
-                exercise.get("name", "动作说明"),
-                build_exercise_help(exercise, dialog_width, _SCROLL_HIDDEN),
-                [ft.Container(content=make_button("知道了", on_click=lambda e: close_control(help_dlg), expand=True), width=dialog_width)],
-                on_close=lambda e: close_control(help_dlg),
-            )
-            open_control(help_dlg)
+            def show_help():
+                help_dlg = dialog_base(
+                    exercise.get("name", "动作说明"),
+                    build_exercise_help(exercise, dialog_width, _SCROLL_HIDDEN),
+                    [ft.Container(content=make_button("知道了", on_click=lambda e: close_control(help_dlg), expand=True), width=dialog_width)],
+                    on_close=lambda e: close_control(help_dlg),
+                )
+                open_control(help_dlg)
+
+            dismiss_search_focus(show_help)
 
         def open_setup(exercise):
             is_new_custom = not str(exercise.get("name", "")).strip()
@@ -713,6 +727,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 saved_setup["message"] = ""
                 refresh()
                 snack(message)
+                if after_save is not None:
+                    after_save()
 
             def confirm(e):
                 session = ensure_session()
@@ -858,14 +874,17 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             )
 
         def toggle_exercise(exercise):
-            exercise_name = str(exercise.get("name") or "")
-            if exercise_name in selected_names:
-                selected_names.remove(exercise_name)
-            elif exercise_name:
-                selected_names.append(exercise_name)
-            selection_status.value = f"已选择 {len(selected_names)} 个动作"
-            rebuild_list()
-            page.update()
+            def apply_toggle():
+                exercise_name = str(exercise.get("name") or "")
+                if exercise_name in selected_names:
+                    selected_names.remove(exercise_name)
+                elif exercise_name:
+                    selected_names.append(exercise_name)
+                selection_status.value = f"已选择 {len(selected_names)} 个动作"
+                rebuild_list()
+                page.update()
+
+            dismiss_search_focus(apply_toggle)
 
         def add_selected_exercises(e=None):
             if not selected_names:
@@ -902,6 +921,36 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             category_rows.controls.clear()
             category_rows.controls.extend(build_category_sidebar(categories, selected["category"], choose_category))
 
+        def estimate_equipment_width(label):
+            # Matches make_button's 14px text and 20px horizontal padding.
+            ascii_count = sum(1 for char in label if ord(char) < 128)
+            visual_units = len(label) + ascii_count * 0.35
+            return min(equipment_panel_width, max(62, int(visual_units * 15 + 30)))
+
+        def pack_equipment_controls(items, ordered_count):
+            """Pack ordered popular tools first, then let rare tools fill gaps."""
+            rows = []
+            used_widths = []
+            for index, (label, control) in enumerate(items):
+                width = estimate_equipment_width(label)
+                control.width = width
+                target = None
+                if index < ordered_count:
+                    if rows and used_widths[-1] + 6 + width <= equipment_panel_width:
+                        target = len(rows) - 1
+                else:
+                    for row_index, used in enumerate(used_widths):
+                        if used + 6 + width <= equipment_panel_width:
+                            target = row_index
+                            break
+                if target is None:
+                    rows.append([control])
+                    used_widths.append(width)
+                else:
+                    rows[target].append(control)
+                    used_widths[target] += 6 + width
+            return [ft.Row(row, spacing=6, width=equipment_panel_width) for row in rows]
+
         def rebuild_filters():
             visible = [item for item in catalog if item.get("category") == selected["category"]]
             subgroups = list(dict.fromkeys(str(item.get("subgroup") or "整体") for item in visible))
@@ -917,7 +966,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             equipment_priority = ("杠铃", "哑铃", "绳索", "史密斯机", "器械", "自重", "壶铃", "弹力带", "健身球", "TRX&弹力带", "其他")
             priority_index = {value: index for index, value in enumerate(equipment_priority)}
             equipment.sort(key=lambda value: (priority_index.get(value, len(priority_index)), value))
-            if selected["equipment"] not in equipment:
+            # “全部”是虚拟选项，不属于动作库的器械值；展开冷门器械时
+            # 必须保留它，否则 rebuild 会立即把展开状态重置掉。
+            if selected["equipment"] != "全部" and selected["equipment"] not in equipment:
                 selected["equipment"] = "全部"
                 selected["show_more_equipment"] = False
             subgroup_rows.controls = [
@@ -936,40 +987,34 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 )
 
             if selected["show_more_equipment"]:
-                # Expanded mode deliberately has no horizontal scroller: every
-                # available option is wrapped into visible rows, ending with
-                # the collapse control.
-                expanded_items = [(label, equipment_button(label)) for label in ["全部", *equipment]]
-                expanded_items.append(("收起器械", make_button("收起器械", on_click=lambda e: toggle_more_equipment(), bgcolor=PRIMARY_SOFT, color=GREEN)))
-                controls = []
-                current_row = []
-                current_width = 0
-                for label, button in expanded_items:
-                    # Text is 14px with 20px horizontal padding. The estimate
-                    # deliberately errs wide so a long Chinese name starts a
-                    # new line instead of leaking through the dialog edge.
-                    estimated_width = min(equipment_panel_width, max(54, len(label) * 16 + 28))
-                    next_width = estimated_width if not current_row else current_width + 6 + estimated_width
-                    if current_row and next_width > equipment_panel_width:
-                        controls.append(ft.Row(current_row, spacing=6, width=equipment_panel_width))
-                        current_row = []
-                        current_width = 0
-                    current_row.append(button)
-                    current_width = estimated_width if current_width == 0 else current_width + 6 + estimated_width
-                if current_row:
-                    controls.append(ft.Row(current_row, spacing=6, width=equipment_panel_width))
+                popular_labels = ["全部", *common_equipment]
+                expanded_items = [(label, equipment_button(label)) for label in [*popular_labels, *other_equipment]]
+                expanded_items.append((
+                    "收起器械",
+                    make_button("收起器械", on_click=lambda e: toggle_more_equipment(), bgcolor=PRIMARY_SOFT, color=GREEN),
+                ))
+                controls = pack_equipment_controls(expanded_items, len(popular_labels))
             else:
-                # A selected non-common tool stays immediately after “全部”,
-                # so a rebuild never makes the user hunt for it at the start
-                # of the horizontal strip again.
+                # Keep common equipment in one horizontally expandable strip;
+                # rare equipment only appears after the explicit more action.
                 pinned = [selected["equipment"]] if selected["equipment"] in other_equipment else []
-                compact_buttons = [equipment_button(label) for label in ["全部", *pinned, *common_equipment]]
-                if [item for item in other_equipment if item not in pinned]:
-                    compact_buttons.append(make_button("更多器械", on_click=lambda e: toggle_more_equipment(), bgcolor=PRIMARY_SOFT, color=GREEN))
-                # Keep one Row instance across filter updates. Replacing the
-                # Row is what previously reset a user's horizontal position.
-                equipment_compact_row.controls = compact_buttons
-                controls = [equipment_compact_row]
+                compact_labels = ["全部", *pinned, *common_equipment]
+                compact_items = [(label, equipment_button(label)) for label in compact_labels]
+                compact_row = ft.Row(
+                    [
+                        *[control for _label, control in compact_items],
+                        *([make_button(
+                            "更多器械",
+                            on_click=lambda e: toggle_more_equipment(),
+                            bgcolor=PRIMARY_SOFT,
+                            color=GREEN,
+                        )] if [item for item in other_equipment if item not in pinned] else []),
+                    ],
+                    spacing=6,
+                    width=equipment_panel_width,
+                    scroll=_SCROLL_HIDDEN,
+                )
+                controls = [compact_row]
             equipment_rows.controls = controls
 
         def choose_category(category):
@@ -995,31 +1040,14 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             # mode, which also releases a previously pinned uncommon option.
             if equipment == "全部" or equipment in ("杠铃", "哑铃", "绳索", "史密斯机", "器械", "自重"):
                 selected["show_more_equipment"] = False
-            if was_expanded and not selected["show_more_equipment"]:
-                equipment_scroll["offset"] = 0.0
             selected["limit"] = page_size
             rebuild_filters()
             rebuild_list()
             page.update()
-            if not selected["show_more_equipment"]:
-                restore_equipment_scroll()
 
         def toggle_more_equipment():
             selected["show_more_equipment"] = not selected["show_more_equipment"]
-            if not selected["show_more_equipment"]:
-                # Collapsing deliberately starts at “全部”, followed by any
-                # selected pinned uncommon tool.
-                equipment_scroll["offset"] = 0.0
             rebuild_filters()
-            page.update()
-            if not selected["show_more_equipment"]:
-                restore_equipment_scroll()
-
-        def choose_sort(mode):
-            selected["sort"] = mode
-            selected["limit"] = page_size
-            sort_row.controls = build_sort_row(choose_sort, selected["sort"]).controls
-            rebuild_list()
             page.update()
 
         def load_more(e=None):
@@ -1033,10 +1061,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         def rebuild_list(e=None):
             query = (search.value or "").strip()
-            results = search_exercises(query, None if query else selected["category"], catalog)
-            if not query and selected["subgroup"] != "全部":
+            # Search stays inside the currently selected body part, subgroup,
+            # and equipment while retaining the active popular/recent sort.
+            results = search_exercises(query, selected["category"], catalog)
+            if selected["subgroup"] != "全部":
                 results = [item for item in results if str(item.get("subgroup") or "整体") == selected["subgroup"]]
-            if not query and selected["equipment"] != "全部":
+            if selected["equipment"] != "全部":
                 results = [item for item in results if str(item.get("equipment") or "其他") == selected["equipment"]]
             results = sort_exercises(results, usage_stats, selected["sort"])
             total_results = len(results)
@@ -1062,25 +1092,26 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         rebuild_filters()
         rebuild_list()
         custom_item = {"name": "", "category": "自定义", "equipment": "其他", "target_muscles": [], "cues": [], "mistakes": [], "default_weight_kg": None, "default_reps": 10, "default_sets": 4, "recording_mode": "strength", "distance_enabled": True}
-        sort_row = build_sort_row(choose_sort, selected["sort"])
         browser_panel = ft.Row([
-            ft.Container(content=category_rows, width=88, padding=ft.Padding(left=0, top=0, right=4, bottom=0)),
+            ft.Container(content=category_rows, width=52, padding=ft.Padding(left=0, top=0, right=0, bottom=0)),
             ft.VerticalDivider(width=1, color="#D9E6E1"),
-            ft.Column([subgroup_rows, equipment_rows, sort_row, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8),
+            ft.Column([subgroup_rows, equipment_rows, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8),
         ], width=dialog_width, height=560, spacing=8)
+        add_custom_action = ft.IconButton(
+            icon=ft.Icons.ADD,
+            tooltip="新建自定义动作",
+            width=48,
+            height=48,
+            icon_color=PRIMARY,
+            on_click=lambda e: open_setup(custom_item),
+        )
+        keyboard_focus_target["control"] = add_custom_action
         library_dlg = full_form_sheet(
             f"添加动作 · {len(catalog)} 个",
             [search, browser_panel],
             add_selected_exercises,
             save_label="添加已选动作",
-            header_action=ft.IconButton(
-                icon=ft.Icons.ADD,
-                tooltip="新建自定义动作",
-                width=48,
-                height=48,
-                icon_color=PRIMARY,
-                on_click=lambda e: open_setup(custom_item),
-            ),
+            header_action=add_custom_action,
         )
         library_dlg.on_dismiss = after_library_dismiss
         open_control(library_dlg)
@@ -1124,11 +1155,19 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         )
         open_control(help_dlg)
 
-    def open_edit_planned_exercise(exercise_id):
-        session, exercise = planned_exercise(exercise_id)
-        if not session or not exercise or session.get("status") == "active":
-            return
-        dialog_width = responsive_width()
+    def bodyweight_weight_field(value=""):
+        control = mobile_text_field(
+            "重量 kg",
+            value,
+            keyboard_type=_KEYBOARD_NUMBER,
+            hint_text="自重留空",
+            expand=True,
+        )
+        control.field.hint_style = ft.TextStyle(color="#98A39F", size=14)
+        control.field.content_padding = ft.Padding(left=10, top=12, right=8, bottom=12)
+        return control
+
+    def build_action_summary_controls(exercise):
         source_exercise = next(
             (
                 item for item in exercise_catalog(load_custom_exercises())
@@ -1137,14 +1176,41 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             {},
         )
         mode = normalize_recording_mode(exercise.get("recording_mode"))
+        mode_label = {"strength": "力量", "timed": "计时", "cardio": "有氧"}[mode]
+        controls: list[ft.Control] = [
+            small_text(f"记录模式：{mode_label}"),
+        ]
+        media_src = str(source_exercise.get("gif") or source_exercise.get("image") or "")
+        if media_src:
+            controls.append(ft.Container(
+                content=ft.Image(src=media_src, height=190, fit="contain"),
+                height=206,
+                alignment=ft.Alignment(0, 0),
+                bgcolor="#FFFFFF",
+                border_radius=12,
+                padding=8,
+            ))
+        cues = [str(cue).strip() for cue in source_exercise.get("cues", []) if str(cue).strip()]
+        if cues:
+            controls.extend([
+                section_title("动作要点"),
+                ft.Column(
+                    [ft.Text(f"{index}. {cue}", size=13, color=TEXT) for index, cue in enumerate(cues, 1)],
+                    spacing=5,
+                ),
+            ])
+        return controls
+
+    def open_edit_planned_exercise(exercise_id):
+        session, exercise = planned_exercise(exercise_id)
+        if not session or not exercise or session.get("status") == "active":
+            return
+        dialog_width = responsive_width()
+        mode = normalize_recording_mode(exercise.get("recording_mode"))
         raw_sets = [item for item in exercise.get("sets", []) if isinstance(item, dict)]
         first_set = raw_sets[0] if raw_sets else {}
-        weight = mobile_text_field(
-            "重量 kg",
-            "" if to_float(first_set.get("weight_kg")) <= 0 else f"{to_float(first_set.get('weight_kg')):g}",
-            keyboard_type=_KEYBOARD_NUMBER,
-            hint_text="自重（留空）",
-            expand=True,
+        weight = bodyweight_weight_field(
+            "" if to_float(first_set.get("weight_kg")) <= 0 else f"{to_float(first_set.get('weight_kg')):g}"
         )
         reps = mobile_text_field(
             "次数",
@@ -1180,10 +1246,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             )
             for key in metric_keys
         }
-        mode_label = {"strength": "力量", "timed": "计时", "cardio": "有氧"}[mode]
+        summary_controls = build_action_summary_controls(exercise)
         controls: list[ft.Control] = [
             section_title(str(exercise.get("name") or "编辑动作")),
-            small_text(f"记录模式：{mode_label}"),
+            summary_controls[0],
         ]
         if mode == "strength":
             controls.append(three_field_grid(weight, reps, sets, viewport_width=dialog_width))
@@ -1193,25 +1259,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 controls.append(distance)
             if mode == "cardio" and metric_fields:
                 controls.append(responsive_field_grid(list(metric_fields.values()), columns=2, viewport_width=dialog_width))
-        media_src = str(source_exercise.get("gif") or source_exercise.get("image") or "")
-        if media_src:
-            controls.append(ft.Container(
-                content=ft.Image(src=media_src, height=190, fit="contain"),
-                height=206,
-                alignment=ft.Alignment(0, 0),
-                bgcolor=SURFACE,
-                border_radius=12,
-                padding=8,
-            ))
-        cues = [str(cue).strip() for cue in source_exercise.get("cues", []) if str(cue).strip()]
-        if cues:
-            controls.extend([
-                section_title("动作要点"),
-                ft.Column(
-                    [ft.Text(f"{index}. {cue}", size=13, color=TEXT) for index, cue in enumerate(cues, 1)],
-                    spacing=5,
-                ),
-            ])
+        controls.extend(summary_controls[1:])
         edit_dlg = None
 
         def save_edit(e=None):
@@ -1358,7 +1406,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         )
         open_control(history_dlg)
 
-    def open_exercise_group_dialog(base_exercise_id):
+    def open_exercise_group_dialog(base_exercise_id, after_save=None):
         session = session_data()
         exercises = session.get("exercises", []) if session else []
         if not session or len(exercises) < 2:
@@ -1390,6 +1438,26 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         def confirm_group(e=None):
             member_ids = [str(item.data) for item in checks if item.value]
+            if len(member_ids) < 2:
+                if existing_group is None:
+                    snack("至少选择两个动作")
+                    return
+                existing_group_id = str(existing_group.get("id") or "")
+                session["exercise_groups"] = normalize_exercise_groups(
+                    session.get("exercises", []),
+                    [
+                        group for group in session.get("exercise_groups", [])
+                        if not isinstance(group, dict) or str(group.get("id") or "") != existing_group_id
+                    ],
+                )
+                persist_session(session)
+                close_control(dlg)
+                if after_save is not None:
+                    after_save()
+                else:
+                    refresh()
+                snack("已解除动作组合，动作均已保留")
+                return
             try:
                 session["exercise_groups"] = create_exercise_group(
                     session.get("exercises", []),
@@ -1398,11 +1466,14 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     str(group_type.value or ""),
                 )
             except ValueError as exc:
-                snack(str(exc))
+                snack("至少选择两个有效动作" if "at least two" in str(exc) else "动作组合设置无效")
                 return
             persist_session(session)
             close_control(dlg)
-            refresh()
+            if after_save is not None:
+                after_save()
+            else:
+                refresh()
 
         dlg = full_form_sheet(
             "设置动作组合",
@@ -1438,12 +1509,16 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         persist_session(session)
         refresh()
 
-    def delete_session_exercise(index):
+    def delete_session_exercise(exercise_id):
         session = session_data()
         if not session or session.get("status") == "active":
             return
         exercises = session.get("exercises", [])
-        if 0 <= index < len(exercises):
+        index = next(
+            (position for position, item in enumerate(exercises) if str(item.get("id") or "") == str(exercise_id)),
+            None,
+        )
+        if index is not None:
             exercises.pop(index)
         session["exercise_groups"] = normalize_exercise_groups(exercises, session.get("exercise_groups", []))
         persist_session(session)
@@ -1643,17 +1718,18 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         session, exercise, training_set = current_training_items()
         if not session or not training_set:
             return
-        field = mobile_text_field(
-            "重量（kg）",
-            format_weight_kg(training_set.get("weight_kg", 0)),
-            width=responsive_width(),
-            keyboard_type=_KEYBOARD_NUMBER,
+        current_weight = training_set.get("weight_kg")
+        field = bodyweight_weight_field(
+            "" if to_float(current_weight) <= 0 else format_weight_kg(current_weight)
         )
         dlg = None
 
         def save_weight(_=None):
             try:
-                training_set["weight_kg"] = normalize_weight_input(field.field.value)
+                raw_value = str(field.field.value or "").strip()
+                training_set["weight_kg"] = (
+                    0.0 if raw_value in {"", "自重"} else normalize_weight_input(raw_value)
+                )
             except ValueError as exc:
                 snack(str(exc))
                 return
@@ -1854,6 +1930,26 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                         sequence.append((member_index, 0))
         return sequence
 
+    def training_completion_sequence(session, cursor_sequence=None):
+        exercises = normalized_session_exercises(session)
+        sequence = cursor_sequence if cursor_sequence is not None else training_cursor_sequence(session)
+        completed = []
+        for exercise_index, set_index in sequence:
+            if not (0 <= exercise_index < len(exercises)):
+                completed.append(False)
+                continue
+            exercise = exercises[exercise_index]
+            if normalize_recording_mode(exercise.get("recording_mode")) == "strength":
+                sets = exercise.get("sets", [])
+                completed.append(
+                    bool(sets[set_index].get("completed"))
+                    if 0 <= set_index < len(sets) and isinstance(sets[set_index], dict)
+                    else False
+                )
+            else:
+                completed.append(bool(exercise.get("completed")))
+        return tuple(completed)
+
     def move_training(direction):
         session, exercise, training_set = current_training_items()
         sequence = training_cursor_sequence(session)
@@ -1871,6 +1967,341 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         state["training_exercise_index"], state["training_set_index"] = target
         completion_prompt["key"] = ""
         refresh()
+
+    def adjust_current_set_count(direction):
+        session, exercise, training_set = current_training_items()
+        if not session or not exercise or normalize_recording_mode(exercise.get("recording_mode")) != "strength":
+            snack("当前动作不使用组数")
+            return
+        sets = exercise.setdefault("sets", [])
+        pending_before = [
+            index for index, item in enumerate(sets)
+            if isinstance(item, dict) and not item.get("completed")
+        ]
+        if int(direction) > 0:
+            source = training_set if isinstance(training_set, dict) else (sets[-1] if sets else {})
+            sets.append({
+                "id": f"set_{uuid.uuid4().hex}",
+                "order": len(sets) + 1,
+                "weight_kg": max(0, to_float(source.get("weight_kg"))),
+                "reps": max(0, safe_int(source.get("reps"))),
+                "completed": False,
+                "warmup": bool(source.get("warmup", False)),
+                "completed_at": "",
+            })
+            if not pending_before:
+                state["training_set_index"] = len(sets) - 1
+            message = "已增加一组"
+        else:
+            if len(sets) <= 1:
+                snack("每个力量动作至少保留一组")
+                return
+            selected_index = safe_int(state.get("training_set_index", 0))
+            remove_index = (
+                selected_index
+                if selected_index in pending_before
+                else pending_before[-1] if pending_before else None
+            )
+            if remove_index is None:
+                snack("已完成的组不能删除")
+                return
+            sets.pop(remove_index)
+            for index, item in enumerate(sets):
+                if isinstance(item, dict):
+                    item["order"] = index + 1
+            state["training_set_index"] = min(remove_index, len(sets) - 1)
+            message = "已减少一组"
+        completion_prompt["key"] = ""
+        persist_session(session)
+        refresh()
+        snack(message)
+
+    def open_active_action_manager(event=None):
+        session, current_exercise, _training_set = current_training_items()
+        exercises = normalized_session_exercises(session)
+        if not session or not exercises:
+            snack("当前没有可调整的动作")
+            return
+        dialog_width = responsive_width()
+        rows_slot = ft.Column(spacing=0)
+        manager_dlg = None
+
+        def current_exercise_id():
+            _session, exercise, _set = current_training_items()
+            return str(exercise.get("id") or "") if exercise else ""
+
+        def open_edit_active_exercise(exercise_id):
+            item = next(
+                (value for value in exercises if str(value.get("id") or "") == str(exercise_id)),
+                None,
+            )
+            if not item or normalize_recording_mode(item.get("recording_mode")) != "strength":
+                snack("当前动作不支持重量和组数编辑")
+                return
+            raw_sets = [value for value in item.get("sets", []) if isinstance(value, dict)]
+            last_completed_index = max(
+                (index for index, value in enumerate(raw_sets) if value.get("completed")),
+                default=-1,
+            )
+            locked_set_count = last_completed_index + 1
+            template = (
+                raw_sets[locked_set_count]
+                if locked_set_count < len(raw_sets)
+                else raw_sets[-1] if raw_sets else {}
+            )
+            width = responsive_width()
+            weight = bodyweight_weight_field(
+                "" if to_float(template.get("weight_kg")) <= 0 else f"{to_float(template.get('weight_kg')):g}"
+            )
+            reps = mobile_text_field(
+                "次数",
+                "" if template.get("reps") is None else str(int(to_float(template.get("reps")))),
+                keyboard_type=_KEYBOARD_NUMBER,
+                expand=True,
+            )
+            sets = mobile_text_field("组数", str(max(1, len(raw_sets))), keyboard_type=_KEYBOARD_NUMBER, expand=True)
+            edit_dlg = None
+
+            def save_edit(event=None):
+                set_count = max(1, min(12, int(to_float(sets.value, len(raw_sets) or 1))))
+                if set_count < locked_set_count:
+                    snack(f"组数不能截断第 {locked_set_count} 个已完成组")
+                    return
+                weight_value = max(0, to_float(weight.value))
+                reps_value = max(0, int(to_float(reps.value)))
+                updated_sets = []
+                for index in range(set_count):
+                    original = raw_sets[index] if index < len(raw_sets) else {}
+                    if index < locked_set_count:
+                        updated = dict(original)
+                    else:
+                        updated = {
+                            **original,
+                            "weight_kg": weight_value,
+                            "reps": reps_value,
+                            "completed": False,
+                            "warmup": False,
+                            "completed_at": "",
+                        }
+                    updated.update({
+                        "id": str(updated.get("id") or f"set_{uuid.uuid4().hex}"),
+                        "order": index + 1,
+                    })
+                    updated_sets.append(updated)
+                item["sets"] = updated_sets
+                persist_session(session)
+                close_control(edit_dlg)
+                rebuild_rows()
+                refresh()
+                snack(f"已更新 {item.get('name', '动作')} 参数")
+
+            summary_controls = build_action_summary_controls(item)
+            edit_dlg = full_form_sheet(
+                "编辑训练参数",
+                [
+                    section_title(str(item.get("name") or "编辑动作")),
+                    summary_controls[0],
+                    three_field_grid(weight, reps, sets, viewport_width=width),
+                    *summary_controls[1:],
+                ],
+                save_edit,
+                save_label="保存修改",
+            )
+            open_control(edit_dlg)
+
+        def persist_order(active_id):
+            for index, item in enumerate(exercises):
+                item["order"] = index + 1
+            session["exercises"] = exercises
+            session["exercise_groups"] = normalize_exercise_groups(
+                exercises,
+                session.get("exercise_groups", []),
+            )
+            persist_session(session)
+            current_index = min(
+                safe_int(state.get("training_exercise_index", 0)),
+                len(exercises) - 1,
+            )
+            if active_id:
+                current_index = next(
+                    (
+                        index for index, item in enumerate(exercises)
+                        if str(item.get("id") or "") == active_id
+                    ),
+                    current_index,
+                )
+            state["training_exercise_index"] = max(0, current_index)
+            state["training_set_index"] = min(
+                safe_int(state.get("training_set_index", 0)),
+                max(0, len(exercises[state["training_exercise_index"]].get("sets", [])) - 1),
+            )
+
+        def reorder_action(dragged_id, target_id):
+            if not dragged_id or dragged_id == target_id:
+                return
+            active_id = current_exercise_id()
+            reordered = reorder_session_exercise_blocks(
+                exercises,
+                session.get("exercise_groups", []),
+                dragged_id,
+                target_id,
+            )
+            exercises[:] = reordered
+            persist_order(active_id)
+            rebuild_rows()
+            page.update()
+
+        def reorder_action_group_member(dragged_id, target_id):
+            active_id = current_exercise_id()
+            exercises[:] = reorder_group_members(
+                exercises,
+                session.get("exercise_groups", []),
+                dragged_id,
+                target_id,
+            )
+            persist_order(active_id)
+            rebuild_rows()
+            page.update()
+
+        def remove_action_group_member(exercise_id):
+            active_id = current_exercise_id()
+            session["exercise_groups"] = remove_exercise_from_group(
+                exercises,
+                session.get("exercise_groups", []),
+                exercise_id,
+            )
+            persist_order(active_id)
+            rebuild_rows()
+            page.update()
+            snack("已将动作移出组合")
+
+        def remove_action(exercise_id):
+            if len(exercises) <= 1:
+                snack("训练中至少保留一个动作")
+                return
+            index = next(
+                (idx for idx, item in enumerate(exercises) if str(item.get("id") or "") == str(exercise_id)),
+                None,
+            )
+            if index is None:
+                return
+            item = exercises[index]
+            completed = bool(item.get("completed")) or any(
+                isinstance(training_set, dict) and training_set.get("completed")
+                for training_set in item.get("sets", [])
+            )
+            if completed:
+                snack("已经完成过组数的动作不能删除")
+                return
+            active_id = current_exercise_id()
+            removed_id = str(item.get("id") or "")
+            exercises.pop(index)
+            persist_order("" if active_id == removed_id else active_id)
+            if active_id == removed_id:
+                state["training_exercise_index"] = min(index, len(exercises) - 1)
+                state["training_set_index"] = 0
+            rebuild_rows()
+            page.update()
+            snack("已删除未完成动作")
+
+        def remove_action_group(exercise_id):
+            group = next((
+                value for value in session.get("exercise_groups", [])
+                if isinstance(value, dict) and str(exercise_id) in {
+                    str(member_id) for member_id in value.get("exercise_ids", [])
+                }
+            ), None)
+            if group is None:
+                return
+            group_id = str(group.get("id") or "")
+            session["exercise_groups"] = [
+                value for value in session.get("exercise_groups", [])
+                if not isinstance(value, dict) or str(value.get("id") or "") != group_id
+            ]
+            session["exercise_groups"] = normalize_exercise_groups(
+                exercises,
+                session["exercise_groups"],
+            )
+            persist_session(session)
+            rebuild_rows()
+            page.update()
+            snack("已解除动作组合")
+
+        def refresh_manager_after_group():
+            nonlocal session, exercises
+            # Persisting a session replaces the state object with a normalized
+            # copy. Rebind the still-open manager to that fresh object so the
+            # new combination appears immediately, without closing and
+            # reopening this sheet.
+            fresh_session = session_data()
+            if isinstance(fresh_session, dict):
+                session = fresh_session
+                exercises = normalized_session_exercises(session)
+            rebuild_rows()
+            page.update()
+
+        def edit_action_group(exercise_id):
+            open_exercise_group_dialog(
+                exercise_id,
+                after_save=refresh_manager_after_group,
+            )
+
+        def rebuild_rows():
+            completed_counts = {
+                str(item.get("id") or ""): sum(
+                    1 for training_set in item.get("sets", [])
+                    if isinstance(training_set, dict) and training_set.get("completed")
+                )
+                for item in exercises
+            }
+            rows_slot.controls = [build_action_arrangement_list(
+                session,
+                edit_exercise=open_edit_active_exercise,
+                group_exercise=edit_action_group,
+                delete_exercise=remove_action,
+                delete_group=remove_action_group,
+                reorder_exercise=reorder_action,
+                reorder_group_member=reorder_action_group_member,
+                remove_group_member=remove_action_group_member,
+                completed_counts=completed_counts,
+                max_height=520,
+                data="active-action-reorder-list",
+            )]
+
+        def add_action(event=None):
+            close_control(manager_dlg)
+            open_add_exercise_dialog(after_save=open_active_action_manager)
+
+        def finish_manager(event=None):
+            current_session = session_data()
+            current_cycle = current_session.get("rest_cycle") if isinstance(current_session, dict) else None
+            if (
+                isinstance(current_cycle, dict)
+                and current_cycle.get("status") == "running"
+                and rest_remaining_seconds(current_cycle, datetime.datetime.now()) <= 0
+            ):
+                complete_rest_if_elapsed(current_session)
+            close_control(manager_dlg)
+            refresh()
+
+        rebuild_rows()
+        manager_dlg = full_form_sheet(
+            "调整动作顺序",
+            [
+                make_button(
+                    "增加动作",
+                    on_click=add_action,
+                    icon=ft.Icons.ADD,
+                    bgcolor=PRIMARY_SOFT,
+                    color=GREEN,
+                    expand=True,
+                ),
+                rows_slot,
+            ],
+            finish_manager,
+            save_label="完成",
+        )
+        open_control(manager_dlg)
 
     def advance_after_work(session, exercise_index, set_index):
         exercises = normalized_session_exercises(session)
@@ -2212,6 +2643,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     confirm_complete=bool(current_key and completion_prompt.get("key") == current_key),
                     viewport_height=deps.viewport_height(),
                     current_work_index=current_work_index,
+                    work_completed=training_completion_sequence(session, cursor_sequence),
                 ),
                 ActiveTrainingActions(
                     close=lambda e: set_view("today"),
@@ -2232,20 +2664,16 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     ask_complete=ask_complete_current,
                     cancel_complete=cancel_complete_current,
                     move_exercise=move_training,
+                    adjust_sets=adjust_current_set_count,
+                    manage_actions=open_active_action_manager,
                 ),
             )
             training_clock_refs["elapsed"] = result.elapsed_control
             training_clock_refs["rest"] = result.rest_control
             return result.control
 
-
-        def finish_exercise_drag(e=None):
-            exercise_drag_state.update({"id": None, "active": False})
-
-        def accept_exercise_drop(target_id):
-            dragged_id = str(exercise_drag_state.get("id") or "")
+        def reorder_planned_exercise(dragged_id, target_id):
             if not dragged_id or dragged_id == target_id:
-                finish_exercise_drag()
                 return
             raw_session["exercises"] = reorder_session_exercise_blocks(
                 raw_session.get("exercises", []),
@@ -2255,17 +2683,29 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             )
             raw_session["exercise_groups"] = normalize_exercise_groups(raw_session["exercises"], raw_session.get("exercise_groups", []))
             persist_session(raw_session)
-            finish_exercise_drag()
             refresh()
 
-        def auto_scroll_exercise_drag(e):
-            position = getattr(e, "global_position", None)
-            y = float(getattr(position, "y", 0) or 0)
-            offset = float(deps.current_scroll())
-            if y and y < 150:
-                deps.scroll_to(offset=max(0, offset - 28), duration=80)
-            elif y > max(500, float(getattr(page, "height", 860) or 860) - 150):
-                deps.scroll_to(offset=offset + 28, duration=80)
+        def reorder_planned_group_member(dragged_id, target_id):
+            raw_session["exercises"] = reorder_group_members(
+                raw_session.get("exercises", []),
+                raw_session.get("exercise_groups", []),
+                dragged_id,
+                target_id,
+            )
+            raw_session["exercise_groups"] = normalize_exercise_groups(
+                raw_session["exercises"], raw_session.get("exercise_groups", [])
+            )
+            persist_session(raw_session)
+            refresh()
+
+        def remove_planned_group_member(exercise_id):
+            raw_session["exercise_groups"] = remove_exercise_from_group(
+                raw_session.get("exercises", []),
+                raw_session.get("exercise_groups", []),
+                exercise_id,
+            )
+            persist_session(raw_session)
+            refresh()
 
         return build_planned_training(raw_session, PlannedTrainingActions(
             start=start_session,
@@ -2277,10 +2717,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             delete_group=delete_exercise_group,
             show_help=open_planned_exercise_help,
             edit_exercise=open_edit_planned_exercise,
-            drag_start=lambda exercise_id: exercise_drag_state.update({"id": exercise_id, "active": True}),
-            drag_complete=finish_exercise_drag,
-            drag_move=auto_scroll_exercise_drag,
-            drag_accept=accept_exercise_drop,
+            reorder_exercise=reorder_planned_exercise,
+            reorder_group_member=reorder_planned_group_member,
+            remove_group_member=remove_planned_group_member,
         ))
 
     def completed_sessions_today() -> list[TrainingSession]:
