@@ -159,16 +159,14 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn("height=48,", TRAINING_SOURCE)
         self.assertIn("border_radius=24,", TRAINING_SOURCE)
 
-    def test_rest_notification_is_persisted_before_notifier_trigger(self):
+    def test_rest_completion_tick_only_persists_finished_state(self):
         start = TRAINING_CONTROLLER_SOURCE.index("    def complete_rest_if_elapsed")
         end = TRAINING_CONTROLLER_SOURCE.index("    def adjust_rest", start)
         section = TRAINING_CONTROLLER_SOURCE[start:end]
 
-        self.assertLess(
-            section.index("persist_session(session, record_date=record_date)"),
-            section.index("rest_notifier.trigger"),
-        )
-        self.assertIn('rest_notifier.trigger_foreground(str(finished.get("id", "")))', section)
+        self.assertIn("persist_session(session, record_date=record_date)", section)
+        self.assertNotIn("rest_notifier.trigger", section)
+        self.assertNotIn("rest_notifier.cancel", section)
         self.assertNotIn("play_rest_alert", TRAINING_CONTROLLER_SOURCE)
 
     def test_p0_readability_tokens_keep_body_text_legible(self):
@@ -507,9 +505,6 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
             return None
 
         def trigger_after(self, *args, **kwargs):
-            return None
-
-        def trigger_foreground(self, *args, **kwargs):
             return None
 
     def build_controller(self, session, exercise_index=0, set_index=0, opened_controls=None):

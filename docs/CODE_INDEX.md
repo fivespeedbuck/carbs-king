@@ -26,11 +26,12 @@
 ## 训练功能定位
 
 - 动作模型与训练记录：`src/training_models.py`、`src/training_service.py`。
-- 动作目录加载、中文名和排序：`src/exercise_library.py`、`src/exercise_catalog_data.json`、`src/exercise_catalog_overrides.json`。
+- 动作目录加载、常用中文名、别名相关性和筛选放宽：`src/exercise_library.py`、`src/exercise_catalog_data.json`、`src/exercise_catalog_overrides.json`。
 - 上游动作导入与审计：`tools/assemble_exercise_catalog.py`、`tools/audit_exercise_catalog.py`。
 - 训练前/训练中排序：`src/training_plan_views.py`、`src/training_controller.py`。
 - 训练游标和顶部进度：`src/training_experience_service.py`、`src/training_views.py`。
-- 休息、音频和训练完成：`src/rest_service.py`、`src/training_summary_views.py`、`android/rest_alarm_plugin/`。
+- 休息、音频和训练完成：`src/rest_notification.py`、`src/training_experience_service.py`、`src/training_controller.py`、`src/training_summary_views.py`、`android/rest_alarm_plugin/`。
+- APK 原生提醒运行时门禁：`tools/apk_runtime_gate.py`、`tests/test_apk_runtime_gate.py`、`build_apk_update.ps1`。
 
 ## 饮食与更新功能定位
 
@@ -46,10 +47,11 @@
 | --- | --- |
 | Build 76 回归、更新解析、构建契约 | `tests/test_build76_regressions.py` |
 | 饮食表单、四字段对齐、常用回填 | `tests/test_diet_information_architecture.py` |
-| 动作库目录、ID、中文覆盖 | `tests/test_exercise_library.py` |
+| 动作库目录、ID、中文覆盖、常用词排序与筛选放宽 | `tests/test_exercise_library.py` |
 | 训练视图、组进度、操作区 | `tests/test_training_views.py`、`tests/test_training_set_highlight.py` |
 | 动作管理和组合卡 | `tests/test_training_plan_views.py` |
 | 通用 UI 契约 | `tests/test_ui_contracts.py` |
+| 休息调度、原生通知与 APK 运行时门禁 | `tests/test_training_clock_service.py`、`tests/test_rest_notification.py`、`tests/test_apk_runtime_gate.py` |
 | 个人资料、主题和测量 | `tests/test_profile_macro_and_measurements.py` |
 
 ## 发布入口

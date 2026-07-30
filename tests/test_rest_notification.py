@@ -204,7 +204,7 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
             }],
         )
 
-    async def test_foreground_expiry_always_plays_bundled_audio_without_notification(self):
+    async def test_native_alarm_remains_the_only_owner_when_foreground_tick_arrives(self):
         page = FakePage()
         system = FakeSystemNotifier()
         alarm = FakeAlarmScheduler()
@@ -219,14 +219,30 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
 
         future = notifier.trigger_foreground("rest-visible")
         duplicate = notifier.trigger_foreground("rest-visible")
-        result = await future
 
+        self.assertIsNone(future)
         self.assertIsNone(duplicate)
-        self.assertTrue(result.sound_played)
-        self.assertEqual(notifier.audio.play_count, 1)
+        self.assertEqual(notifier.audio.play_count, 0)
         self.assertEqual(system.posts, [])
-        self.assertEqual(alarm.delivered, ["rest-visible"])
-        self.assertEqual(len(alarm.cancels), 1)
+        self.assertEqual(alarm.delivered, [])
+        self.assertEqual(alarm.cancels, [])
+
+    async def test_non_android_foreground_fallback_still_plays_once(self):
+        page = FakePage()
+        notifier = RestNotifier(
+            page,
+            audio_factory=FakeAudio,
+            haptic_factory=FakeHaptic,
+            system_factory=None,
+            alarm_scheduler_factory=None,
+        )
+
+        result = await notifier.trigger_foreground("rest-visible-fallback")
+        duplicate = notifier.trigger_foreground("rest-visible-fallback")
+
+        self.assertTrue(result.sound_played)
+        self.assertIsNone(duplicate)
+        self.assertEqual(notifier.audio.play_count, 1)
 
     async def test_system_notification_failure_falls_back_to_flet_alerts(self):
         notifier = RestNotifier(
@@ -497,6 +513,7 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
             / "android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/"
             "carbs_king/restalarm/RestAlarmReceiver.kt"
         ).read_text(encoding="utf-8")
+        adapter = (root / "src/rest_notification.py").read_text(encoding="utf-8")
 
         self.assertIn("carbs_king_rest_alarm", project)
         self.assertIn('path = "../../android/rest_alarm_plugin"', project)
@@ -508,8 +525,11 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("setBypassDnd(false)", receiver)
         self.assertIn("setOnlyAlertOnce(true)", receiver)
         self.assertIn("getBoolean(cycleId, false)", receiver)
-        self.assertIn('CHANNEL_ID = "rest_cycle_alerts_v2"', receiver)
-        self.assertIn('android.resource://${context.packageName}/raw/rest_coin', receiver)
+        self.assertIn('CHANNEL_ID = "rest_cycle_alerts_v3"', receiver)
+        self.assertIn("R.raw.rest_coin", receiver)
+        self.assertIn("NotificationManager.IMPORTANCE_HIGH", receiver)
+        self.assertIn("AudioAttributes.USAGE_ALARM", receiver)
+        self.assertIn('DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts_v3"', adapter)
         native_sound = root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
         foreground_sound = root / "assets/rest_coin.mp3"
         build_script = (root / "build_apk_update.ps1").read_text(encoding="utf-8-sig")
@@ -519,6 +539,7 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("verify-source", build_script)
         self.assertIn("verify-mirror", build_script)
         self.assertIn("verify-apk", build_script)
+        self.assertIn("apk_runtime_gate.py", build_script)
         self.assertEqual(len(native_sound.read_bytes()), 81546)
         self.assertEqual(
             hashlib.sha256(native_sound.read_bytes()).hexdigest().upper(),

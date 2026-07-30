@@ -16,6 +16,7 @@
 - 根资源与 `src/assets` 的路径、大小或 SHA-256 不一致；
 - APK 缺少 `assets/flutter_assets/app/app.zip`；
 - 内层 ZIP 的资源路径、大小、SHA-256 或 GIF 文件头与根资源不一致；
+- APK 缺少原生休息接收器、插件类、精确闹钟/通知权限、`raw/rest_coin`、v3 通知渠道或防 R8 裁剪可达性；
 - 构建、测试、语法检查或 `git diff --check` 失败。
 
 ## 固定构建流程
@@ -37,7 +38,8 @@ powershell -ExecutionPolicy Bypass -File .\build_apk_update.ps1
 4. `tools/asset_gate.py verify-mirror` 逐文件核对；
 5. Flet APK 构建；
 6. `tools/asset_gate.py verify-apk` 检查 APK 内层 `app.zip`；
-7. 只有以上全部通过后，才把 `pyproject.toml` 的 Build 号加一。
+7. `tools/apk_runtime_gate.py` 检查原生休息提醒接收器、权限、声音资源、渠道和防裁剪可达性；
+8. 只有以上全部通过后，才把 `pyproject.toml` 与 `src/app_version.py` 的 Build 号加一。
 
 长时间构建应使用隐藏后台进程和独立日志，每次轮询不超过 60 秒。工具等待超时
 不等于构建失败；必须继续检查实际进程、日志和 APK 更新时间。

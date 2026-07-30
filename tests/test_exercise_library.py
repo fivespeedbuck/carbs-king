@@ -8,11 +8,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
-from assemble_exercise_catalog import category_for, subgroup_for  # noqa: E402
+from assemble_exercise_catalog import category_for, normalize_equipment_display_name, subgroup_for  # noqa: E402
 from exercise_library import (  # noqa: E402
     EXERCISE_CATEGORIES, EXERCISE_LIBRARY, delete_custom_exercise,
     exercise_catalog, get_exercise, load_custom_exercises, save_custom_exercise,
-    search_exercises,
+    search_exercises, search_exercises_with_fallback,
 )
 from storage_service import load_json, save_json  # noqa: E402
 
@@ -29,6 +29,13 @@ class ExerciseLibraryTests(unittest.TestCase):
         )
         self.assertFalse([item["name"] for item in EXERCISE_LIBRARY if re.search(r"\s", item["name"])])
         self.assertFalse([item["name"] for item in EXERCISE_LIBRARY if re.search(r"\b(?:bosu|up|to)\b", item["name"], re.I)])
+        self.assertFalse(
+            [item["name"] for item in EXERCISE_LIBRARY if any(term in item["name"] for term in ("杠杆式", "雪橇", "侧to侧", "仰卧仰卧", "小腿小腿"))]
+        )
+        self.assertFalse(
+            [alias for item in EXERCISE_LIBRARY for alias in item.get("aliases", []) if re.search(r"[A-Za-z]{3,}", alias)],
+            "搜索关联只保留中文常用叫法",
+        )
 
     def test_exercises_have_media_and_complete_core_fields(self):
         required = {"id", "name", "category", "subgroup", "equipment", "target_muscles", "cues", "mistakes", "image", "gif", "default_sets", "recording_mode"}
@@ -78,6 +85,65 @@ class ExerciseLibraryTests(unittest.TestCase):
         self.assertEqual(category_for(leg_press), "腿")
         self.assertEqual(subgroup_for(leg_press, "腿"), "股四头肌")
         self.assertEqual(category_for(glute_bridge), "臀部")
+
+    def test_generated_catalog_uses_familiar_machine_names(self):
+        self.assertEqual(normalize_equipment_display_name("杠杆式胸推", "悍马机"), "悍马机胸推")
+        self.assertEqual(normalize_equipment_display_name("雪橇45度腿举", "倒蹬机"), "倒蹬机45度腿举")
+
+    def test_common_gym_terms_find_reviewed_actions(self):
+        expected = {
+            "倒蹬": "dataset:0739",
+            "腿推": "dataset:0739",
+            "坐姿腿屈伸": "dataset:0585",
+            "哑铃推肩": "dataset:0405",
+            "杠铃实力推": "dataset:1456",
+            "哑铃上斜推胸": "dataset:0314",
+            "站姿下夹": "dataset:0155",
+            "蝴蝶机夹胸": "dataset:0596",
+            "反向蝴蝶机飞鸟": "dataset:0602",
+            "大剪刀": "dataset:0579",
+            "鹦鹉螺": "dataset:2285",
+        }
+        for query, expected_id in expected.items():
+            with self.subTest(query=query):
+                self.assertIn(expected_id, {item["id"] for item in search_exercises(query)})
+        self.assertIn("dataset:0251", {item["id"] for item in search_exercises("双杠臂屈伸", category="胸")})
+
+        first_results = {
+            "倒蹬": "dataset:0739",
+            "腿推": "dataset:0739",
+            "哑铃推肩": "dataset:0405",
+            "双杠臂屈伸": "dataset:0251",
+            "大剪刀": "dataset:0579",
+        }
+        for query, expected_id in first_results.items():
+            with self.subTest(first_result=query):
+                self.assertEqual(search_exercises(query)[0]["id"], expected_id)
+
+    def test_common_machine_titles_and_filters_are_user_facing(self):
+        by_id = {item["id"]: item for item in EXERCISE_LIBRARY}
+        self.assertEqual(by_id["dataset:0739"]["name"], "45度倒蹬")
+        self.assertEqual(by_id["dataset:0739"]["equipment"], "倒蹬机")
+        self.assertEqual(by_id["dataset:0585"]["name"], "坐姿腿屈伸")
+        self.assertEqual(by_id["dataset:0596"]["equipment"], "蝴蝶机")
+        self.assertEqual(by_id["dataset:0602"]["name"], "反向蝴蝶机飞鸟")
+        self.assertEqual(by_id["dataset:0579"]["equipment"], "大剪刀")
+        self.assertEqual(by_id["dataset:2285"]["equipment"], "鹦鹉螺机")
+        self.assertEqual(by_id["dataset:0251"]["subgroup"], "下胸")
+
+    def test_search_relaxes_over_specific_filters_instead_of_showing_blank(self):
+        matches, scope = search_exercises_with_fallback("双杠臂屈伸", "胸", "中胸", "杠铃")
+        self.assertEqual(scope, "filters")
+        self.assertIn("dataset:0251", {item["id"] for item in matches})
+
+        matches, scope = search_exercises_with_fallback("哑铃推肩", "背")
+        self.assertEqual(scope, "category")
+        self.assertIn("dataset:0405", {item["id"] for item in matches})
+
+        matches, scope = search_exercises_with_fallback("", "腿", "股四头肌", "杠铃")
+        self.assertEqual(scope, "")
+        self.assertTrue(matches)
+        self.assertTrue(all(item["category"] == "腿" and item["subgroup"] == "股四头肌" and item["equipment"] == "杠铃" for item in matches))
 
     def test_custom_exercise_keeps_selected_category_equipment_and_priority(self):
         with tempfile.TemporaryDirectory() as temp:

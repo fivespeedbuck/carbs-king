@@ -2,11 +2,11 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 77**
+- 当前版本：**1.2.3 / Build 78**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-[![下载 Build 77 APK](https://img.shields.io/badge/下载-Build_77_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+[![下载 Build 78 APK](https://img.shields.io/badge/下载-Build_78_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -54,9 +54,9 @@
 
 ### 训练
 
-- 内置 1324 个离线中文训练动作，覆盖胸、背、腿、肩、二头、三头、核心、腹部、拉伸和有氧等部位；支持按部位、细分肌群、器械和关键词筛选。
+- 内置 1324 个离线中文训练动作，覆盖胸、背、腿、肩、二头、三头、核心、腹部、拉伸和有氧等部位；常用动作采用健身房习惯名称，并关联倒蹬/腿推、大剪刀、鹦鹉螺、双杠臂屈伸、站姿下夹等中文搜索词。
 - 动作详情包含离线图片/GIF、目标肌群、动作要点和常见错误；选入训练后可在参数编辑页直接查看。
-- 动作库将常练和热门动作优先展示，冷门变式按每页 24 条加载；器械筛选会随当前部位自动隐藏无结果项，并支持展开全部器械。
+- 动作库将精确名称和常用别名优先展示，基础动作排在辅助、单侧和冷门变式之前；搜索被错误部位、肌群或器械筛选挡住时会自动放宽并提示，浏览模式仍按常练和热门排序。
 - 支持逐组重量、次数、完成状态、RIR/RPE、防误触完成确认、撤销完成和训练总结。
 - 支持同一天保存多场训练，以及复用历史复合训练组合。
 - 支持超级组和复合组，安排页按整组拖动，训练中显示组内进度和下一个动作。
@@ -103,16 +103,17 @@
 
 覆盖更新需要同时满足：包名相同、签名证书相同、Build 不低于已安装版本。官方 v62 使用固定备份密钥签名，包名保持为 `com.chenyang.carbs_king`。
 
-> v51 已完成自动化测试、APK 签名与结构检查，但尚未声明完成 iQOO 11S 真机最终验收。OriginOS 的后台限制、覆盖安装后的数据保留和锁屏提醒仍应以实际手机测试结果为准。
+> Build 78 已完成自动化测试、APK 签名、资源与原生提醒结构检查，但 OriginOS 的后台限制、全新安装后的备份恢复和锁屏提醒仍应以 iQOO 11S 真机结果为准。
 
 ## 休息提醒与系统边界
 
-v51 使用 Android 原生 `BroadcastReceiver + AlarmManager` 调度组间休息提醒：
+Build 78 使用 Android 原生 `BroadcastReceiver + AlarmManager` 调度组间休息提醒：
 
-- 正常情况下可在锁屏、应用退到后台或应用进程被系统回收后发送通知。
+- 正常情况下可在锁屏、应用退到后台或应用进程被系统回收后发送通知；已成功安排的原生闹钟是唯一到点交付者，前台刷新不会再抢先播放或取消它。
+- 提醒使用内置 `rest_coin` 声音和高优先级中文通知渠道；首次训练休息前会检查通知和精确闹钟权限。
 - 通知声音和振动遵守 Android 的静音、勿扰模式及通知渠道设置。
 - 如果用户主动“强行停止”应用，Android 会禁止该应用已安排的闹钟；重新打开应用后才能恢复后续调度。
-- v51 不包含手机重启后的未完成提醒恢复机制。
+- Build 78 不包含手机重启后的未完成提醒恢复机制。
 - OriginOS 等系统的电池优化策略可能影响实际准时性，建议允许通知、精确闹钟，并根据真机情况调整后台电量管理。
 
 ## 数据持久化与备份
@@ -151,14 +152,14 @@ flet run
 
 ## 测试与质量
 
-v51 发布候选的最终检查结果：
+Build 78 的最终自动检查结果：
 
-- `263 passed`
-- `408 subtests passed`
+- `440 passed`
+- `441 subtests passed`
 - Python 语法编译检查通过
 - Git 差异格式检查通过
-- `430 × 860` 五个主页面和关键弹窗截图验收通过
-- APK 包名、`arm64-v8a` 架构、v2 签名和 ZIP 对齐检查通过
+- `430 × 900` 动作库常用词真实交互验收通过
+- APK 包名、versionCode 78、v2 签名、内层资源和原生提醒运行时门禁通过
 
 运行完整测试：
 
@@ -182,16 +183,16 @@ Windows 下可以运行：
 - 使用 `pyproject.toml` 中的版本号和 Build。
 - 固定包名为 `com.chenyang.carbs_king`。
 - 优先使用项目专属的备份签名密钥。
-- 构建成功后把 `pyproject.toml` 中的 Build 自动加一，为下次更新做准备。
+- 资源与原生提醒门禁通过后，才把 `pyproject.toml` 和 `src/app_version.py` 中的 Build 自动加一，为下次更新做准备。
 
-当前发布包为 `1.2.3 / Build 77`，构建脚本已把下一次 Build 预备为 `78`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
+当前发布包为 `1.2.3 / Build 78`，构建脚本已把下一次 Build 预备为 `79`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
 
 ## 目录结构
 
 ```text
 carbs-king/
 ├─ src/                         Flet 应用、训练/分析/成就等业务模块
-│  └─ assets/rest_coin.mp3      离线休息提示音
+│  └─ assets/                   构建前由根资源生成的镜像（不提交）
 ├─ android/rest_alarm_plugin/   Android 原生休息闹钟插件
 ├─ tests/                       单元、集成、存储隔离与 UI 契约测试
 ├─ docs/screenshots/            README 使用的真实运行截图
@@ -205,7 +206,7 @@ carbs-king/
 ## 版本与 Release
 
 - [v1.2.3 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
-- [Build 77 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+- [Build 78 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 

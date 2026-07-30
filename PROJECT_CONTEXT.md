@@ -13,9 +13,9 @@
 
 ## 当前版本与发布
 
-- 当前发布线：`1.2.3 / Build 77`；完整阶段结果见 `CURRENT_HANDOFF.md` 和 `CHANGELOG.md`。
-- `pyproject.toml` 与 `src/app_version.py` 当前准备下一次 Build 78；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
-- GitHub Release `v1.2.3` 使用 Build 77 APK；本地发布基线 SHA-256 为 `9AE333EA927A5D3B3BBF771152CDD50CB322DBA81F01A68F71753E4E0EBA2B7C`。
+- 当前发布线：`1.2.3 / Build 78`；完整阶段结果见 `CURRENT_HANDOFF.md` 和 `CHANGELOG.md`。
+- `pyproject.toml` 与 `src/app_version.py` 当前准备下一次 Build 79；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
+- GitHub Release `v1.2.3` 使用 Build 78 APK；本地发布基线 SHA-256 为 `BBD04D9961478E67917C7691AD9390A215EED31C8981D14A1CC75DBA3206E9E1`。
 - 应用内更新首选 GitHub Releases API，遇到 403、网络错误、超时或无效 JSON 时自动读取根目录 `update_manifest.json`；发布 APK 时必须同步更新该清单。
 - Android 更新必须沿用既有签名；先核验包名、版本、签名、ZIP 对齐、媒体资源数量，再交付。
 - APK 不提交 Git；通过 GitHub Release 上传。动作媒体已使用 Git LFS，普通 Git 推送大媒体容易因代理出现 HTTP 408。
@@ -45,6 +45,8 @@
 - 训练卡操作区不能压缩动作内容。训练中的“当前动作”要比重量/次数更醒目。
 - 组间休息：休息卡必须与训练卡匹配高度；标题和倒计时在顶部至按钮区域之间居中，控制按钮与下一训练项目顺序由当前界面规格决定，修改前先看现有代码/截图。
 - 动作库、食物库的筛选控件不可越界；切换筛选不得把横向滚动视口强制跳回开头。
+- 动作库用户可见名称使用中文健身房常用叫法，不展示英文动作名；精确主名和常用别名优先，冷门变式至少关联基础动作搜索词。文本搜索无严格筛选结果时可逐级放宽肌群、器械和部位，但必须显示放宽提示。
+- 已成功安排的休息 `AlarmManager`/进程内定时器是唯一到点声音交付者；前台 tick 只持久化完成状态。暂停、调整、跳过仍必须取消或重排原生提醒。
 
 ## 协作与验证规则
 

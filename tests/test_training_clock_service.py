@@ -46,12 +46,6 @@ class NutritionStub:
 
 
 class RestNotifierStub:
-    def __init__(self):
-        self.foreground = []
-
-    def trigger_foreground(self, cycle_id):
-        self.foreground.append(cycle_id)
-
     def trigger_after(self, *args, **kwargs):
         return None
 
@@ -194,7 +188,6 @@ class TrainingClockServiceTests(unittest.TestCase):
         self.assertEqual(records[active_date]["training"]["session"]["rest_cycle"]["status"], "finished")
         self.assertEqual(records[current_date], current_record_before)
         self.assertEqual(state["training"], current_state_before)
-        self.assertEqual(len(notifier.foreground), 1)
         main_source = (ROOT / "src" / "main.py").read_text(encoding="utf-8-sig")
         self.assertIn("complete_rest_if_elapsed(session, record_date=active_date)", main_source)
 

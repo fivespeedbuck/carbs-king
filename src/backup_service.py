@@ -199,6 +199,14 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         state["bodyfat"] = str(profile.get("bodyfat", state.get("bodyfat", "")))
         state["height"] = str(profile.get("height", state.get("height", "")))
         state["age"] = str(profile.get("age", state.get("age", "")))
+        try:
+            state["age_reference_year"] = int(
+                profile.get("age_reference_year", state.get("age_reference_year", date.today().year))
+                or date.today().year
+            )
+        except (TypeError, ValueError):
+            state["age_reference_year"] = date.today().year
+        state["theme_color"] = str(profile.get("theme_color", state.get("theme_color", "green")))
         state["sex"] = str(profile.get("sex", state.get("sex", "")))
         state["activity_habit"] = str(profile.get("activity_habit", state.get("activity_habit", "")))
         state["waist_cm"] = str(profile.get("waist_cm", state.get("waist_cm", "")))

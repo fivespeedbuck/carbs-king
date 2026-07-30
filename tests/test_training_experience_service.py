@@ -361,6 +361,20 @@ class RestCycleTests(unittest.TestCase):
         self.assertEqual(still_paused["status"], "paused")
         self.assertEqual(rest_remaining_seconds(still_paused, self.now + dt.timedelta(minutes=30)), 80)
 
+    def test_subsecond_deadline_does_not_finish_or_display_zero_early(self):
+        started = self.now.replace(microsecond=800_000)
+        cycle = start_rest_cycle(90, started, id_factory=lambda prefix: "rest-precise")
+        just_before = started + dt.timedelta(seconds=89, milliseconds=900)
+
+        self.assertEqual(rest_remaining_seconds(cycle, just_before), 1)
+        still_running, notify = finish_rest_cycle(cycle, just_before)
+        self.assertEqual(still_running["status"], "running")
+        self.assertFalse(notify)
+
+        ended, notify = finish_rest_cycle(cycle, started + dt.timedelta(seconds=90))
+        self.assertEqual(ended["status"], "finished")
+        self.assertTrue(notify)
+
 
 class UndoSetTests(unittest.TestCase):
     def test_undo_is_pure_and_preserves_values(self):

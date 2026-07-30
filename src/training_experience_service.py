@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import math
 from decimal import Decimal, InvalidOperation
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -66,6 +67,10 @@ def format_weight_kg(value: Any) -> str:
 
 def _iso_text(value: dt.datetime) -> str:
     return value.isoformat(timespec="seconds")
+
+
+def _deadline_iso_text(value: dt.datetime) -> str:
+    return value.isoformat(timespec="milliseconds")
 
 
 def _session_sort_key(session: Mapping[str, Any], record_date: str) -> tuple[str, str, str]:
@@ -316,12 +321,14 @@ def sort_exercises(exercises: Sequence[Mapping[str, Any]], stats: Mapping[str, M
     # before they have personal history. Personal frequency and recency still
     # take precedence below once records exist.
     popular_terms = (
-        "卧推", "深蹲", "硬拉", "引体向上", "高位下拉", "划船", "腿举",
-        "肩推", "推举", "俯卧撑", "箭步蹲", "侧平举", "二头肌弯举", "三头肌下压", "卷腹", "平板支撑",
+        "卧推", "推胸", "深蹲", "硬拉", "引体向上", "高位下拉", "划船",
+        "倒蹬", "腿举", "腿屈伸", "腿弯举", "推肩", "肩推", "蝴蝶机夹胸",
+        "反向蝴蝶机", "俯卧撑", "双杠臂屈伸", "箭步蹲", "侧平举",
+        "弯举", "三头肌下压", "卷腹", "平板支撑",
     )
     variant_terms = (
         "宽握", "宽距", "窄握", "窄距", "反握", "上斜", "下斜", "暂停", "断头台", "健身球", "弹力带", "跪姿",
-        "单臂", "单腿", "辅助", "地面", "颈后", "后视", "侧视", "第二式", "第三式",
+        "单臂", "单腿", "辅助", "地面", "颈后", "后视", "侧视", "第二式", "第三式", "变式二", "变式三",
     )
 
     def popularity(item: Mapping[str, Any]) -> int:
@@ -623,7 +630,7 @@ def start_rest_cycle(duration_seconds: int, now: dt.datetime, *, id_factory: Cal
     seconds = max(0, int(duration_seconds))
     return {
         "id": id_factory("rest"), "status": "running", "started_at": _iso_text(now),
-        "ends_at": _iso_text(now + dt.timedelta(seconds=seconds)),
+        "ends_at": _deadline_iso_text(now + dt.timedelta(seconds=seconds)),
         "paused_remaining_seconds": None, "skipped": False, "notified": False,
         "notified_at": "", "ended_at": "",
     }
@@ -642,7 +649,7 @@ def rest_remaining_seconds(cycle: Mapping[str, Any], now: dt.datetime) -> int:
         current = current.replace(tzinfo=ends_at.tzinfo)
     elif ends_at.tzinfo is None and current.tzinfo is not None:
         current = current.replace(tzinfo=None)
-    return max(0, int((ends_at - current).total_seconds()))
+    return max(0, math.ceil((ends_at - current).total_seconds()))
 
 
 def adjust_rest_cycle(cycle: Mapping[str, Any], delta_seconds: int, now: dt.datetime) -> dict[str, Any]:
@@ -657,7 +664,7 @@ def adjust_rest_cycle(cycle: Mapping[str, Any], delta_seconds: int, now: dt.date
     elif result.get("status") == "paused":
         result["paused_remaining_seconds"] = remaining
     else:
-        result["ends_at"] = _iso_text(now + dt.timedelta(seconds=remaining))
+        result["ends_at"] = _deadline_iso_text(now + dt.timedelta(seconds=remaining))
     return result
 
 
@@ -673,7 +680,7 @@ def resume_rest_cycle(cycle: Mapping[str, Any], now: dt.datetime) -> dict[str, A
     result = copy.deepcopy(dict(cycle))
     if result.get("status") == "paused":
         remaining = max(0, int(result.get("paused_remaining_seconds") or 0))
-        result["ends_at"] = _iso_text(now + dt.timedelta(seconds=remaining))
+        result["ends_at"] = _deadline_iso_text(now + dt.timedelta(seconds=remaining))
         result["paused_remaining_seconds"] = None
         result["status"] = "running"
     return result

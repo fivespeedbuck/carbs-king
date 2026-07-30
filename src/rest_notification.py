@@ -28,8 +28,8 @@ import flet_audio as fta
 
 
 DEFAULT_BELL_ASSET = "assets/rest_coin.mp3"
-DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts_v2"
-DEFAULT_NOTIFICATION_CHANNEL_NAME = "Rest cycle alerts"
+DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts_v3"
+DEFAULT_NOTIFICATION_CHANNEL_NAME = "组间休息提醒（高优先级）"
 REST_ALARM_ACTION = "com.chenyang.carbs_king.REST_ALARM"
 REST_ALARM_RECEIVER_CLASS = "com.chenyang.carbs_king.restalarm.RestAlarmReceiver"
 REST_NOTIFICATION_CAPABILITY = (
@@ -143,33 +143,54 @@ class AndroidSystemNotifier:
         NotificationChannel = __import__("jnius").autoclass(
             "android.app.NotificationChannel"
         )
+        manager = self._notification_service()
         channel = NotificationChannel(
             self.channel_id,
             self.channel_name,
-            self.NotificationManager.IMPORTANCE_DEFAULT,
+            self.NotificationManager.IMPORTANCE_HIGH,
         )
+        resource_id = int(
+            self.activity.getResources().getIdentifier(
+                "rest_coin", "raw", self.activity.getPackageName()
+            )
+        )
+        if resource_id <= 0:
+            raise RuntimeError("native rest_coin sound resource is unavailable")
         sound_uri = self.Uri.parse(
-            f"android.resource://{self.activity.getPackageName()}/raw/rest_coin"
+            f"android.resource://{self.activity.getPackageName()}/{resource_id}"
         )
         audio_attributes = (
             self.AudioAttributes()
-            .setUsage(5)  # AudioAttributes.USAGE_NOTIFICATION
+            .setUsage(4)  # AudioAttributes.USAGE_ALARM
             .setContentType(4)  # AudioAttributes.CONTENT_TYPE_SONIFICATION
             .build()
         )
         channel.enableVibration(True)
         channel.setSound(sound_uri, audio_attributes)
         channel.setBypassDnd(False)
-        self._notification_service().createNotificationChannel(channel)
+        manager.createNotificationChannel(channel)
 
     def _has_post_permission(self) -> bool:
-        if int(self.BuildVersion.SDK_INT) < 33:
-            return True
-        permission = "android.permission.POST_NOTIFICATIONS"
-        return (
-            self.activity.checkSelfPermission(permission)
-            == self.PackageManager.PERMISSION_GRANTED
-        )
+        sdk_int = int(self.BuildVersion.SDK_INT)
+        if sdk_int >= 33:
+            permission = "android.permission.POST_NOTIFICATIONS"
+            if (
+                self.activity.checkSelfPermission(permission)
+                != self.PackageManager.PERMISSION_GRANTED
+            ):
+                return False
+        manager = self._notification_service()
+        if sdk_int >= 24 and not bool(manager.areNotificationsEnabled()):
+            return False
+        if sdk_int >= 26:
+            channel = manager.getNotificationChannel(self.channel_id)
+            if channel is None:
+                return False
+            if int(channel.getImportance()) == int(self.NotificationManager.IMPORTANCE_NONE):
+                return False
+            if channel.getSound() is None:
+                return False
+        return True
 
     def has_post_permission(self) -> bool:
         return self._has_post_permission()
@@ -405,6 +426,7 @@ class RestNotifier:
         self._lock = threading.Lock()
         self._timers: dict[str, threading.Timer] = {}
         self._schedule_tokens: dict[str, object] = {}
+        self._native_owned_cycle_ids: set[str] = set()
         self._foreground_delivered_ids: set[str] = set()
         self._notified_cycle_ids = {
             str(cycle_id).strip() for cycle_id in notified_cycle_ids if str(cycle_id).strip()
@@ -414,6 +436,7 @@ class RestNotifier:
         self.notification_body = notification_body
         self.system_notifier = self._create_system_notifier(system_factory)
         self.alarm_scheduler = self._create_alarm_scheduler(alarm_scheduler_factory)
+        self._request_notification_permission_early()
         self.audio = self._create_service(
             "audio", audio_factory, src=bell_asset, volume=1.0
         )
@@ -438,6 +461,17 @@ class RestNotifier:
         except Exception as exc:
             self._setup_errors.append(f"system alarm setup: {exc}")
             return None
+
+    def _request_notification_permission_early(self) -> None:
+        request_permission = getattr(
+            self.system_notifier, "request_post_permission", None
+        )
+        if not callable(request_permission):
+            return
+        try:
+            request_permission()
+        except Exception as exc:
+            self._setup_errors.append(f"notification permission request: {exc}")
 
     def _create_service(
         self, name: str, factory: Callable[..., Any] | None, **kwargs: Any
@@ -513,17 +547,34 @@ class RestNotifier:
         )
 
     async def _deliver_foreground(self, cycle_id: str) -> RestNotificationResult:
-        """Play the bundled cue in the foreground without posting a notification."""
+        """Play the foreground cue, falling back to a system notification."""
         errors = list(self._setup_errors)
         sound_played = False
+        system_notification_attempted = False
+        system_notification_succeeded = False
         vibration_attempted = self.haptic is not None
         vibration_succeeded = False
         if self.audio is not None:
             try:
-                await _await_if_needed(self.audio.play())
+                try:
+                    await _await_if_needed(self.audio.play(0))
+                except TypeError:
+                    await _await_if_needed(self.audio.play())
                 sound_played = True
             except Exception as exc:
                 errors.append(f"audio play: {exc}")
+        if not sound_played and self.system_notifier is not None:
+            system_notification_attempted = True
+            try:
+                self.system_notifier.post(
+                    notification_id=_stable_notification_id(cycle_id),
+                    title=self.notification_title,
+                    body=self.notification_body,
+                )
+                system_notification_succeeded = True
+                sound_played = True
+            except Exception as exc:
+                errors.append(f"foreground system notification: {exc}")
         if self.haptic is not None:
             try:
                 await _await_if_needed(self.haptic.vibrate())
@@ -533,30 +584,40 @@ class RestNotifier:
         return RestNotificationResult(
             cycle_id=cycle_id,
             claimed=True,
+            system_notification_attempted=system_notification_attempted,
+            system_notification_succeeded=system_notification_succeeded,
             sound_played=sound_played,
             vibration_attempted=vibration_attempted,
             vibration_succeeded=vibration_succeeded,
             errors=tuple(errors),
         )
 
+    async def _deliver_foreground_and_finalize(self, cycle_id: str) -> RestNotificationResult:
+        """Deliver only the non-native foreground fallback once."""
+        result = await self._deliver_foreground(cycle_id)
+        if result.sound_played or result.system_notification_succeeded:
+            self.cancel(cycle_id, release_claim=False)
+        else:
+            with self._lock:
+                self._foreground_delivered_ids.discard(cycle_id)
+        return result
+
     def trigger_foreground(self, cycle_id: str) -> Any | None:
-        """Cancel the native alarm and play the local cue exactly once in-app."""
+        """Play a non-native fallback without taking ownership from AlarmManager."""
         normalized = str(cycle_id or "").strip()
         if not normalized:
             return None
         with self._lock:
+            # AlarmManager owns Android delivery once successfully scheduled.
+            # Flet's play() completion only confirms command dispatch, not that
+            # the user heard audio, so it must never cancel the native alarm.
+            if normalized in self._native_owned_cycle_ids:
+                return None
             if normalized in self._foreground_delivered_ids:
                 return None
             self._foreground_delivered_ids.add(normalized)
-        marker = getattr(self.alarm_scheduler, "mark_delivered", None)
-        if callable(marker):
-            try:
-                marker(cycle_id=normalized)
-            except Exception:
-                pass
-        self.cancel(normalized, release_claim=False)
         try:
-            return self.page.run_task(self._deliver_foreground, normalized)
+            return self.page.run_task(self._deliver_foreground_and_finalize, normalized)
         except Exception:
             with self._lock:
                 self._foreground_delivered_ids.discard(normalized)
@@ -601,15 +662,13 @@ class RestNotifier:
         errors: list[str] = []
         alarm_result: AndroidAlarmScheduleResult | None = None
         system_alarm_attempted = self.alarm_scheduler is not None
-        notification_permission_ready = True
-        request_permission = getattr(
-            self.system_notifier, "request_post_permission", None
+        notification_permission_ready = not (
+            _is_android_runtime() and self.system_notifier is None
         )
-        if callable(request_permission):
-            try:
-                request_permission()
-            except Exception as exc:
-                errors.append(f"notification permission request: {exc}")
+        if not notification_permission_ready:
+            errors.append(
+                "Android notification channel is unavailable; using in-process fallback"
+            )
         check_permission = getattr(self.system_notifier, "has_post_permission", None)
         if callable(check_permission):
             try:
@@ -638,6 +697,11 @@ class RestNotifier:
             and alarm_result.scheduled
             and alarm_result.process_death_notification_supported
         )
+        with self._lock:
+            if native_owns_delivery:
+                self._native_owned_cycle_ids.add(normalized)
+            else:
+                self._native_owned_cycle_ids.discard(normalized)
         timer_started = False
         if not native_owns_delivery:
             token = object()
@@ -690,6 +754,7 @@ class RestNotifier:
         with self._lock:
             timer = self._timers.pop(normalized, None)
             self._schedule_tokens.pop(normalized, None)
+            self._native_owned_cycle_ids.discard(normalized)
             had_claim = normalized in self._notified_cycle_ids
             if release_claim:
                 self._notified_cycle_ids.discard(normalized)

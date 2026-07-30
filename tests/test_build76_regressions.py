@@ -49,11 +49,14 @@ class Build76RegressionTests(unittest.TestCase):
         cls.plan = (SRC / "training_plan_views.py").read_text(encoding="utf-8-sig")
         cls.summary = (SRC / "training_summary_views.py").read_text(encoding="utf-8-sig")
 
-    def test_exercise_search_keeps_all_selected_filters_and_sort(self):
-        self.assertIn('search_exercises(query, selected["category"], catalog)', self.training)
-        self.assertIn('if selected["subgroup"] != "全部":', self.training)
-        self.assertIn('if selected["equipment"] != "全部":', self.training)
-        self.assertNotIn('None if query else selected["category"]', self.training)
+    def test_exercise_search_relaxes_only_after_strict_filters_and_keeps_relevance(self):
+        self.assertIn('GREEN, ORANGE, PRIMARY, PRIMARY_SOFT', self.training)
+        self.assertIn('results, fallback_scope = search_exercises_with_fallback(', self.training)
+        self.assertIn('selected["category"],', self.training)
+        self.assertIn('selected["subgroup"],', self.training)
+        self.assertIn('selected["equipment"],', self.training)
+        self.assertIn('search_notice.visible = bool(fallback_scope)', self.training)
+        self.assertIn('if not query:', self.training)
         self.assertIn('sort_exercises(results, usage_stats, selected["sort"])', self.training)
 
     def test_equipment_filters_pack_visible_rows_and_keep_more_reachable(self):

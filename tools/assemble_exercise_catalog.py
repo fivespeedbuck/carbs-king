@@ -13,9 +13,9 @@ from openpyxl import load_workbook
 EQUIPMENT = {
     "assisted": "辅助器械", "band": "弹力带", "barbell": "杠铃", "body weight": "自重",
     "bosu ball": "半圆平衡球", "cable": "绳索", "dumbbell": "哑铃", "elliptical machine": "椭圆机",
-    "ez barbell": "曲杆杠铃", "hammer": "锤式器械", "kettlebell": "壶铃", "leverage machine": "器械",
+    "ez barbell": "曲杆杠铃", "hammer": "大锤", "kettlebell": "壶铃", "leverage machine": "悍马机",
     "medicine ball": "药球", "olympic barbell": "奥杆", "resistance band": "弹力带", "roller": "泡沫轴",
-    "rope": "战绳", "skierg machine": "滑雪机", "sled machine": "雪橇机", "smith machine": "史密斯机",
+    "rope": "战绳", "skierg machine": "滑雪机", "sled machine": "倒蹬机", "smith machine": "史密斯机",
     "stability ball": "健身球", "stationary bike": "动感单车", "stepmill machine": "登阶机", "tire": "轮胎",
     "trap bar": "六角杠铃", "upper body ergometer": "上肢功率车", "weighted": "负重", "wheel roller": "健腹轮",
 }
@@ -67,6 +67,15 @@ def normalize_display_name(value: str) -> str:
     # Translation workbooks occasionally insert spaces inside Chinese words,
     # e.g. “史密斯 推举”. Exercise names use no word spaces in the UI.
     return re.sub(r"\s+", "", name)
+
+
+def normalize_equipment_display_name(name: str, equipment: str) -> str:
+    """Replace literal machine taxonomy with familiar Chinese gym wording."""
+    if equipment == "悍马机" and name.startswith("杠杆式"):
+        return f"悍马机{name.removeprefix('杠杆式')}"
+    if equipment == "倒蹬机" and name.startswith("雪橇"):
+        return name.replace("雪橇", "倒蹬机", 1)
+    return name
 
 
 def category_for(row: dict) -> str:
@@ -135,11 +144,13 @@ def main(workbook_path: Path, source_path: Path, output_path: Path, override_pat
         if not name:
             continue
         category = category_for(row)
+        equipment = EQUIPMENT.get(str(row["equipment"]), str(row["equipment"]))
+        name = normalize_equipment_display_name(name, equipment)
         targets = [MUSCLES.get(str(row["target"]), str(row["target"]))]
         targets.extend(MUSCLES.get(str(item), str(item)) for item in row.get("secondary_muscles", []))
         record = {
             "id": f"dataset:{source_id}", "name": name, "category": category,
-            "subgroup": subgroup_for(row, category), "equipment": EQUIPMENT.get(str(row["equipment"]), str(row["equipment"])),
+            "subgroup": subgroup_for(row, category), "equipment": equipment,
             "target_muscles": list(dict.fromkeys(targets)), "cues": list(row.get("instruction_steps", {}).get("zh", [])),
             # Flet resolves asset sources relative to the configured assets directory.
             "mistakes": [], "image": f"exercises/{row['image']}", "gif": f"exercises/gifs/{Path(row['gif_url']).name}",
