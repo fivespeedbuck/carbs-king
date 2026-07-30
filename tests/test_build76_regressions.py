@@ -2,6 +2,7 @@ import json
 import re
 import sys
 import unittest
+from urllib.error import HTTPError
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,8 @@ sys.path.insert(0, str(SRC))
 
 from app_version import BUILD_NUMBER, VERSION_NAME  # noqa: E402
 from update_service import (  # noqa: E402
+    LATEST_RELEASE_API,
+    RELEASE_MANIFEST_URL,
     fetch_latest_release,
     parse_build_number,
     parse_release,
@@ -204,6 +207,32 @@ class Build76RegressionTests(unittest.TestCase):
             opener=lambda request, timeout: _Response(payload),
         )
         self.assertEqual(loaded["apk_name"], "carbs_king.apk")
+
+    def test_release_api_403_falls_back_to_public_manifest(self):
+        manifest = {
+            "tag_name": "v1.2.3",
+            "name": "碳水大王 v1.2.3（Build 77）",
+            "html_url": "https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3",
+            "assets": [{
+                "name": "carbs_king.apk",
+                "browser_download_url": "https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk",
+                "size": 202000000,
+                "digest": "sha256:abc123",
+            }],
+        }
+        calls = []
+
+        def opener(request, timeout):
+            calls.append(request.full_url)
+            if request.full_url == LATEST_RELEASE_API:
+                raise HTTPError(request.full_url, 403, "rate limited", {}, None)
+            return _Response(manifest)
+
+        loaded = fetch_latest_release(use_cache=False, opener=opener)
+        self.assertEqual(loaded["build"], 77)
+        self.assertEqual(loaded["apk_url"], manifest["assets"][0]["browser_download_url"])
+        self.assertEqual(loaded["size"], 202000000)
+        self.assertEqual(calls, [LATEST_RELEASE_API, RELEASE_MANIFEST_URL])
 
 
 if __name__ == "__main__":
