@@ -46,3 +46,10 @@ Build 78 保留全部稳定动作 ID 和媒体映射，重做用户可见中文�
 ## 真机边界
 
 自动化和 APK 静态门禁能够证明原生接收器、权限、渠道和声音确实被打入安装包，但不能替代 OriginOS 真机的前台、后台和锁屏到点验证。用户计划先全量导出备份，再卸载旧版、全新安装 Build 78、导入备份并完成这三种状态的声音验收。
+
+## GitHub 发布结果
+
+- 源码 PR [#5](https://github.com/fivespeedbuck/carbs-king/pull/5) 已合并到 `main`。
+- `main/update_manifest.json` 已公开 Build 78 的大小和 SHA-256。
+- `v1.2.3` Release 已更新为 Build 78，远端只保留一个 `carbs_king.apk`。
+- 远端资产状态为 `uploaded`，大小 `201,654,203`，digest 为 `sha256:bbd04d9961478e67917c7691ad9390a215eed31c8981d14a1cc75dba3206e9e1`。

@@ -5,9 +5,9 @@
 ## 当前状态
 
 - 正式目录：`D:\carbs-king`
-- 发布分支：`codex/build78-exercise-search-sound`
+- 源码 PR：[#5](https://github.com/fivespeedbuck/carbs-king/pull/5) 已合并到 `main`（merge commit `d2f5d87`）。
 - Build 78 已完成全量测试、真实手机宽度页面验收、APK 资源门禁、原生提醒运行时门禁、包名、版本和签名校验。
-- GitHub 发布目标：合并到 `main` 后替换 `v1.2.3` Release 的单一 `carbs_king.apk`，并核对远端 size/digest。
+- GitHub `v1.2.3` Release 已替换为 Build 78，远端只保留单一 `carbs_king.apk`，size/digest 已核对一致。
 - 构建脚本已把 `pyproject.toml` 与 `src/app_version.py` 预备为下一次 Build 79。
 
 ## 最终 APK
@@ -46,9 +46,9 @@
 4. 首次休息提醒时允许通知与精确闹钟权限。
 5. 分别验证应用前台、切到后台、锁屏三种状态的自然到点声音；再验证暂停、加减时间和跳过不会误响。
 
-## 远端发布门禁
+## 远端发布结果
 
-- `main/update_manifest.json` 必须显示 Build 78、201,654,203 字节和上述 SHA-256。
-- `v1.2.3` Release 只保留一个 `carbs_king.apk`。
-- 上传后远端 `size` 必须为 201,654,203，`digest` 必须为 `sha256:bbd04d9961478e67917c7691ad9390a215eed31c8981d14a1cc75dba3206e9e1`。
+- `main/update_manifest.json` 已显示 Build 78、201,654,203 字节和上述 SHA-256。
+- `v1.2.3` Release 只保留一个 `carbs_king.apk`，状态为 `uploaded`。
+- 远端 `size` 为 201,654,203，`digest` 为 `sha256:bbd04d9961478e67917c7691ad9390a215eed31c8981d14a1cc75dba3206e9e1`。
 - Release URL：`https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3`
