@@ -1,4 +1,5 @@
 import copy
+import json
 import sys
 import tempfile
 import unittest
@@ -38,12 +39,17 @@ def build_service(root: Path):
     supplements = [{"name": "肌酸", "default_amount": 5}]
     profile_store = {"value": {"weight": "80", "profile_inited": True, "unknown": "keep"}}
     achievements = {"first_training": "2026-07-20T08:00:00"}
+    goal_challenges = {
+        "active": [{"id": "goal-1", "type": "training_sessions", "target": 12}],
+        "completed": [{"id": "goal-old", "completed_at": "2026-07-21T20:00:00"}],
+    }
     repositories = AppRepositories(
         MemoryRepository(records),
         MemoryRepository(foods),
         MemoryRepository(supplements),
         MemoryRepository(profile_store["value"]),
         MemoryRepository(achievements),
+        MemoryRepository(goal_challenges),
     )
     save_json(root / "training_data.json", {
         "custom_exercises": [{"name": "自定义动作"}],
@@ -86,6 +92,7 @@ class BackupServiceTests(unittest.TestCase):
             self.assertIn("supplement_library", payload)
             self.assertIn("user_profile", payload)
             self.assertIn("achievement_unlocks", payload)
+            self.assertIn("goal_challenges", payload)
             self.assertEqual(payload["training_data"]["custom_exercises"][0]["name"], "自定义动作")
 
     def test_legacy_full_backup_is_valid_but_partial_backup_is_not(self):
@@ -217,6 +224,68 @@ class BackupServiceTests(unittest.TestCase):
             self.assertEqual(foods, before["food_library"])
             self.assertEqual(supplements, before["supplement_library"])
             self.assertEqual(load_json(root / "training_data.json", {}), before["training_data"])
+
+    def test_current_schema_full_backup_survives_json_export_uninstall_and_restore(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            service, state, repositories, records, foods, supplements, profile_store, _ = build_service(root)
+            records["2026-07-22"] = {
+                "meals": {"练后": [{"food": "米饭", "qty": 200}]},
+                "water": {"total_ml": 2600},
+                "sleep": {"total_minutes": 455},
+                "measurement": {"weight": 79.2, "bodyfat": 16.8},
+                "circumference": {"waist_cm": 82.5},
+                "training": {
+                    "session": None,
+                    "sessions": [{
+                        "id": "session-1",
+                        "status": "completed",
+                        "exercise_groups": [{"id": "group-1", "group_type": "superset", "exercise_ids": ["a", "b"]}],
+                        "exercises": [{"id": "a", "sets": [{"id": "set-a", "completed": True}]}, {"id": "b", "sets": [{"id": "set-b", "completed": True}]}],
+                    }],
+                },
+            }
+            repositories.records.save(records)
+            profile_store["value"].update({
+                "age": "31",
+                "age_reference_year": 2026,
+                "theme_color": "purple",
+                "macro_mode": "auto",
+                "macro_goal": "增肌",
+            })
+            save_json(root / "training_data.json", {
+                "custom_exercises": [{"id": "custom-1", "name": "自定义雪橇推"}],
+                "schema_version": 3,
+            })
+            exported = service.build_payload()
+            external_file = root / "external-full-backup.json"
+            external_file.write_text(json.dumps(exported, ensure_ascii=False), encoding="utf-8-sig")
+
+            repositories.records.save({})
+            repositories.foods.save([])
+            repositories.supplements.save([])
+            repositories.profile.save({})
+            repositories.achievements.save({})
+            repositories.goal_challenges.save({})
+            profile_store["value"] = {}
+            save_json(root / "training_data.json", {})
+            records.clear()
+            foods.clear()
+            supplements.clear()
+
+            imported = service.normalize_payload(json.loads(external_file.read_text(encoding="utf-8-sig")))
+            service.validate_full(imported)
+            service.apply(imported, "replace")
+            restored = service.build_payload()
+
+            for key in (
+                "daily_records", "food_library", "supplement_library", "user_profile",
+                "achievement_unlocks", "goal_challenges", "training_data",
+            ):
+                self.assertEqual(restored[key], exported[key], key)
+            self.assertEqual(state["theme_color"], "purple")
+            self.assertEqual(state["age_reference_year"], 2026)
+            self.assertEqual(state["macro_goal"], "增肌")
 
 
 class BackupUiContractTests(unittest.TestCase):

@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -54,15 +55,15 @@ class RestAlarmReceiver : BroadcastReceiver() {
                 .setSmallIcon(context.applicationInfo.icon)
                 .setContentTitle(title)
                 .setContentText(body)
-                .setCategory(Notification.CATEGORY_REMINDER)
+                .setCategory(Notification.CATEGORY_ALARM)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
                 .setOnlyAlertOnce(true)
             contentIntent?.let(builder::setContentIntent)
 
-            // Commit before notify so redelivery of the same broadcast cannot ring twice.
-            if (!deliveries.edit().putBoolean(cycleId, true).commit()) return
             manager.notify(notificationId, builder.build())
+            // Only suppress redelivery after NotificationManager accepted the post.
+            deliveries.edit().putBoolean(cycleId, true).commit()
         }
     }
 
@@ -73,15 +74,19 @@ class RestAlarmReceiver : BroadcastReceiver() {
 
     private fun ensureChannel(context: Context, manager: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val sound = Uri.parse("android.resource://${context.packageName}/raw/rest_coin")
+        val sound = Uri.Builder()
+            .scheme(ContentResolver.SCHEME_ANDROID_RESOURCE)
+            .authority(context.packageName)
+            .appendPath(R.raw.rest_coin.toString())
+            .build()
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         val channel = NotificationChannel(
             CHANNEL_ID,
             CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_DEFAULT,
+            NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "组间休息结束提醒"
             enableVibration(true)
@@ -102,9 +107,9 @@ class RestAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_TITLE = "rest_notification_title"
         private const val EXTRA_BODY = "rest_notification_body"
         private const val PREFS_NAME = "carbs_king_rest_alarm_deliveries"
-        // Android 8+ channel sound is immutable after creation, so v50.1 uses a new ID.
-        private const val CHANNEL_ID = "rest_cycle_alerts_v2"
-        private const val CHANNEL_NAME = "Rest cycle alerts"
+        // Android 8+ channel sound is immutable after creation; Build 78 uses a new ID.
+        private const val CHANNEL_ID = "rest_cycle_alerts_v3"
+        private const val CHANNEL_NAME = "组间休息提醒（高优先级）"
         private const val DEFAULT_TITLE = "组间休息结束"
         private const val DEFAULT_BODY = "下一组可以开始了"
         private val deliveryLock = Any()

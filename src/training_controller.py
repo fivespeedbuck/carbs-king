@@ -20,7 +20,7 @@ from analytics_service import summarize_daily_training
 from controller_runtime import ControllerRuntime
 from exercise_library import (
     EXERCISE_CATEGORIES, delete_custom_exercise, exercise_catalog, load_custom_exercises,
-    save_custom_exercise, search_exercises,
+    save_custom_exercise, search_exercises_with_fallback,
 )
 from form_views import FormViewContext, build_dialog, build_full_form_sheet
 from repositories import AppRepositories
@@ -56,7 +56,7 @@ from training_service import (
 )
 from training_views import ActiveTrainingActions, ActiveTrainingModel, build_active_training
 from ui_components import (
-    GREEN, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, card, page_card,
+    GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, card, page_card,
     make_button, mobile_dropdown, mobile_text_field, responsive_field_grid,
     section_title, set_input_focused, small_text, thin_border, three_field_grid, two_field_grid,
 )
@@ -451,6 +451,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         dialog_width = responsive_width()
         page_size = 24
         selected = {"category": "胸", "subgroup": "全部", "equipment": "全部", "sort": "frequent", "limit": page_size, "show_more_equipment": False}
+        common_equipment_names = (
+            "杠铃", "哑铃", "绳索", "史密斯机", "悍马机", "倒蹬机",
+            "蝴蝶机", "器械", "自重",
+        )
         selected_names: list[str] = []
         custom_exercises = load_custom_exercises()
         catalog = exercise_catalog(custom_exercises)
@@ -477,6 +481,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         equipment_panel_width = max(226, dialog_width - 64)
         equipment_rows = ft.Column(spacing=6, width=equipment_panel_width)
         selection_status = ft.Text("已选择 0 个动作", size=13, color=SUB, weight="bold")
+        search_notice = ft.Text("", size=12, color=ORANGE, visible=False)
         search = mobile_text_field("搜索动作名称、器械或目标肌群", "", width=dialog_width)
         library_dlg = None
         pending_setup = {"dialog": None}
@@ -871,6 +876,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 lambda e, item=exercise: toggle_exercise(item),
                 selected=exercise_name in selected_names,
                 on_delete=None,
+                title_width=max(140, equipment_panel_width - 110),
             )
 
         def toggle_exercise(exercise):
@@ -963,7 +969,11 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             # Only show equipment that exists for the current body-part and
             # subgroup; e.g. abductor work does not advertise barbells.
             equipment = list(dict.fromkeys(str(item.get("equipment") or "其他") for item in filtered_visible))
-            equipment_priority = ("杠铃", "哑铃", "绳索", "史密斯机", "器械", "自重", "壶铃", "弹力带", "健身球", "TRX&弹力带", "其他")
+            equipment_priority = (
+                *common_equipment_names, "大剪刀", "鹦鹉螺机", "腿屈伸机",
+                "腿弯举机", "髋内收外展机", "壶铃", "弹力带", "健身球",
+                "TRX&弹力带", "其他",
+            )
             priority_index = {value: index for index, value in enumerate(equipment_priority)}
             equipment.sort(key=lambda value: (priority_index.get(value, len(priority_index)), value))
             # “全部”是虚拟选项，不属于动作库的器械值；展开冷门器械时
@@ -975,7 +985,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 make_button(label, on_click=lambda e, value=label: choose_subgroup(value), bgcolor=PRIMARY if selected["subgroup"] == label else PRIMARY_SOFT, color="#FFFFFF" if selected["subgroup"] == label else GREEN)
                 for label in ["全部", *subgroups]
             ]
-            common_equipment = [item for item in equipment if item in equipment_priority[:6]]
+            common_equipment = [item for item in equipment if item in common_equipment_names]
             other_equipment = [item for item in equipment if item not in common_equipment]
 
             def equipment_button(label):
@@ -1038,7 +1048,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             selected["equipment"] = equipment
             # Choosing a normal compact option returns the selector to compact
             # mode, which also releases a previously pinned uncommon option.
-            if equipment == "全部" or equipment in ("杠铃", "哑铃", "绳索", "史密斯机", "器械", "自重"):
+            if equipment == "全部" or equipment in common_equipment_names:
                 selected["show_more_equipment"] = False
             selected["limit"] = page_size
             rebuild_filters()
@@ -1061,14 +1071,29 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         def rebuild_list(e=None):
             query = (search.value or "").strip()
-            # Search stays inside the currently selected body part, subgroup,
-            # and equipment while retaining the active popular/recent sort.
-            results = search_exercises(query, selected["category"], catalog)
-            if selected["subgroup"] != "全部":
-                results = [item for item in results if str(item.get("subgroup") or "整体") == selected["subgroup"]]
-            if selected["equipment"] != "全部":
-                results = [item for item in results if str(item.get("equipment") or "其他") == selected["equipment"]]
-            results = sort_exercises(results, usage_stats, selected["sort"])
+            # Respect the current filters first.  A real search term may then
+            # relax over-specific filters so familiar names never lead to a
+            # blank page merely because the catalog classified the variant in
+            # another subgroup, tool, or body part.
+            results, fallback_scope = search_exercises_with_fallback(
+                query,
+                selected["category"],
+                selected["subgroup"],
+                selected["equipment"],
+                catalog,
+            )
+            search_notice.visible = bool(fallback_scope)
+            search_notice.value = (
+                "当前部位没有结果，已显示其他部位的同名动作"
+                if fallback_scope == "category"
+                else "当前细分肌群或器械没有结果，已为你放宽筛选"
+                if fallback_scope == "filters"
+                else ""
+            )
+            # Text search is ordered by exact/common-name relevance.  The
+            # popular/recent order remains the default only when browsing.
+            if not query:
+                results = sort_exercises(results, usage_stats, selected["sort"])
             total_results = len(results)
             rendered_results = results[:selected["limit"]]
             list_holder.controls.clear()
@@ -1095,7 +1120,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         browser_panel = ft.Row([
             ft.Container(content=category_rows, width=52, padding=ft.Padding(left=0, top=0, right=0, bottom=0)),
             ft.VerticalDivider(width=1, color="#D9E6E1"),
-            ft.Column([subgroup_rows, equipment_rows, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8),
+            ft.Column([subgroup_rows, equipment_rows, search_notice, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8),
         ], width=dialog_width, height=560, spacing=8)
         add_custom_action = ft.IconButton(
             icon=ft.Icons.ADD,
@@ -2391,14 +2416,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         cycle = session.get("rest_cycle") if isinstance(session, dict) else None
         if not isinstance(cycle, dict):
             return False
-        finished, should_notify = finish_rest_cycle(cycle, now or datetime.datetime.now())
+        finished, _should_notify = finish_rest_cycle(cycle, now or datetime.datetime.now())
         if finished == cycle:
             return False
         session["rest_cycle"] = finished
         session["rest_until"] = ""
         persist_session(session, record_date=record_date)
-        if should_notify:
-            rest_notifier.trigger_foreground(str(finished.get("id", "")))
         return True
 
     def adjust_rest(seconds):
@@ -2642,6 +2665,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     next_work_text=next_work_text,
                     confirm_complete=bool(current_key and completion_prompt.get("key") == current_key),
                     viewport_height=deps.viewport_height(),
+                    viewport_width=float(getattr(page, "width", 430) or 430),
                     current_work_index=current_work_index,
                     work_completed=training_completion_sequence(session, cursor_sequence),
                 ),

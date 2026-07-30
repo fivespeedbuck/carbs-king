@@ -9,7 +9,7 @@ from typing import Any
 import flet as ft
 
 from app_utils import to_float
-from ui_components import CARD, GREEN, ON_PRIMARY, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, page_card, make_button, section_title, small_text, thin_border
+from ui_components import CARD, GREEN, ON_PRIMARY, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, page_card, make_button, section_title, single_line_font_size, small_text, thin_border
 
 
 _METRIC_LABELS = {
@@ -157,15 +157,22 @@ def build_action_arrangement_card(
 ) -> ft.Container:
     """Build the one shared normal action card used before and during training."""
     exercise_id = str(exercise.get("id") or "")
+    exercise_name = str(exercise.get("name", ""))
     summary, prescription = _exercise_detail_lines(exercise)
     detail_controls: list[ft.Control] = [
         ft.Text(
-            str(exercise.get("name", "")),
-            size=16,
+            exercise_name,
+            size=single_line_font_size(
+                exercise_name,
+                190,
+                maximum=16,
+                minimum=10,
+            ),
             weight="bold",
             color=TEXT,
             max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS,
+            data="action-arrangement-title",
         ),
         ft.Text(summary, size=13, color=SUB, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
         ft.Text(prescription, size=13, color=SUB, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
@@ -333,8 +340,22 @@ def build_action_arrangement_list(
             member_rows = []
             for member_index, member_id in enumerate(member_ids, 1):
                 member = by_id[member_id]
+                member_name = str(member.get("name", ""))
                 member_details: list[ft.Control] = [
-                    ft.Text(str(member.get("name", "")), size=15, weight="bold", color=TEXT),
+                    ft.Text(
+                        member_name,
+                        size=single_line_font_size(
+                            member_name,
+                            155,
+                            maximum=15,
+                            minimum=9,
+                        ),
+                        weight="bold",
+                        color=TEXT,
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        data="action-group-member-title",
+                    ),
                     small_text(_exercise_detail(member)),
                 ]
                 if completed_counts is not None:

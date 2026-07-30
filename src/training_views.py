@@ -12,7 +12,7 @@ from typing import Any
 
 import flet as ft
 
-from ui_components import PRIMARY, make_button, small_text, thin_border
+from ui_components import PRIMARY, make_button, single_line_font_size, small_text, thin_border
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,7 @@ class ActiveTrainingModel:
     next_work_text: str = ""
     confirm_complete: bool = False
     viewport_height: float = 860.0
+    viewport_width: float = 430.0
     current_work_index: int = 0
     work_completed: Sequence[bool] = ()
 
@@ -305,15 +306,29 @@ def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingAct
             data="active-rest-card",
         )
 
+    title_available_width = (
+        float(model.viewport_width or 430)
+        - (surface_padding * 2)
+        - (card_padding * 2)
+        - 52  # help icon + action position column
+        - 10  # Row's default gap between title and action column
+    )
+    title_size = single_line_font_size(
+        model.exercise_name or "当前动作",
+        title_available_width,
+        maximum=32 if compact else 36,
+        minimum=20,
+    )
     normal_action_header = ft.Row([
         ft.Text(
             model.exercise_name or "当前动作",
-            size=32 if compact else 36,
+            size=title_size,
             weight="bold",
             color="#FFFFFF",
             expand=True,
-            max_lines=2,
+            max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS,
+            data="active-exercise-title",
         ),
         ft.Column([
             ft.IconButton(

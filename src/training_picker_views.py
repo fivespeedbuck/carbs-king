@@ -8,7 +8,7 @@ from typing import Any
 import flet as ft
 
 from app_utils import to_float
-from ui_components import GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, make_button, small_text, thin_border
+from ui_components import GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, make_button, single_line_font_size, small_text, thin_border
 
 
 CUSTOM_CARDIO_METRIC_FIELDS = (
@@ -139,6 +139,7 @@ def build_exercise_card(
     *,
     selected: bool = False,
     on_delete: Callable[[Any], None] | None = None,
+    title_width: float = 166.0,
 ) -> ft.Control:
     weight = exercise.get("default_weight_kg")
     reps = exercise.get("default_reps")
@@ -152,21 +153,40 @@ def build_exercise_card(
         default_text = "自重" if weight is None else f"{to_float(weight):g} kg"
         default_text += f" × {reps} 次 / {sets} 组"
     usage_text = f"练过 {usage['session_count']} 次" if usage.get("session_count") else ""
+    exercise_name = str(exercise.get("name") or "")
+    title_size = single_line_font_size(
+        exercise_name,
+        title_width,
+        maximum=14,
+        minimum=10,
+    )
     return ft.Container(
         content=ft.Row([
             ft.Column([
                 ft.Column([
                     # Every action name owns the same two-line slot, even when
-                    # the visible text only needs one line.
+                    # the visible text only needs one line. Long names shrink
+                    # instead of wrapping and moving the bottom detail zone.
                     ft.Container(
-                        content=ft.Text(exercise["name"], size=14, weight="bold", color=TEXT, max_lines=2, overflow="ellipsis"),
+                        content=ft.Text(
+                            exercise_name,
+                            size=title_size,
+                            weight="bold",
+                            color=TEXT,
+                            max_lines=1,
+                            overflow="ellipsis",
+                            data="exercise-card-title",
+                        ),
                         height=32,
                         alignment=ft.Alignment(-1, 0),
                     ),
                     ft.Container(
-                        content=ft.Text(usage_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
+                        # Preserve one history line even for never-trained
+                        # actions so bottom details match the in-session card.
+                        content=ft.Text(usage_text or " ", size=12, color=SUB, max_lines=1, overflow="ellipsis"),
                         height=18,
                         alignment=ft.Alignment(-1, 0),
+                        data="exercise-card-usage-placeholder",
                     ),
                 ], spacing=1),
                 # Keep equipment and prescription on the bottom baseline of

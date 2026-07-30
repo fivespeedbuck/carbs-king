@@ -16,6 +16,7 @@ from training_views import (  # noqa: E402
     ActiveTrainingModel,
     build_active_training,
 )
+from training_picker_views import build_exercise_card  # noqa: E402
 from ui_components import PRIMARY  # noqa: E402
 
 
@@ -191,6 +192,62 @@ class ActiveTrainingViewTests(unittest.TestCase):
         ]
         self.assertEqual(chip_colors[:2], [PRIMARY, "#C78B20"])
 
+    def test_long_active_action_name_shrinks_and_stays_on_one_line(self):
+        short_result = build_active_training(
+            _model(exercise_name="杠铃卧推", viewport_width=412),
+            _actions(),
+        )
+        long_result = build_active_training(
+            _model(exercise_name="雪橇45B°腿部宽推举", viewport_width=412),
+            _actions(),
+        )
+        short_title = next(
+            item for item in _walk(short_result.control)
+            if getattr(item, "data", None) == "active-exercise-title"
+        )
+        long_title = next(
+            item for item in _walk(long_result.control)
+            if getattr(item, "data", None) == "active-exercise-title"
+        )
+
+        self.assertEqual(short_title.size, 36)
+        self.assertLess(long_title.size, short_title.size)
+        self.assertGreaterEqual(long_title.size, 20)
+        self.assertEqual(long_title.max_lines, 1)
+        self.assertEqual(long_title.overflow, ft.TextOverflow.ELLIPSIS)
+
+    def test_picker_cards_all_shrink_long_names_and_reserve_empty_history_row(self):
+        exercise = {
+            "name": "杠铃臀桥双腿部凳上（男+）",
+            "equipment": "杠铃",
+            "recording_mode": "strength",
+            "default_weight_kg": None,
+            "default_reps": 10,
+            "default_sets": 4,
+        }
+        for selected in (False, True):
+            card = build_exercise_card(
+                exercise,
+                {},
+                _noop,
+                _noop,
+                selected=selected,
+                title_width=166,
+            )
+            title = next(
+                item for item in _walk(card)
+                if getattr(item, "data", None) == "exercise-card-title"
+            )
+            placeholder = next(
+                item for item in _walk(card)
+                if getattr(item, "data", None) == "exercise-card-usage-placeholder"
+            )
+
+            self.assertLess(title.size, 14)
+            self.assertEqual(title.max_lines, 1)
+            self.assertEqual(placeholder.height, 18)
+            self.assertEqual(placeholder.content.value, " ")
+
     def test_weight_and_reps_values_both_have_direct_edit_tap_targets(self):
         result = build_active_training(_model(), _actions())
         source = (SRC / "training_views.py").read_text(encoding="utf-8-sig")
@@ -229,7 +286,9 @@ class ActiveTrainingViewTests(unittest.TestCase):
     def test_active_screen_prioritizes_action_name_and_centers_timer_content(self):
         source = (SRC / "training_views.py").read_text(encoding="utf-8-sig")
 
-        self.assertIn('size=32 if compact else 36', source)
+        self.assertIn('maximum=32 if compact else 36', source)
+        self.assertIn('data="active-exercise-title"', source)
+        self.assertIn('max_lines=1', source)
         self.assertIn('size=28 if compact else 32', source)
         self.assertIn('horizontal_alignment=ft.CrossAxisAlignment.CENTER', source)
         self.assertIn('alignment=ft.MainAxisAlignment.CENTER', source)

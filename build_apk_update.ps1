@@ -162,6 +162,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Packaged APK asset verification failed. Build number was not advanced."
 }
 
+& $python "$PSScriptRoot\tools\apk_runtime_gate.py" $apkPath
+if ($LASTEXITCODE -ne 0) {
+    throw "Android runtime notification verification failed. Build number was not advanced."
+}
+
 # On a first-ever Android build Gradle may create the debug key during the build.
 # Capture it afterwards; all later builds use this fixed private copy.
 if (Test-Path $debugKey) {

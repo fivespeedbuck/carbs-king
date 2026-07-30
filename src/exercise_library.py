@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -276,6 +277,193 @@ _LEGACY_EXERCISE_LIBRARY: list[dict[str, Any]] = [
 ]
 
 
+# The upstream workbook is intentionally precise, but literal translations
+# such as “杠杆式”“雪橇机”“托臂弯举” are not how people search in a Chinese
+# gym.  Keep these rules beside the loader so every catalog rebuild receives
+# the same user-facing terminology without changing stable source/media IDs.
+_COMMON_NAME_REPLACEMENTS = (
+    ("侧to侧", "左右"),
+    ("仰卧仰卧", "仰卧"),
+    ("小腿小腿", "小腿"),
+    ("托臂弯举", "牧师凳弯举"),
+    ("二头肌弯举", "弯举"),
+    ("后三角肌", "后束"),
+    ("三头肌伸展", "三头伸展"),
+    ("小腿推举", "提踵"),
+    ("腿部提踵", "提踵"),
+    ("侧向下拉", "高位下拉"),
+    ("向前举起", "前平举"),
+    ("前肩部举起", "前平举"),
+    ("后侧平举", "后束飞鸟"),
+    ("杠铃高深蹲", "杠铃高杠深蹲"),
+    ("杠铃低深蹲", "杠铃低杠深蹲"),
+    ("史密斯低深蹲", "史密斯低杠深蹲"),
+)
+
+_SLED_DISPLAY_NAMES = {
+    "雪橇45度单腿推举": "45度单腿倒蹬",
+    "雪橇45度小腿推举": "45度倒蹬机提踵",
+    "雪橇45度腿举": "45度倒蹬",
+    "雪橇45度宽距腿举": "45度宽距倒蹬",
+    "雪橇小腿推举腿举": "倒蹬机提踵",
+    "雪橇单腿小腿推举腿举": "倒蹬机单腿提踵",
+    "雪橇窄距哈克深蹲": "哈克机窄距深蹲",
+    "雪橇哈克深蹲": "哈克机深蹲",
+    "雪橇向前角度提踵": "哈克机站姿提踵",
+    "雪橇仰卧小腿推举": "仰卧倒蹬机提踵",
+    "雪橇仰卧深蹲": "仰卧倒蹬",
+}
+
+_COMMON_SEARCH_FAMILIES = (
+    (("胸", "三头"), ("卧推", "胸推", "凳推举"), ("卧推", "推胸")),
+    (("胸",), ("推举",), ("推胸", "卧推")),
+    (("胸",), ("飞鸟", "夹胸", "胸部挤压"), ("飞鸟", "夹胸")),
+    (("胸", "三头"), ("俯卧撑",), ("俯卧撑",)),
+    (("胸", "三头"), ("臂屈伸",), ("双杠臂屈伸", "双杠撑体")),
+    (("背",), ("高位下拉", "侧向下拉", "绳索下拉", "前下拉", "下拉"), ("高位下拉", "拉背")),
+    (("背", "二头"), ("引体向上", "引体"), ("引体向上",)),
+    (("背",), ("划船",), ("划船", "拉背")),
+    (("背",), ("直臂下压", "直臂下拉", "仰卧上拉", "鹦鹉螺"), ("直臂下压", "直臂下拉", "器械上拉")),
+    (("背",), ("耸肩",), ("耸肩",)),
+    (("背",), ("挺身", "后伸展"), ("山羊挺身", "背伸展")),
+    (("腿",), ("深蹲",), ("深蹲",)),
+    (("腿", "臀部"), ("硬拉",), ("硬拉",)),
+    (("腿",), ("箭步蹲", "分腿深蹲"), ("箭步蹲", "分腿蹲")),
+    (("腿",), ("倒蹬", "腿举", "腿推"), ("倒蹬", "腿举", "腿推")),
+    (("腿",), ("腿屈伸", "腿伸展"), ("坐姿腿屈伸", "腿屈伸")),
+    (("腿",), ("腿弯举", "腿屈曲"), ("腿弯举", "腿屈曲")),
+    (("腿",), ("提踵", "小腿推举"), ("提踵", "练小腿")),
+    (("腿",), ("髋外展",), ("髋外展", "大腿外展")),
+    (("腿",), ("髋内收",), ("髋内收", "大腿内收", "夹腿")),
+    (("腿",), ("踏台上步", "踏步"), ("登台阶", "踏台上步")),
+    (("臀部",), ("臀桥", "髋部举起"), ("臀桥", "臀推")),
+    (("臀部",), ("髋部伸展", "拉穿"), ("髋伸展", "绳索拉穿")),
+    (("肩",), ("肩推", "过头推举", "军式推举", "推举"), ("推肩", "肩推", "肩上推举")),
+    (("肩",), ("侧平举",), ("侧平举",)),
+    (("肩",), ("前平举", "向前举起"), ("前平举",)),
+    (("肩",), ("反向飞鸟", "后束飞鸟", "后侧平举"), ("反向飞鸟", "后束飞鸟")),
+    (("肩",), ("直立划船",), ("直立划船", "提拉")),
+    (("二头",), ("弯举",), ("弯举", "练二头")),
+    (("二头",), ("牧师凳",), ("牧师凳弯举", "斜板弯举")),
+    (("二头",), ("锤式弯举",), ("锤式弯举", "锤弯举")),
+    (("三头",), ("下压",), ("三头下压", "绳索下压")),
+    (("三头",), ("三头伸展", "伸展"), ("三头伸展", "臂屈伸")),
+    (("三头",), ("过头三头伸展", "过头臂屈伸"), ("过顶臂屈伸", "过头臂屈伸")),
+    (("三头",), ("仰卧三头伸展", "碎颅"), ("仰卧臂屈伸", "碎颅式")),
+    (("三头",), ("后踢",), ("三头后踢", "哑铃臂屈伸")),
+    (("小臂",), ("腕弯举",), ("腕弯举", "练小臂")),
+    (("腹部",), ("卷腹",), ("卷腹", "练腹")),
+    (("腹部",), ("仰卧起坐",), ("仰卧起坐", "练腹")),
+    (("腹部",), ("举腿", "腿部髋部举起", "腿举起", "提膝", "髋部举起"), ("举腿", "下腹训练")),
+    (("腹部",), ("俄罗斯转体", "转体"), ("俄罗斯转体", "腹部转体")),
+    (("腹部",), ("健腹轮", "前滚"), ("健腹轮", "健腹轮前推")),
+    (("腹部", "核心稳定"), ("平板支撑", "平板"), ("平板支撑", "核心训练")),
+    (("腹部", "核心稳定"), ("侧臀桥", "侧平板"), ("侧平板支撑", "侧桥")),
+    (("有氧",), ("波比跳",), ("波比跳", "全身有氧")),
+    (("有氧",), ("登山跑",), ("登山跑", "登山者")),
+    (("有氧",), ("动感单车",), ("动感单车", "室内单车")),
+    (("有氧",), ("台阶机",), ("台阶机", "登阶机", "爬楼机")),
+)
+
+_SEARCH_QUALIFIERS = (
+    "上斜", "下斜", "平板", "坐姿", "站姿", "俯卧", "仰卧", "单臂", "单腿",
+    "双臂", "双腿", "宽握", "宽距", "窄握", "窄距", "反握", "对握", "交替",
+)
+
+
+def _append_unique(values: list[str], value: Any) -> None:
+    text = "".join(str(value or "").split())
+    if text and text not in values and not re.search(r"[A-Za-z]{3,}", text):
+        values.append(text)
+
+
+def _apply_common_catalog_terminology(item: dict[str, Any]) -> str:
+    """Normalize literal equipment/name translations and return the old title."""
+    old_name = str(item.get("name") or "").strip()
+    name = old_name
+    equipment = str(item.get("equipment") or "其他").strip()
+
+    if equipment == "器械" and name.startswith("杠杆式"):
+        equipment = "悍马机"
+        name = f"悍马机{name.removeprefix('杠杆式')}"
+    elif equipment == "雪橇机":
+        equipment = "倒蹬机"
+        for source_name, common_name in _SLED_DISPLAY_NAMES.items():
+            if name.startswith(source_name):
+                name = f"{common_name}{name[len(source_name):]}"
+                break
+        else:
+            name = name.replace("雪橇", "倒蹬机", 1)
+    elif equipment == "锤式器械":
+        equipment = "大锤"
+
+    for literal, common in _COMMON_NAME_REPLACEMENTS:
+        name = name.replace(literal, common)
+    name = name.replace("第一式", "（变式一）").replace("第二式", "（变式二）")
+    if name.endswith("3"):
+        name = f"{name[:-1]}（变式三）"
+
+    item["name"] = name
+    item["equipment"] = equipment
+    return old_name
+
+
+def _apply_common_search_aliases(item: dict[str, Any], old_name: str = "") -> None:
+    """Associate precise variants with the Chinese terms people actually type."""
+    aliases: list[str] = []
+    for value in item.get("aliases", []):
+        _append_unique(aliases, value)
+    if old_name and old_name != item.get("name"):
+        _append_unique(aliases, old_name)
+
+    name = str(item.get("name") or "")
+    category = str(item.get("category") or "其他")
+    equipment = str(item.get("equipment") or "其他")
+
+    # Titles retain a useful posture/view suffix when it distinguishes media,
+    # while search also accepts the plain action and equipment-free wording.
+    plain_name = re.sub(r"（(男士|女士|男性示范|女性示范|后视角|侧视角|变式[一二三])）", "", name)
+    if plain_name != name:
+        _append_unique(aliases, plain_name)
+    equipment_prefixes = (
+        "半圆平衡球", "髋内收外展机", "上肢功率车", "史密斯机", "悍马机",
+        "倒蹬机", "鹦鹉螺机", "蝴蝶机", "腿屈伸机", "腿弯举机", "地雷管",
+        "弹力带", "杠铃", "哑铃", "绳索", "壶铃", "药球", "健身球",
+        "泡沫轴", "曲杆杠铃", "EZ杠铃", "EZ曲杆",
+    )
+    for prefix in equipment_prefixes:
+        if plain_name.startswith(prefix) and len(plain_name) > len(prefix) + 1:
+            _append_unique(aliases, plain_name.removeprefix(prefix))
+            break
+
+    for categories, triggers, common_terms in _COMMON_SEARCH_FAMILIES:
+        matched = [trigger for trigger in triggers if trigger in name]
+        if category not in categories or not matched:
+            continue
+        qualifiers = [value for value in _SEARCH_QUALIFIERS if value in name]
+        for common in common_terms:
+            _append_unique(aliases, common)
+            _append_unique(aliases, f"{equipment}{common}")
+            for qualifier in qualifiers:
+                _append_unique(aliases, f"{qualifier}{common}")
+                _append_unique(aliases, f"{equipment}{qualifier}{common}")
+            for trigger in matched:
+                _append_unique(aliases, name.replace(trigger, common))
+
+    # Common word-order variants that do not belong to only one body part.
+    if "肩推" in name:
+        _append_unique(aliases, name.replace("肩推", "推肩"))
+        _append_unique(aliases, f"{equipment}推肩")
+    if "牧师凳弯举" in name:
+        _append_unique(aliases, name.replace("牧师凳弯举", "托臂弯举"))
+    if "倒蹬" in name:
+        _append_unique(aliases, name.replace("倒蹬", "腿举"))
+        _append_unique(aliases, name.replace("倒蹬", "腿推"))
+
+    canonical = "".join(name.split())
+    item["aliases"] = [value for value in aliases if value != canonical]
+
+
 def _load_offline_dataset() -> list[dict[str, Any]]:
     """Load the imported Chinese exercise dataset when it ships with the app."""
     path = Path(__file__).with_name("exercise_catalog_data.json")
@@ -295,9 +483,11 @@ def _load_offline_dataset() -> list[dict[str, Any]]:
     except (OSError, ValueError):
         canonical_overrides = {}
     for item in catalog:
+        old_name = _apply_common_catalog_terminology(item)
         override = canonical_overrides.get(str(item.get("id") or "").removeprefix("dataset:"))
         if override is not None:
             item.update(override)
+        _apply_common_search_aliases(item, old_name)
     return catalog
 
 
@@ -410,7 +600,7 @@ def search_exercises(
 ) -> list[dict[str, Any]]:
     """Search names, equipment and target muscles, optionally within one category."""
     needle = _normalized(query or "")
-    return [
+    matches = [
         exercise
         for exercise in (EXERCISE_LIBRARY if exercises is None else exercises)
         if (category is None or exercise["category"] == category)
@@ -422,6 +612,58 @@ def search_exercises(
             *exercise["target_muscles"],
         ]))
     ]
+    if not needle:
+        return matches
+
+    def relevance(exercise: dict[str, Any]) -> tuple[int, int, int]:
+        name = _normalized(str(exercise.get("name") or ""))
+        aliases = [_normalized(str(value)) for value in exercise.get("aliases", [])]
+        if name == needle:
+            match_rank = 0
+        elif needle in aliases:
+            match_rank = 1
+        elif name.startswith(needle):
+            match_rank = 2
+        elif needle in name:
+            match_rank = 3
+        else:
+            match_rank = 4
+        return (match_rank, -int(exercise.get("search_priority") or 0), len(name))
+
+    return sorted(matches, key=relevance)
+
+
+def search_exercises_with_fallback(
+    query: str,
+    category: str | None,
+    subgroup: str = "全部",
+    equipment: str = "全部",
+    exercises: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Search strictly first, then relax filters instead of showing a dead end.
+
+    The returned scope is empty for an exact filter match, ``filters`` when
+    only subgroup/equipment were relaxed, and ``category`` when the selected
+    body part also had to be relaxed.
+    """
+    pool = EXERCISE_LIBRARY if exercises is None else exercises
+    category_matches = search_exercises(query, category, pool)
+
+    def apply_detail_filters(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        result = values
+        if subgroup != "全部":
+            result = [item for item in result if str(item.get("subgroup") or "整体") == subgroup]
+        if equipment != "全部":
+            result = [item for item in result if str(item.get("equipment") or "其他") == equipment]
+        return result
+
+    strict = apply_detail_filters(category_matches)
+    if strict or not _normalized(query or ""):
+        return strict, ""
+    if category_matches:
+        return category_matches, "filters"
+    global_matches = search_exercises(query, None, pool)
+    return (global_matches, "category") if global_matches else ([], "")
 
 
 def get_exercise(name: str) -> dict[str, Any] | None:

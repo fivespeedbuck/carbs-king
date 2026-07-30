@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
+import unicodedata
 
 import flet as ft
 
@@ -32,6 +33,31 @@ INPUT_FIELD_HEIGHT = 52
 INPUT_LABEL_SPACING = 4
 FIELD_GRID_SPACING = 8
 FIELD_GRID_COLLAPSE_WIDTH = 300
+
+
+def single_line_font_size(
+    value: str,
+    available_width: float,
+    *,
+    maximum: int,
+    minimum: int,
+) -> int:
+    """Estimate mixed CJK/Latin width and shrink before text can wrap."""
+    units = 0.0
+    for char in str(value or ""):
+        if char.isspace():
+            units += 0.32
+        elif unicodedata.east_asian_width(char) in {"W", "F"}:
+            units += 1.0
+        elif ord(char) < 128:
+            units += 0.52 if char.isalnum() else 0.45
+        else:
+            units += 0.82
+    units = max(units, 1.0)
+    width = max(1.0, float(available_width or 0.0))
+    if units * maximum <= width * 0.92:
+        return maximum
+    return max(minimum, min(maximum, int(width * 0.92 / units)))
 
 _input_focused = False
 
@@ -413,6 +439,7 @@ __all__ = [
     "GREEN", "SKY_BLUE", "BAR_BG", "YELLOW", "ON_PRIMARY", "BORDER", "SURFACE",
     "INPUT_LABEL_HEIGHT", "INPUT_FIELD_HEIGHT", "INPUT_LABEL_SPACING",
     "FIELD_GRID_SPACING", "FIELD_GRID_COLLAPSE_WIDTH",
+    "single_line_font_size",
     "LabeledInput", "input_is_focused", "make_button", "thin_border", "card", "page_card",
     "section_title", "small_text", "labeled_plain_field", "mobile_text_field",
     "mobile_dropdown", "plain_number_field", "responsive_field_grid", "three_field_grid",

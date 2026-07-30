@@ -13,7 +13,7 @@ from training_summary_views import (
     build_today_completed_training,
     build_training_workspace_tabs,
 )
-from training_plan_views import build_action_arrangement_list
+from training_plan_views import build_action_arrangement_card, build_action_arrangement_list
 
 
 SOURCE = (Path(__file__).parents[1] / "src" / "training_plan_views.py").read_text(encoding="utf-8-sig")
@@ -66,6 +66,38 @@ class TrainingPlanViewContractsTests(unittest.TestCase):
         self.assertIn("ft.Column(detail_controls, expand=True, spacing=1, tight=True)", normal_card)
         self.assertIn("overflow=ft.TextOverflow.ELLIPSIS", normal_card)
         self.assertEqual(normal_card.count("max_lines=1"), 3)
+
+    def test_pre_and_in_session_arrangement_cards_shrink_long_names(self):
+        noop = lambda *_args, **_kwargs: None
+        exercise = {
+            "id": "long-action",
+            "name": "杠铃臀桥双腿部凳上（男+）",
+            "recording_mode": "strength",
+            "sets": [{"weight_kg": 40, "reps": 10}],
+        }
+        before = build_action_arrangement_card(
+            exercise,
+            1,
+            edit_exercise=noop,
+            group_exercise=noop,
+            delete_exercise=noop,
+        )
+        active = build_action_arrangement_card(
+            exercise,
+            1,
+            edit_exercise=noop,
+            group_exercise=noop,
+            delete_exercise=noop,
+            completed_count=2,
+        )
+
+        for card in (before, active):
+            title = card.content.controls[1].controls[0]
+            self.assertEqual(title.data, "action-arrangement-title")
+            self.assertLess(title.size, 16)
+            self.assertGreaterEqual(title.size, 10)
+            self.assertEqual(title.max_lines, 1)
+            self.assertEqual(title.overflow, ft.TextOverflow.ELLIPSIS)
 
     def test_detail_lines_split_strength_summary_and_prescription(self):
         helper_start = SOURCE.index("def _exercise_detail_lines")
@@ -258,7 +290,7 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
             "date": "2026-07-29",
             "status": "completed",
             "exercises": [
-                {"id": "a", "name": "杠铃卧推", "body_part": "胸", "recording_mode": "strength", "sets": [{"weight_kg": 60, "reps": 8, "completed": True}]},
+                {"id": "a", "name": "杠铃臀桥双腿部凳上（男+）", "body_part": "胸", "recording_mode": "strength", "sets": [{"weight_kg": 60, "reps": 8, "completed": True}]},
                 {"id": "b", "name": "哑铃划船", "body_part": "背", "recording_mode": "strength", "sets": [{"weight_kg": 30, "reps": 10, "completed": True}]},
             ],
             "exercise_groups": [{"id": "g", "group_type": "superset", "exercise_ids": ["a", "b"]}],
@@ -289,6 +321,10 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
         member_list.on_reorder(type("ReorderEvent", (), {"old_index": 0, "new_index": 1})())
         self.assertEqual(member_reorders, [("a", "b")])
         first_member_row = member_list.controls[0].content.content.content
+        first_member_title = first_member_row.controls[1].controls[0]
+        self.assertEqual(first_member_title.data, "action-group-member-title")
+        self.assertLess(first_member_title.size, 15)
+        self.assertEqual(first_member_title.max_lines, 1)
         self.assertEqual(first_member_row.controls[-1].icon, ft.Icons.LINK_OFF)
         first_member_row.controls[-1].on_click(None)
         self.assertEqual(removed_members, ["a"])
