@@ -6,6 +6,7 @@ import json
 import re
 import time
 import urllib.request
+from urllib.error import HTTPError, URLError
 from collections.abc import Callable
 from typing import Any
 
@@ -15,6 +16,7 @@ from app_version import BUILD_NUMBER, VERSION_NAME
 REPOSITORY = "fivespeedbuck/carbs-king"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES_URL = f"https://github.com/{REPOSITORY}/releases/latest"
+RELEASE_MANIFEST_URL = f"https://raw.githubusercontent.com/{REPOSITORY}/main/update_manifest.json"
 _CACHE_TTL_SECONDS = 900
 _CACHE: dict[str, Any] = {"checked_at": 0.0, "release": None}
 
@@ -53,6 +55,21 @@ def parse_release(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _read_json(opener: Callable[..., Any], url: str, *, timeout: float) -> dict[str, Any]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": f"carbs-king/{VERSION_NAME} Build {BUILD_NUMBER}",
+        },
+    )
+    with opener(request, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("更新元数据格式无效")
+    return payload
+
+
 def fetch_latest_release(
     *,
     timeout: float = 5.0,
@@ -63,18 +80,16 @@ def fetch_latest_release(
     cached = _CACHE.get("release")
     if use_cache and isinstance(cached, dict) and now - float(_CACHE.get("checked_at") or 0) < _CACHE_TTL_SECONDS:
         return dict(cached)
-    request = urllib.request.Request(
-        LATEST_RELEASE_API,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"carbs-king/{VERSION_NAME} Build {BUILD_NUMBER}",
-        },
-    )
-    with opener(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("GitHub Release 返回格式无效")
-    release = parse_release(payload)
+    try:
+        payload = _read_json(opener, LATEST_RELEASE_API, timeout=timeout)
+        release = parse_release(payload)
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        # Some mobile VPN exits are allowed to github.com but receive 403
+        # from api.github.com. The public manifest is served by raw GitHub and
+        # contains only the release fields the app needs, so update checks can
+        # continue without embedding a GitHub token in the APK.
+        manifest = _read_json(opener, RELEASE_MANIFEST_URL, timeout=timeout)
+        release = parse_release(manifest)
     _CACHE["checked_at"] = now
     _CACHE["release"] = dict(release)
     return release
@@ -87,6 +102,7 @@ def update_available(release: dict[str, Any], current_build: int = BUILD_NUMBER)
 
 __all__ = [
     "LATEST_RELEASE_API",
+    "RELEASE_MANIFEST_URL",
     "RELEASES_URL",
     "fetch_latest_release",
     "parse_build_number",

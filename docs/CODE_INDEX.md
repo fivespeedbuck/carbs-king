@@ -37,7 +37,7 @@
 - 食物搜索和目录：`src/food_library.py`。
 - 添加饮食、常用回填、食物库编辑：`src/diet_controller.py`。
 - 营养计算：`src/app_utils.py`、`src/nutrition_service.py`。
-- Release 版本检查：`src/app_version.py`、`src/update_service.py`、`src/profile_update_views.py`。
+- Release 版本检查：`src/app_version.py`、`src/update_service.py`、`src/profile_update_views.py`；GitHub API 不可用时读取根目录 `update_manifest.json`。
 - 版本配置：`pyproject.toml`；构建后由 `build_apk_update.ps1` 同步预备下一 Build。
 
 ## 测试定位
@@ -57,7 +57,8 @@
 1. 在正式目录检查 `git status -sb`、`git diff --check` 和全量测试。
 2. 用 `powershell -ExecutionPolicy Bypass -File .\build_apk_update.ps1` 构建；脚本会执行 LFS、根资源、镜像和 APK 内层资源门禁。
 3. 用 `aapt dump badging` 检查包名/versionCode，用 `apksigner verify --print-certs` 检查签名。
-4. 用 GitHub CLI 推送分支、创建 PR、合并 `main`；上传大 APK 优先使用直连 `gh api --input`，上传后核对远端 size/digest。
+4. 用 GitHub CLI 推送分支、创建 PR、合并 `main`；先确认公开 `update_manifest.json` 已随 `main` 生效，再替换 Release APK。
+5. 上传大 APK 优先使用直连 `gh api --input`，上传后核对远端 state、size 和 digest。
 
 ## 预览注意事项
 
