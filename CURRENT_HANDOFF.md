@@ -3,8 +3,9 @@
 ## 当前状态
 
 - 正式目录：`D:\carbs-king`
-- 发布分支：`codex/build81-group-card-spacing`
+- 源码 PR：[#11](https://github.com/fivespeedbuck/carbs-king/pull/11) 已合并到 `main`（merge commit `b1fa945`）。
 - Build 81 已完成全量测试、APK 资源门禁、原生提醒运行时门禁、包名、版本和 v2 签名检查。
+- GitHub `v1.2.3` Release 已替换为 Build 81，远端只保留单一 `carbs_king.apk`，size/digest 已核对一致。
 - `pyproject.toml` 与 `src/app_version.py` 已预备下一次 Build 82。
 
 ## 最终 APK
@@ -29,7 +30,8 @@
 - APK 内层资源：1324 GIF、1324 JPG、2 MP3、1 WAV。
 - 原生提醒门禁：`RestAlarmReceiver`、插件类、通知/精确闹钟权限、v3 渠道、`raw/rest_coin` 和 R8 可达性均通过。
 
-## 发布门禁
+## 远端发布结果
 
-- `main/update_manifest.json` 必须为 Build 81、`201,668,435` 字节和本文件 SHA-256。
-- `v1.2.3` Release 只保留一个 `carbs_king.apk`，远端状态、大小和 digest 必须与本地一致。
+- `main/update_manifest.json` 已公开 Build 81、`201,668,435` 字节和本文件 SHA-256。
+- `v1.2.3` Release 只保留一个 `carbs_king.apk`，状态为 `uploaded`。
+- 远端 digest 为 `sha256:0d385c6b6c36bd926e5235d2ff9f1308d81c343cccc2d17c0f8e3626b0d1923d`。
