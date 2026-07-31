@@ -244,6 +244,28 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.assertEqual(notifier.audio.play_count, 0)
 
+    async def test_enum_lifecycle_restart_restores_foreground_audio(self):
+        page = FakePage()
+        notifier = RestNotifier(
+            page,
+            audio_factory=FakeAudio,
+            haptic_factory=FakeHaptic,
+            system_factory=None,
+            alarm_scheduler_factory=None,
+        )
+        page.on_app_lifecycle_state_change(type("Event", (), {
+            "state": type("State", (), {"value": "pause"})(),
+        })())
+        self.assertIsNone(notifier.trigger_foreground("rest-paused"))
+        page.on_app_lifecycle_state_change(type("Event", (), {
+            "state": type("State", (), {"value": "restart"})(),
+        })())
+
+        result = await notifier.trigger_foreground("rest-after-return")
+
+        self.assertTrue(result.sound_played)
+        self.assertEqual(notifier.audio.play_count, 1)
+
     async def test_non_android_foreground_fallback_still_plays_once(self):
         page = FakePage()
         notifier = RestNotifier(
@@ -546,6 +568,9 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("R.raw.rest_coin", receiver)
         self.assertIn("NotificationManager.IMPORTANCE_HIGH", receiver)
         self.assertIn("AudioAttributes.USAGE_ALARM", receiver)
+        self.assertIn("MediaPlayer", receiver)
+        self.assertIn("playBundledAlarm", receiver)
+        self.assertIn("if (!audioStarted && canPostNotifications(context))", receiver)
         self.assertIn('DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts_v3"', adapter)
         native_sound = root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
         foreground_sound = root / "assets/rest_coin.mp3"

@@ -269,8 +269,8 @@ def build_action_arrangement_list(
     baseline_order: list[str] = []
     block_controls: list[ft.Control] = []
     estimated_height = 0
-    member_card_height = 80 if completed_counts is not None else 66
-    member_gap = 8
+    member_card_height = 126 if completed_counts is not None else 112
+    member_gap = 10
 
     def register_block(block_id: str, row_card: ft.Control, height: int, *, full_card_drag: bool = True) -> None:
         nonlocal estimated_height
@@ -350,6 +350,7 @@ def build_action_arrangement_list(
             for member_index, member_id in enumerate(member_ids, 1):
                 member = by_id[member_id]
                 member_name = str(member.get("name", ""))
+                member_summary, member_prescription = _exercise_detail_lines(member)
                 member_details: list[ft.Control] = [
                     ft.Text(
                         member_name,
@@ -365,10 +366,28 @@ def build_action_arrangement_list(
                         overflow=ft.TextOverflow.ELLIPSIS,
                         data="action-group-member-title",
                     ),
-                    small_text(_exercise_detail(member)),
+                    ft.Text(
+                        member_summary,
+                        size=12,
+                        color=SUB,
+                        data="action-group-member-summary",
+                    ),
+                    ft.Text(
+                        member_prescription,
+                        size=12,
+                        color=SUB,
+                        data="action-group-member-prescription",
+                    ),
                 ]
                 if completed_counts is not None:
-                    member_details.append(small_text(f"已完成 {completed_counts.get(member_id, 0)} 组"))
+                    member_details.append(ft.Text(
+                        f"已完成 {completed_counts.get(member_id, 0)} 组",
+                        size=12,
+                        color=SUB,
+                        data="action-group-member-completed",
+                    ))
+                else:
+                    member_details.append(ft.Container(height=16, data="action-group-member-bottom-space"))
                 member_card = ft.Container(
                     content=ft.Row([
                         ft.Container(content=ft.Text(str(member_index), color="#FFFFFF", weight="bold"), width=28, height=28, bgcolor=PRIMARY, border_radius=8, alignment=ft.Alignment.CENTER),
@@ -385,8 +404,9 @@ def build_action_arrangement_list(
                     ], spacing=8),
                     height=member_card_height,
                     bgcolor=SURFACE,
+                    border=thin_border("#D8E3DF"),
                     border_radius=8,
-                    padding=8,
+                    padding=ft.Padding(left=8, top=10, right=8, bottom=10),
                 )
                 member_rows.append(ft.Container(
                     content=member_card,
@@ -397,7 +417,12 @@ def build_action_arrangement_list(
             group_header = ft.ReorderableDragHandle(
                 content=ft.Row([
                     ft.Column([
-                        ft.Text(f"{title} · {len(member_ids)} 个动作", size=16, weight="bold", color=TEXT),
+                        ft.Text(
+                            f"{title} · {len(member_ids)} 个动作",
+                            size=single_line_font_size(f"{title} · {len(member_ids)} 个动作", 160, maximum=16, minimum=12),
+                            weight="bold", color=TEXT, max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                        ),
                         small_text("组内动作会绑定在一个大框内排序和训练"),
                     ], spacing=2, expand=True),
                     _drag_handle(size=40),

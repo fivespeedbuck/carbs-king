@@ -454,7 +454,12 @@ class RestNotifier:
             previous_handler = getattr(self.page, "on_app_lifecycle_state_change", None)
 
             def on_lifecycle(event: Any) -> None:
-                state = str(getattr(event, "state", "")).casefold()
+                raw_state = getattr(event, "state", "")
+                # Flet supplies an AppLifecycleState enum on Android. ``str``
+                # of that enum is ``AppLifecycleState.RESTART`` rather than
+                # ``restart``; use its transport value so returning from the
+                # background re-enables later foreground rest sounds.
+                state = str(getattr(raw_state, "value", raw_state)).casefold()
                 with self._lock:
                     self._app_is_foreground = state in {"show", "resume", "restart"}
                 if callable(previous_handler):

@@ -14,7 +14,7 @@ product = "碳水大王"
 org = "com.chenyang"
 bundle_id = "com.chenyang.carbs_king"
 artifact = "carbs_king"
-build_number = 80
+build_number = 81
 company = "chenyang"
 
 [tool.flet.app]

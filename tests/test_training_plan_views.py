@@ -58,6 +58,22 @@ class TrainingPlanViewContractsTests(unittest.TestCase):
         self.assertIn('ft.Icons.LINK_OFF, "解除组合"', group_card)
         self.assertIn("delete_group(value)", group_card)
 
+    def test_group_members_use_four_fixed_lines_with_planned_bottom_space(self):
+        group_start = SOURCE.index('        if group:')
+        group_end = SOURCE.index('        rendered.add(exercise_id)', group_start)
+        group_card = SOURCE[group_start:group_end]
+        list_start = SOURCE.index("def build_action_arrangement_list")
+        list_end = SOURCE.index("\n\ndef ", list_start)
+        arrangement_list = SOURCE[list_start:list_end]
+
+        self.assertIn("member_summary, member_prescription = _exercise_detail_lines(member)", group_card)
+        self.assertIn('data="action-group-member-summary"', group_card)
+        self.assertIn('data="action-group-member-prescription"', group_card)
+        self.assertIn('data="action-group-member-completed"', group_card)
+        self.assertIn('data="action-group-member-bottom-space"', group_card)
+        self.assertIn('border=thin_border("#D8E3DF")', group_card)
+        self.assertIn("member_card_height = 126 if completed_counts is not None else 112", arrangement_list)
+
     def test_normal_card_preserves_text_width_for_long_names(self):
         normal_start = SOURCE.index("def build_action_arrangement_card")
         normal_end = SOURCE.index("\n\ndef build_action_arrangement_list", normal_start)
@@ -316,9 +332,9 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
         self.assertEqual(member_list.data, "action-arrangement-group-member-list")
         self.assertFalse(member_list.show_default_drag_handles)
         self.assertFalse(member_list.auto_scroll)
-        self.assertEqual(member_list.item_extent, 74)
+        self.assertEqual(member_list.item_extent, 122)
         self.assertEqual(member_list.spacing, 0)
-        self.assertEqual(member_list.height, 140)
+        self.assertEqual(member_list.height, 234)
         member_list.on_reorder(type("ReorderEvent", (), {"old_index": 0, "new_index": 1})())
         self.assertEqual(member_reorders, [("a", "b")])
         first_member_row = member_list.controls[0].content.content.content
@@ -329,7 +345,7 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
         self.assertEqual(first_member_row.controls[-1].icon, ft.Icons.LINK_OFF)
         first_member_row.controls[-1].on_click(None)
         self.assertEqual(removed_members, ["a"])
-        self.assertEqual(manager.height, 232)
+        self.assertEqual(manager.height, 326)
 
         mixed_manager = build_action_arrangement_list(
             {
