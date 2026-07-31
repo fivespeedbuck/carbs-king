@@ -72,7 +72,7 @@ class TrainingPlanViewContractsTests(unittest.TestCase):
         self.assertIn('data="action-group-member-completed"', group_card)
         self.assertIn('data="action-group-member-bottom-space"', group_card)
         self.assertIn('border=thin_border("#D8E3DF")', group_card)
-        self.assertIn("member_card_height = 126 if completed_counts is not None else 112", arrangement_list)
+        self.assertIn("member_card_height = 104 if completed_counts is not None else 88", arrangement_list)
 
     def test_normal_card_preserves_text_width_for_long_names(self):
         normal_start = SOURCE.index("def build_action_arrangement_card")
@@ -324,6 +324,7 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
             reorder_exercise=noop,
             reorder_group_member=lambda dragged, target: member_reorders.append((dragged, target)),
             remove_group_member=removed_members.append,
+            completed_counts={"a": 1, "b": 0},
         )
         self.assertEqual(len(manager.controls), 1)
         self.assertEqual(manager.controls[0].data, "action-arrangement-group-card")
@@ -332,9 +333,9 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
         self.assertEqual(member_list.data, "action-arrangement-group-member-list")
         self.assertFalse(member_list.show_default_drag_handles)
         self.assertFalse(member_list.auto_scroll)
-        self.assertEqual(member_list.item_extent, 122)
+        self.assertEqual(member_list.item_extent, 114)
         self.assertEqual(member_list.spacing, 0)
-        self.assertEqual(member_list.height, 234)
+        self.assertEqual(member_list.height, 218)
         member_list.on_reorder(type("ReorderEvent", (), {"old_index": 0, "new_index": 1})())
         self.assertEqual(member_reorders, [("a", "b")])
         first_member_row = member_list.controls[0].content.content.content
@@ -345,7 +346,22 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
         self.assertEqual(first_member_row.controls[-1].icon, ft.Icons.LINK_OFF)
         first_member_row.controls[-1].on_click(None)
         self.assertEqual(removed_members, ["a"])
-        self.assertEqual(manager.height, 326)
+        self.assertEqual(manager.height, 310)
+
+        planned_manager = build_action_arrangement_list(
+            session.to_dict(),
+            edit_exercise=noop,
+            group_exercise=noop,
+            delete_exercise=noop,
+            delete_group=noop,
+            reorder_exercise=noop,
+            reorder_group_member=lambda dragged, target: member_reorders.append((dragged, target)),
+            remove_group_member=removed_members.append,
+        )
+        planned_member_list = planned_manager.controls[0].content.controls[1]
+        self.assertEqual(planned_member_list.item_extent, 98)
+        self.assertEqual(planned_member_list.height, 186)
+        self.assertEqual(planned_manager.height, 278)
 
         mixed_manager = build_action_arrangement_list(
             {

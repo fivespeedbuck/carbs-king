@@ -269,7 +269,9 @@ def build_action_arrangement_list(
     baseline_order: list[str] = []
     block_controls: list[ft.Control] = []
     estimated_height = 0
-    member_card_height = 126 if completed_counts is not None else 112
+    # Match the compact rhythm of normal cards. Before training there are only
+    # three content rows; active training adds the completed-set row.
+    member_card_height = 104 if completed_counts is not None else 88
     member_gap = 10
 
     def register_block(block_id: str, row_card: ft.Control, height: int, *, full_card_drag: bool = True) -> None:
