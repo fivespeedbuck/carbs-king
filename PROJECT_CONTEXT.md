@@ -13,9 +13,9 @@
 
 ## 当前版本与发布
 
-- 当前发布线：`1.2.3 / Build 80`；完整阶段结果见 `CURRENT_HANDOFF.md` 和 `CHANGELOG.md`。
-- `pyproject.toml` 与 `src/app_version.py` 当前准备下一次 Build 81；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
-- GitHub Release `v1.2.3` 使用 Build 80 APK；本地发布基线 SHA-256 为 `7590EEE32CFA94EE8595C45A872DE3397FC0751261887B39F44BFA7588C82644`。
+- 当前发布线：`1.2.3 / Build 81`；完整阶段结果见 `CURRENT_HANDOFF.md` 和 `CHANGELOG.md`。
+- `pyproject.toml` 与 `src/app_version.py` 当前准备下一次 Build 82；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
+- GitHub Release `v1.2.3` 使用 Build 81 APK；本地发布基线 SHA-256 为 `0D385C6B6C36BD926E5235D2FF9F1308D81C343CCCC2D17C0F8E3626B0D1923D`。
 - 应用内更新首选 GitHub Releases API，遇到 403、网络错误、超时或无效 JSON 时自动读取根目录 `update_manifest.json`；发布 APK 时必须同步更新该清单。
 - Android 更新必须沿用既有签名；先核验包名、版本、签名、ZIP 对齐、媒体资源数量，再交付。
 - APK 不提交 Git；通过 GitHub Release 上传。动作媒体已使用 Git LFS，普通 Git 推送大媒体容易因代理出现 HTTP 408。
