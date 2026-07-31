@@ -3,8 +3,9 @@
 ## 当前状态
 
 - 正式目录：`D:\carbs-king`
-- 发布分支：`codex/build80-rest-audio-group-cards`
+- 源码 PR：[#9](https://github.com/fivespeedbuck/carbs-king/pull/9) 已合并到 `main`（merge commit `b59edb1`）。
 - Build 80 已完成全量测试、Kotlin 编译、APK 资源门禁、原生提醒运行时门禁、包名、版本、v2 签名和 ZIP 对齐检查。
+- GitHub `v1.2.3` Release 已替换为 Build 80，远端只保留单一 `carbs_king.apk`，size/digest 已核对一致。
 - `pyproject.toml` 与 `src/app_version.py` 已预备下一次 Build 81。
 
 ## 最终 APK
@@ -38,7 +39,8 @@
 3. 再分别验证锁屏、暂停、加减时间和跳过。
 4. 检查训练前和训练中的超级组/复合组四行成员卡、内框与底部留白。
 
-## 发布门禁
+## 远端发布结果
 
-- `main/update_manifest.json` 必须为 Build 80、`201,668,355` 字节和本文件 SHA-256。
-- `v1.2.3` Release 只保留一个 `carbs_king.apk`，远端状态、大小和 digest 必须与本地一致。
+- `main/update_manifest.json` 已公开 Build 80、`201,668,355` 字节和本文件 SHA-256。
+- `v1.2.3` Release 只保留一个 `carbs_king.apk`，状态为 `uploaded`。
+- 远端 digest 为 `sha256:7590eee32cfa94ee8595c45a872de3397fc0751261887b39f44bfa7588c82644`。
