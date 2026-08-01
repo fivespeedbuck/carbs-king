@@ -34,6 +34,8 @@ from training_experience_service import (
     undo_completed_set_result,
 )
 from training_models import TrainingSession, normalize_recording_mode
+from training_recycle_service import recycle_training_session
+from theme_service import THEME_OPTIONS, normalize_theme
 from training_picker_views import (
     CUSTOM_CARDIO_METRIC_FIELDS, bind_dialog_close_button, bind_training_parameter_mode,
     build_category_sidebar, build_exercise_card, build_exercise_help,
@@ -57,7 +59,7 @@ from training_service import (
 from training_views import ActiveTrainingActions, ActiveTrainingModel, build_active_training
 from ui_components import (
     GREEN, ORANGE, PRIMARY, PRIMARY_SOFT, RED, SUB, SURFACE, TEXT, card, page_card,
-    make_button, mobile_dropdown, mobile_text_field, responsive_field_grid,
+    four_field_grid, make_button, mobile_dropdown, mobile_text_field, responsive_field_grid,
     section_title, set_input_focused, small_text, thin_border, three_field_grid, two_field_grid,
 )
 
@@ -549,6 +551,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                                 "weight_kg": last.get("weight_kg"),
                                 "reps": last.get("reps"),
                                 "sets": len(exercise.get("sets", [])),
+                                "rest_seconds": max(0, int(to_float(exercise.get("rest_seconds"), 90))),
                             }
             mode = normalize_recording_mode(fallback.get("recording_mode"))
             return {
@@ -556,6 +559,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 "weight_kg": fallback.get("default_weight_kg"),
                 "reps": fallback.get("default_reps"),
                 "sets": fallback.get("default_sets", 4),
+                "rest_seconds": fallback.get("default_rest_seconds", 90),
                 "duration_seconds": fallback.get("default_duration_seconds"),
                 "distance_km": None,
                 "cardio_metrics": {},
@@ -575,6 +579,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             weight_value = max(0, to_float(defaults.get("weight_kg")))
             reps_value = max(0, int(numeric_default("reps", "default_reps")))
             duration_seconds = max(0, int(numeric_default("duration_seconds", "default_duration_seconds")))
+            rest_seconds = max(0, int(numeric_default("rest_seconds", "default_rest_seconds", 90)))
             metric_keys = [
                 key for key in source_exercise.get("cardio_metric_fields", [])
                 if key in CARDIO_METRIC_LABELS
@@ -598,6 +603,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 } for index in range(set_count)] if selected_mode == "strength" else [],
                 "duration_seconds": duration_seconds if selected_mode != "strength" else None,
                 "distance_km": defaults.get("distance_km") if selected_mode == "cardio" else None,
+                "rest_seconds": rest_seconds,
                 "distance_enabled": selected_mode == "cardio" and bool(source_exercise.get("distance_enabled")),
                 "cardio_metric_fields": metric_keys,
                 "cardio_metrics": {
@@ -637,6 +643,15 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             weight = mobile_text_field("重量 kg", "" if defaults.get("weight_kg") is None else f"{to_float(defaults.get('weight_kg')):g}", keyboard_type=_KEYBOARD_NUMBER, expand=True)
             reps = mobile_text_field("次数", "" if defaults.get("reps") is None else str(int(to_float(defaults.get("reps")))), keyboard_type=_KEYBOARD_NUMBER, expand=True)
             sets = mobile_text_field("组数", str(int(to_float(defaults.get("sets"), 4))), keyboard_type=_KEYBOARD_NUMBER, expand=True)
+            rest_default = max(0, int(to_float(defaults.get("rest_seconds"), 90)))
+            rest = mobile_text_field(
+                "休息时间",
+                "",
+                keyboard_type=_KEYBOARD_NUMBER,
+                hint_text=str(rest_default),
+                expand=True,
+            )
+            rest.field.hint_style = ft.TextStyle(color="#98A39F", size=14)
             duration = max(0, int(to_float(defaults.get("duration_seconds"))))
             duration_min = mobile_text_field("分钟", str(duration // 60), keyboard_type=_KEYBOARD_NUMBER, expand=True)
             duration_sec = mobile_text_field("秒", str(duration % 60), keyboard_type=_KEYBOARD_NUMBER, expand=True)
@@ -707,7 +722,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 )
                 for key in available_metric_keys
             }
-            strength_fields = three_field_grid(weight, reps, sets, viewport_width=dialog_width)
+            strength_fields = four_field_grid(weight, reps, sets, rest, viewport_width=dialog_width)
             duration_fields = two_field_grid(duration_min, duration_sec, viewport_width=dialog_width)
             distance_holder = ft.Container(distance)
             metrics_holder = responsive_field_grid(
@@ -747,6 +762,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     return
                 selected_mode = normalize_recording_mode(mode.value)
                 set_count = max(1, min(12, int(to_float(sets.value, 4))))
+                rest_seconds = max(0, int(to_float(rest.value, rest_default)))
                 duration_seconds = max(0, int(to_float(duration_min.value)) * 60 + min(59, max(0, int(to_float(duration_sec.value)))))
                 if selected_mode != "strength" and duration_seconds <= 0:
                     snack("请填写有效时长")
@@ -767,6 +783,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                         "default_weight_kg": max(0, to_float(weight.value)) if selected_mode == "strength" else None,
                         "default_reps": max(0, int(to_float(reps.value, 0))),
                         "default_sets": set_count,
+                        "default_rest_seconds": rest_seconds,
                         "recording_mode": selected_mode,
                         "distance_enabled": selected_mode == "cardio",
                         "cardio_metric_fields": selected_metric_keys,
@@ -795,6 +812,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                         "completed_at": "",
                     } for index in range(set_count)] if selected_mode == "strength" else [],
                     "duration_seconds": duration_seconds if selected_mode != "strength" else None,
+                    "rest_seconds": rest_seconds,
                     "distance_km": max(0, to_float(distance.value)) if selected_mode == "cardio" and str(distance.value or "").strip() else None,
                     "distance_enabled": selected_mode == "cardio" and bool(source_exercise.get("distance_enabled", is_new_custom)),
                     "cardio_metric_fields": list(source_exercise.get("cardio_metric_fields", selected_metric_keys)) if selected_mode == "cardio" else [],
@@ -1253,6 +1271,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             keyboard_type=_KEYBOARD_NUMBER,
             expand=True,
         )
+        rest = mobile_text_field(
+            "休息时间",
+            str(max(0, int(to_float(exercise.get("rest_seconds"), 90)))),
+            keyboard_type=_KEYBOARD_NUMBER,
+            expand=True,
+        )
         duration = max(0, int(to_float(exercise.get("duration_seconds"))))
         duration_min = mobile_text_field("分钟", str(duration // 60), keyboard_type=_KEYBOARD_NUMBER, expand=True)
         duration_sec = mobile_text_field("秒", str(duration % 60), keyboard_type=_KEYBOARD_NUMBER, expand=True)
@@ -1281,7 +1305,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             summary_controls[0],
         ]
         if mode == "strength":
-            controls.append(three_field_grid(weight, reps, sets, viewport_width=dialog_width))
+            controls.append(four_field_grid(weight, reps, sets, rest, viewport_width=dialog_width))
         else:
             controls.append(two_field_grid(duration_min, duration_sec, viewport_width=dialog_width))
             if mode == "cardio" and exercise.get("distance_enabled"):
@@ -1296,6 +1320,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 set_count = max(1, min(12, int(to_float(sets.value, len(raw_sets) or 1))))
                 weight_value = max(0, to_float(weight.value))
                 reps_value = max(0, int(to_float(reps.value)))
+                exercise["rest_seconds"] = max(0, int(to_float(rest.value, 90)))
                 exercise["sets"] = [{
                     **(raw_sets[index] if index < len(raw_sets) else {}),
                     "id": str(raw_sets[index].get("id") or f"set_{uuid.uuid4().hex}") if index < len(raw_sets) else f"set_{uuid.uuid4().hex}",
@@ -1650,6 +1675,19 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         if group_position_text:
             label += f" · {group_position_text}"
         return label
+
+    def active_pending_label(session):
+        exercises = normalized_session_exercises(session)
+        index = safe_int(state.get("training_exercise_index", 0))
+        if not (0 <= index < len(exercises)):
+            return next_pending_label(session)
+        return current_pending_label(
+            exercises[index],
+            state.get("training_set_index", 0),
+        )
+
+    def current_theme_primary():
+        return THEME_OPTIONS[normalize_theme(state.get("theme_color"))]["primary"]
 
     def rest_is_active(session):
         cycle = session.get("rest_cycle") if isinstance(session, dict) else None
@@ -2089,6 +2127,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 expand=True,
             )
             sets = mobile_text_field("组数", str(max(1, len(raw_sets))), keyboard_type=_KEYBOARD_NUMBER, expand=True)
+            rest = mobile_text_field(
+                "休息时间",
+                str(max(0, int(to_float(item.get("rest_seconds"), 90)))),
+                keyboard_type=_KEYBOARD_NUMBER,
+                expand=True,
+            )
             edit_dlg = None
 
             def save_edit(event=None):
@@ -2098,6 +2142,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     return
                 weight_value = max(0, to_float(weight.value))
                 reps_value = max(0, int(to_float(reps.value)))
+                item["rest_seconds"] = max(0, int(to_float(rest.value, 90)))
                 updated_sets = []
                 for index in range(set_count):
                     original = raw_sets[index] if index < len(raw_sets) else {}
@@ -2130,7 +2175,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 [
                     section_title(str(item.get("name") or "编辑动作")),
                     summary_controls[0],
-                    three_field_grid(weight, reps, sets, viewport_width=width),
+                    four_field_grid(weight, reps, sets, rest, viewport_width=width),
                     *summary_controls[1:],
                 ],
                 save_edit,
@@ -2407,13 +2452,19 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             set_index,
         )
         cycle = None
-        if should_rest:
-            cycle = start_rest_cycle(90, datetime.datetime.now())
+        rest_seconds = max(0, int(to_float(exercise.get("rest_seconds"), 90)))
+        if should_rest and rest_seconds > 0:
+            cycle = start_rest_cycle(rest_seconds, datetime.datetime.now())
             session["rest_cycle"] = cycle
             session["rest_until"] = cycle["ends_at"]
         persist_session(session)
         if cycle:
-            rest_notifier.trigger_after(str(cycle.get("id", "")), 90)
+            rest_notifier.trigger_after(
+                str(cycle.get("id", "")),
+                rest_seconds,
+                next_action=active_pending_label(session),
+                theme_color=current_theme_primary(),
+            )
         refresh()
 
     def complete_rest_if_elapsed(session, now=None, record_date=None):
@@ -2441,13 +2492,20 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         if not session or not isinstance(cycle, dict):
             return
         cycle_id = str(cycle.get("id", ""))
-        rest_notifier.cancel(cycle_id)
+        # Keep the foreground service alive so changing the deadline updates
+        # the existing ongoing notification instead of posting a fresh one.
+        rest_notifier.cancel(cycle_id, stop_overlay=False)
         session["rest_cycle"] = adjust_rest_cycle(cycle, seconds, datetime.datetime.now())
         session["rest_until"] = session["rest_cycle"].get("ends_at", "") if session["rest_cycle"].get("status") == "running" else ""
         persist_session(session)
         if not complete_rest_if_elapsed(session) and session["rest_cycle"].get("status") == "running":
             remaining = rest_remaining_seconds(session["rest_cycle"], datetime.datetime.now())
-            rest_notifier.trigger_after(cycle_id, remaining)
+            rest_notifier.trigger_after(
+                cycle_id,
+                remaining,
+                next_action=active_pending_label(session),
+                theme_color=current_theme_primary(),
+            )
         refresh()
 
     def toggle_rest_pause(e=None):
@@ -2465,7 +2523,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         session["rest_until"] = cycle.get("ends_at", "") if cycle.get("status") == "running" else ""
         persist_session(session)
         if cycle.get("status") == "running":
-            rest_notifier.trigger_after(cycle_id, rest_remaining_seconds(cycle, datetime.datetime.now()))
+            rest_notifier.trigger_after(
+                cycle_id,
+                rest_remaining_seconds(cycle, datetime.datetime.now()),
+                next_action=active_pending_label(session),
+                theme_color=current_theme_primary(),
+            )
         refresh()
 
     def skip_rest(e=None):
@@ -2784,6 +2847,18 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         def confirm(e=None):
             training = state.get("training", {})
+            removed = next(
+                (
+                    copy.deepcopy(item)
+                    for item in raw_training_sessions(training)
+                    if str(item.get("id") or "") == session_id
+                ),
+                None,
+            )
+            if removed is None:
+                dismiss()
+                snack("未找到这场训练")
+                return
             training["sessions"] = [
                 item
                 for item in training.get("sessions", [])
@@ -2796,15 +2871,20 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 and str(current.get("id") or "") == session_id
             ):
                 training["session"] = None
+            recycle_training_session(
+                removed,
+                original_date=str(removed.get("date") or state.get("date") or ""),
+                deleted_at=iso_now(),
+            )
             save_current()
             dismiss()
             refresh()
-            snack("本场训练已删除")
+            snack("本场训练已移入回收站，保留 15 天")
 
         confirm_dlg = dialog_base(
             "删除本场训练？",
             ft.Container(
-                content=small_text("只删除这一场已完成训练，不影响当天其他训练、饮食和动作库。"),
+                content=small_text("这场训练会进入回收站并保留 15 天，不影响当天其他训练、饮食和动作库。"),
                 width=dialog_width,
             ),
             [

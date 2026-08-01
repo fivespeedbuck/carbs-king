@@ -30,14 +30,15 @@
 - 上游动作导入与审计：`tools/assemble_exercise_catalog.py`、`tools/audit_exercise_catalog.py`。
 - 训练前/训练中排序：`src/training_plan_views.py`、`src/training_controller.py`。
 - 训练游标和顶部进度：`src/training_experience_service.py`、`src/training_views.py`。
-- 休息、音频和训练完成：`src/rest_notification.py`、`src/training_experience_service.py`、`src/training_controller.py`、`src/training_summary_views.py`、`android/rest_alarm_plugin/`。
+- 休息、音频、悬浮窗和训练完成：`src/rest_notification.py`、`src/training_experience_service.py`、`src/training_controller.py`、`src/training_summary_views.py`、`android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/carbs_king/restalarm/RestOverlayService.kt`。
+- 训练回收站：`src/training_recycle_service.py`、`src/profile_feature_views.py`、`src/profile_controller.py`、`src/daily_record_controller.py`。
 - APK 原生提醒运行时门禁：`tools/apk_runtime_gate.py`、`tests/test_apk_runtime_gate.py`、`build_apk_update.ps1`。
 - 应用内 APK 下载、校验与系统安装交接：`src/apk_update_download.py`、`src/profile_controller.py`、`src/profile_update_views.py`、`tests/test_apk_update_download.py`。
 
 ## 饮食与更新功能定位
 
 - 食物搜索和目录：`src/food_library.py`。
-- 添加饮食、常用回填、食物库编辑：`src/diet_controller.py`。
+- 添加饮食、常用回填、空搜索结果与食物库编辑：`src/diet_controller.py`；Android 下拉菜单表面样式位于 `src/ui_components.py`。
 - 营养计算：`src/app_utils.py`、`src/nutrition_service.py`。
 - Release 版本检查：`src/app_version.py`、`src/update_service.py`、`src/profile_update_views.py`；GitHub API 不可用时读取根目录 `update_manifest.json`。
 - 版本配置：`pyproject.toml`；构建后由 `build_apk_update.ps1` 同步预备下一 Build。
@@ -54,6 +55,7 @@
 | 通用 UI 契约 | `tests/test_ui_contracts.py` |
 | 休息调度、原生通知与 APK 运行时门禁 | `tests/test_training_clock_service.py`、`tests/test_rest_notification.py`、`tests/test_apk_runtime_gate.py` |
 | 个人资料、主题和测量 | `tests/test_profile_macro_and_measurements.py` |
+| 训练回收站与恢复装配 | `tests/test_training_recycle_service.py`、`tests/test_daily_record_controller.py`、`tests/test_main_dependency_wiring.py` |
 
 ## 发布入口
 

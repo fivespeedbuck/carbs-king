@@ -425,6 +425,8 @@ def main(page: ft.Page):
         load_profile=load_user_profile,
         keyboard_number=_KEYBOARD_NUMBER,
         scroll_hidden=_SCROLL_HIDDEN,
+        rest_notifier=rest_notifier,
+        restore_training_session=daily_record_controller.restore_training_session,
     ))
     save_profile_from_state = profile_controller.persist_profile
 

@@ -52,6 +52,20 @@ def resolve_food_unit(selected_unit: Any, custom_unit: Any = "") -> str:
     return selected
 
 
+def update_food_selector(selector: Any, matches: list[Mapping[str, Any]]) -> None:
+    """Keep an empty food search from opening a blank Android dropdown menu."""
+    names = [str(item.get("name") or "").strip() for item in matches]
+    names = [name for name in names if name]
+    selector.options = [ft.dropdown.Option(name) for name in names]
+    selector.field.disabled = not names
+    selector.field.hint_text = "无匹配食物" if not names else "请选择食物"
+    selector.field.menu_height = min(240, max(48, len(names) * 48))
+    if len(names) == 1:
+        selector.value = names[0]
+    elif str(selector.value or "") not in names:
+        selector.value = None
+
+
 def bind_custom_unit_visibility(
     unit_input: Any,
     custom_unit_holder: Any,
@@ -200,23 +214,34 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
 
         meal_dd = mobile_dropdown("餐次", default_meal, [ft.dropdown.Option(m) for m in MEALS], expand=True)
         search = mobile_text_field("搜索食物", expand=True)
-        food_dd = mobile_dropdown("食物", None, [ft.dropdown.Option(f["name"]) for f in foods[:24]], expand=True)
-        food_dd.field.menu_height = 300
+        food_dd = mobile_dropdown("食物", None, [], expand=True)
+        update_food_selector(food_dd, foods[:24])
 
         def current_unit():
             food = next((f for f in foods if f.get("name") == food_dd.value), None)
             return food.get("unit", "g") if food else "g"
 
         qty = mobile_text_field(f"数量（{current_unit()}）", keyboard_type=_KEYBOARD_NUMBER, expand=True)
-        # Align the native fields themselves.  Do not fix the LabeledInput
-        # wrapper height: Dropdown and TextField have different Android
-        # decoration insets, so that wrapper constraint can make one outline
-        # overflow while the other remains compressed.
+
+        def fixed_food_field(control):
+            """Give Dropdown and TextField the same painted Android outline."""
+            field = control.field
+            field.height = INPUT_FIELD_HEIGHT
+            field.border = ft.InputBorder.NONE
+            field.bgcolor = ft.Colors.TRANSPARENT
+            field.content_padding = 12
+            control.controls[1] = ft.Container(
+                content=field,
+                height=INPUT_FIELD_HEIGHT,
+                bgcolor="#FFFFFF",
+                border=thin_border(),
+                border_radius=8,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            )
+            return control
+
         for control in (meal_dd, qty, search, food_dd):
-            control.height = None
-            control.field.height = INPUT_FIELD_HEIGHT
-            control.field.dense = True
-            control.field.content_padding = 12
+            fixed_food_field(control)
 
         def choose_portion(grams):
             # Dishes are recorded by what was actually eaten, not the whole
@@ -241,9 +266,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         def apply_filter(e=None):
             kw = (search.value or "").strip().lower()
             filtered = search_foods(kw, foods=foods)[:24]
-            food_dd.options = [ft.dropdown.Option(f["name"]) for f in filtered]
-            if len(filtered) == 1:
-                food_dd.value = filtered[0]["name"]
+            update_food_selector(food_dd, filtered)
             update_qty_label()
             page.update()
 

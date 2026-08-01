@@ -61,6 +61,11 @@ def make_session(date, session_id, weight, reps, extra_weight=None):
 
 
 class TrainingModelTests(unittest.TestCase):
+    def test_rest_seconds_default_to_90_and_preserve_user_override(self):
+        self.assertEqual(Exercise.from_dict({"name": "卧推", "body_part": "胸"}).default_rest_seconds, 90)
+        self.assertEqual(TemplateExercise.from_dict({"rest_seconds": 120}).rest_seconds, 120)
+        self.assertEqual(SessionExercise.from_dict({"rest_seconds": 0}).rest_seconds, 0)
+
     def test_complete_store_is_json_round_trip_compatible(self):
         store = TrainingData(
             exercises=[Exercise(id="bench", name="卧推", body_part="胸", favorite=True)],

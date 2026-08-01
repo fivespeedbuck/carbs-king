@@ -56,11 +56,13 @@ from nutrition_service import NutritionService
 from profile_views import build_achievement_wall, build_completed_challenges, build_goal_challenge_panel
 from profile_backup_views import build_backup_panel
 from profile_details_views import build_profile_details, build_profile_metrics
+from profile_feature_views import build_background_rest_panel, build_training_recycle_panel
 from profile_macro_views import build_carb_cycle_goal_section, build_macro_panel
 from profile_theme_views import build_theme_panel
 from profile_update_views import build_update_panel
 from repositories import AppRepositories
 from training_experience_service import exercise_usage_stats, sort_exercises
+from training_recycle_service import load_recycled_training_sessions, remove_recycled_training_session
 from update_service import fetch_latest_release, update_available
 from training_picker_views import (
     build_category_sidebar, build_exercise_card, build_exercise_help, build_sort_row,
@@ -83,6 +85,8 @@ class ProfileControllerDependencies:
     load_profile: Callable[[], dict[str, Any]]
     keyboard_number: Any
     scroll_hidden: Any
+    rest_notifier: Any = None
+    restore_training_session: Callable[[str, dict[str, Any]], None] = lambda *_: None
 
 
 @dataclass
@@ -113,6 +117,8 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
     clear_personal_data = deps.backup.clear_personal_data
     _KEYBOARD_NUMBER = deps.keyboard_number
     _SCROLL_HIDDEN = deps.scroll_hidden
+    rest_notifier = deps.rest_notifier
+    restore_training_session = deps.restore_training_session
     celebration_state = {"scheduled": False, "dialog": None}
     failure_state = {"scheduled": False, "dialog": None}
     challenge_completion_audio = {"service": None}
@@ -127,6 +133,124 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         "status": "idle", "latest": None, "error": "", "download_path": "",
         "downloaded_bytes": 0, "total_bytes": 0,
     }
+
+    def request_rest_permission(kind: str):
+        method = getattr(rest_notifier, f"request_{kind}_permission", None)
+        if not callable(method):
+            snack("当前环境不支持该 Android 权限入口")
+            return
+        try:
+            method()
+        except Exception as exc:
+            snack(f"打开权限设置失败：{exc}")
+
+    def rest_permission_status() -> dict[str, bool]:
+        method = getattr(rest_notifier, "background_permission_status", None)
+        if not callable(method):
+            return {"android": False, "notification": False, "exact_alarm": False, "overlay": False}
+        try:
+            return method()
+        except Exception:
+            return {"android": True, "notification": False, "exact_alarm": False, "overlay": False}
+
+    def open_training_recycle_bin(event=None):
+        dialog_width = responsive_width()
+        list_holder = ft.Column(spacing=8, scroll=_SCROLL_HIDDEN, expand=True)
+        recycle_dlg = None
+
+        def rebuild():
+            entries = load_recycled_training_sessions()
+            list_holder.controls.clear()
+            if not entries:
+                list_holder.controls.append(small_text("回收站为空。删除的训练会在这里保留 15 天。"))
+                page.update()
+                return
+            for entry in entries:
+                session = entry.get("session", {}) if isinstance(entry.get("session"), dict) else {}
+                date_text = str(entry.get("original_date") or session.get("date") or "未知日期")
+                names = [
+                    str(item.get("name") or "").strip()
+                    for item in session.get("exercises", [])
+                    if isinstance(item, dict) and str(item.get("name") or "").strip()
+                ]
+                entry_id = str(entry.get("id") or "")
+
+                def restore(e=None, recycle_id=entry_id):
+                    item = next(
+                        (
+                            candidate
+                            for candidate in load_recycled_training_sessions()
+                            if str(candidate.get("id") or "") == recycle_id
+                        ),
+                        None,
+                    )
+                    if item is None:
+                        snack("该记录已过期或不存在")
+                        rebuild()
+                        return
+                    session_data = item.get("session") if isinstance(item.get("session"), dict) else None
+                    target_date = str(item.get("original_date") or "").strip()
+                    if not session_data or not target_date:
+                        snack("恢复失败：记录不完整")
+                        return
+                    restore_training_session(target_date, session_data)
+                    remove_recycled_training_session(recycle_id)
+                    rebuild()
+                    refresh()
+                    snack(f"已恢复到 {target_date} 的当日已练")
+
+                def request_erase(e=None, recycle_id=entry_id):
+                    confirm_dlg = None
+
+                    def close_confirm(_=None):
+                        close_control(confirm_dlg)
+
+                    def erase(_=None):
+                        removed = remove_recycled_training_session(recycle_id)
+                        close_confirm()
+                        rebuild()
+                        snack("训练记录已彻底删除" if removed else "该记录已不存在")
+
+                    confirm_dlg = build_dialog(
+                        "彻底删除？",
+                        ft.Container(
+                            content=small_text("彻底删除后无法恢复。"),
+                            width=dialog_width,
+                        ),
+                        [
+                            make_button("取消", on_click=close_confirm, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                            make_button("彻底删除", on_click=erase, bgcolor="#FDECEC", color="#D93025", expand=True),
+                        ],
+                        on_close=close_confirm,
+                    )
+                    open_control(confirm_dlg)
+
+                list_holder.controls.append(ft.Container(
+                    content=ft.Column([
+                        ft.Text(date_text, size=15, weight="bold", color=TEXT),
+                        small_text(" + ".join(names) or "训练记录"),
+                        small_text(f"删除于 {str(entry.get('deleted_at') or '')[:16]} · 15 天后自动清除"),
+                        ft.Row([
+                            make_button("恢复", on_click=restore, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                            make_button("彻底删除", on_click=request_erase, bgcolor="#FDECEC", color="#D93025", expand=True),
+                        ], spacing=8),
+                    ], spacing=6),
+                    bgcolor="#FFFFFF",
+                    border_radius=8,
+                    padding=10,
+                ))
+            page.update()
+
+        recycle_dlg = build_full_form_sheet(
+            FormViewContext(close_control=close_control, scroll_mode=_SCROLL_HIDDEN),
+            "训练回收站",
+            [list_holder],
+            lambda e: close_control(recycle_dlg),
+            save_label="关闭",
+            footer_controls=[make_button("关闭", on_click=lambda e: close_control(recycle_dlg), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True)],
+        )
+        rebuild()
+        open_control(recycle_dlg)
 
     def start_update_check(event=None):
         if update_ui["status"] == "checking":
@@ -1393,6 +1517,17 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             metrics=build_profile_metrics(targets),
             macro_panel=macro_box,
             theme_panel=build_theme_panel(state.get("theme_color", "green"), set_theme),
+            feature_panels=[
+                build_background_rest_panel(
+                    rest_permission_status(),
+                    on_notification=lambda e: request_rest_permission("notification"),
+                    on_exact_alarm=lambda e: request_rest_permission("exact_alarm"),
+                    on_overlay=lambda e: request_rest_permission("overlay"),
+                ),
+                build_training_recycle_panel(
+                    len(load_recycled_training_sessions()), open_training_recycle_bin
+                ),
+            ],
             backup_panel=build_backup_panel(export_handler, import_backup_handler, clear_personal_data),
             update_panel=build_update_panel(
                 current_version=VERSION_NAME,

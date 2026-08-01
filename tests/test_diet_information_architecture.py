@@ -30,6 +30,7 @@ from diet_controller import (
     compact_daily_summary,
     create_diet_controller,
     resolve_food_unit,
+    update_food_selector,
 )
 from diet_views import (
     DIET_INPUT_FIELD_HEIGHT,
@@ -55,6 +56,7 @@ from profile_views import build_completed_challenges
 from ui_components import (
     FIELD_GRID_COLLAPSE_WIDTH,
     INPUT_LABEL_HEIGHT,
+    four_field_grid,
     mobile_dropdown,
     mobile_text_field,
     quantity_unit_grid,
@@ -241,10 +243,14 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         search_input = dialog_body.controls[3].controls[0].content
         food_input = dialog_body.controls[3].controls[1].content
         for control in (meal_input, quantity_input, search_input, food_input):
-            self.assertIsNone(control.height)
             self.assertEqual(control.field.height, 52)
-            self.assertTrue(control.field.dense)
             self.assertEqual(control.field.content_padding, 12)
+            self.assertEqual(control.field.border, ft.InputBorder.NONE)
+            self.assertEqual(control.field.bgcolor, ft.Colors.TRANSPARENT)
+            shell = control.controls[1]
+            self.assertEqual(shell.height, 52)
+            self.assertIs(shell.content, control.field)
+            self.assertEqual(shell.clip_behavior, ft.ClipBehavior.HARD_EDGE)
         self.assertEqual(shortcut_panel.controls[0].content.value, "常用")
         self.assertNotIn("最近", str(shortcut_panel))
 
@@ -270,9 +276,11 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
     def test_430_viewport_content_keeps_pairs_and_triplets_but_narrow_width_collapses(self):
         fields = [mobile_text_field(label) for label in ("重量", "次数", "组数")]
         triplet = three_field_grid(*fields, viewport_width=340)
+        four = four_field_grid(*fields, mobile_text_field("休息时间"), viewport_width=340)
         narrow = responsive_field_grid(fields[:2], columns=2, viewport_width=FIELD_GRID_COLLAPSE_WIDTH - 1)
 
         self.assertEqual([cell.col["xs"] for cell in triplet.controls], [4, 4, 4])
+        self.assertEqual([cell.col["xs"] for cell in four.controls], [3, 3, 3, 3])
         self.assertEqual([cell.col["xs"] for cell in narrow.controls], [12, 12])
         self.assertEqual(triplet.vertical_alignment, "start")
 
@@ -360,6 +368,21 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertEqual(resolve_food_unit(CUSTOM_UNIT_OPTION, " 杯 "), "杯")
         self.assertEqual(resolve_food_unit(CUSTOM_UNIT_OPTION, "  "), "")
 
+    def test_empty_food_search_disables_blank_android_dropdown_menu(self):
+        selector = mobile_dropdown("食物", None, [])
+
+        update_food_selector(selector, [])
+
+        self.assertTrue(selector.field.disabled)
+        self.assertEqual(selector.field.hint_text, "无匹配食物")
+        self.assertEqual(selector.field.menu_height, 48)
+        self.assertEqual(selector.options, [])
+
+        update_food_selector(selector, [{"name": "罗氏虾"}])
+        self.assertFalse(selector.field.disabled)
+        self.assertEqual(selector.value, "罗氏虾")
+        self.assertEqual(selector.field.menu_height, 48)
+
     def test_custom_unit_visibility_uses_real_dropdown_select_event(self):
         updates = []
         unit = mobile_dropdown(
@@ -380,15 +403,22 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertFalse(holder.visible)
         self.assertEqual(updates, [True, False])
 
+    def test_mobile_dropdown_menu_is_opaque_on_android(self):
+        dropdown = mobile_dropdown("餐次", "午餐", [ft.dropdown.Option("午餐")])
+
+        self.assertEqual(dropdown.field.color, "#182420")
+        self.assertEqual(dropdown.field.menu_style.bgcolor, "#FFFFFF")
+        self.assertEqual(dropdown.field.menu_style.shadow_color, "#33000000")
+
     def test_add_diet_form_pairs_meal_quantity_and_search_food(self):
         self.assertIn("two_field_grid(meal_dd, qty, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
         self.assertIn("two_field_grid(search, food_dd, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
         self.assertIn("for control in (meal_dd, qty, search, food_dd):", DIET_CONTROLLER_SOURCE)
-        self.assertIn("control.height = None", DIET_CONTROLLER_SOURCE)
-        self.assertIn("control.field.height = INPUT_FIELD_HEIGHT", DIET_CONTROLLER_SOURCE)
-        self.assertIn("control.field.dense = True", DIET_CONTROLLER_SOURCE)
-        self.assertIn("control.field.content_padding = 12", DIET_CONTROLLER_SOURCE)
-        self.assertIn("food_dd.field.menu_height = 300", DIET_CONTROLLER_SOURCE)
+        self.assertIn("field.height = INPUT_FIELD_HEIGHT", DIET_CONTROLLER_SOURCE)
+        self.assertIn("field.border = ft.InputBorder.NONE", DIET_CONTROLLER_SOURCE)
+        self.assertIn("control.controls[1] = ft.Container(", DIET_CONTROLLER_SOURCE)
+        self.assertIn("height=INPUT_FIELD_HEIGHT", DIET_CONTROLLER_SOURCE)
+        self.assertIn("update_food_selector(food_dd, foods[:24])", DIET_CONTROLLER_SOURCE)
 
     def test_add_diet_common_shortcuts_are_first_and_only_fill_editable_fields(self):
         dialog_start = DIET_CONTROLLER_SOURCE.index('dlg = full_form_sheet(\n            "添加饮食"')

@@ -175,11 +175,12 @@ class Build76RegressionTests(unittest.TestCase):
 
     def test_food_search_and_dropdown_share_android_box_metrics(self):
         self.assertIn("for control in (meal_dd, qty, search, food_dd):", self.diet)
-        self.assertIn("control.height = None", self.diet)
-        self.assertIn("control.field.height = INPUT_FIELD_HEIGHT", self.diet)
-        self.assertIn("control.field.dense = True", self.diet)
-        self.assertIn("control.field.content_padding = 12", self.diet)
-        self.assertIn("food_dd.field.menu_height = 300", self.diet)
+        self.assertIn("field.height = INPUT_FIELD_HEIGHT", self.diet)
+        self.assertIn("field.border = ft.InputBorder.NONE", self.diet)
+        self.assertIn("field.bgcolor = ft.Colors.TRANSPARENT", self.diet)
+        self.assertIn("control.controls[1] = ft.Container(", self.diet)
+        self.assertIn("height=INPUT_FIELD_HEIGHT", self.diet)
+        self.assertIn("update_food_selector(food_dd, foods[:24])", self.diet)
 
     def test_runtime_build_matches_pyproject(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8-sig")

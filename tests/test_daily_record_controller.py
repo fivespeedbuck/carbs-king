@@ -173,6 +173,28 @@ class DailyRecordControllerTests(unittest.TestCase):
         self.assertIsNone(saved["training"]["session"])
         self.assertEqual(saved["training"]["sessions"], [])
 
+    def test_restore_training_appends_to_original_days_completed_sessions(self):
+        records = {"2026-07-01": {
+            "meals": {MEALS[0]: [{"food": "燕麦"}]},
+            "training": {
+                "session": {"id": "existing", "status": "completed"},
+                "sessions": [],
+            },
+        }}
+        controller, _, repository, _ = build_controller(records)
+
+        controller.restore_training_session(
+            "2026-07-01",
+            {"id": "restored", "date": "wrong-date", "status": "planned"},
+        )
+
+        saved = repository.value["2026-07-01"]
+        self.assertEqual(saved["training"]["session"]["id"], "existing")
+        self.assertEqual(saved["training"]["sessions"][0]["id"], "restored")
+        self.assertEqual(saved["training"]["sessions"][0]["date"], "2026-07-01")
+        self.assertEqual(saved["training"]["sessions"][0]["status"], "completed")
+        self.assertEqual(saved["meals"][MEALS[0]][0]["food"], "燕麦")
+
     def test_delete_one_circumference_keeps_other_metrics_and_daily_sections(self):
         records = {"2026-07-22": {
             "meals": {"早餐": [{"food": "燕麦"}]},

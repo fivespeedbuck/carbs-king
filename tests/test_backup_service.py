@@ -55,6 +55,12 @@ def build_service(root: Path):
         "custom_exercises": [{"name": "自定义动作"}],
         "active_session": {"name": "应清除的当前训练"},
     })
+    save_json(root / "training_recycle_bin.json", [{
+        "id": "trash-1",
+        "original_date": "2026-07-20",
+        "deleted_at": "2026-07-31T08:00:00+08:00",
+        "session": {"id": "session-1"},
+    }])
     state = AppState.default(MEALS)
     state["date"] = "2026-07-22"
     reloads = []
@@ -93,6 +99,7 @@ class BackupServiceTests(unittest.TestCase):
             self.assertIn("user_profile", payload)
             self.assertIn("achievement_unlocks", payload)
             self.assertIn("goal_challenges", payload)
+            self.assertEqual(payload["training_recycle_bin"][0]["id"], "trash-1")
             self.assertEqual(payload["training_data"]["custom_exercises"][0]["name"], "自定义动作")
 
     def test_legacy_full_backup_is_valid_but_partial_backup_is_not(self):

@@ -45,6 +45,7 @@ def build_profile_details(
     metrics: ft.Control,
     macro_panel: ft.Control,
     backup_panel: ft.Control,
+    feature_panels: Sequence[ft.Control] = (),
     theme_panel: ft.Control | None = None,
     update_panel: ft.Control | None = None,
     viewport_width: int | float | None = None,
@@ -91,6 +92,7 @@ def build_profile_details(
     settings_sections = [section_title("功能设置")]
     if theme_panel is not None:
         settings_sections.append(theme_panel)
+    settings_sections.extend(feature_panels)
     settings_sections.append(backup_panel)
     if update_panel is not None:
         settings_sections.append(update_panel)

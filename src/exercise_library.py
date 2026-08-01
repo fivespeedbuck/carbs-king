@@ -542,6 +542,7 @@ def normalize_custom_exercise(value: Any) -> dict[str, Any] | None:
         "default_weight_kg": value.get("default_weight_kg"),
         "default_reps": value.get("default_reps", 10),
         "default_sets": value.get("default_sets", 4),
+        "default_rest_seconds": max(0, int(value.get("default_rest_seconds", 90) or 0)),
         "recording_mode": mode,
         "distance_enabled": bool(value.get("distance_enabled", mode == "cardio")),
         "cardio_metric_fields": text_list("cardio_metric_fields"),

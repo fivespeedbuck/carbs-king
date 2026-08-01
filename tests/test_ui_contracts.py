@@ -229,6 +229,13 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertNotIn("\n                refresh()", section)
         self.assertIn("setup_dlg.on_dismiss = after_setup_dismiss", TRAINING_CONTROLLER_SOURCE)
 
+    def test_exercise_setup_has_persisted_default_rest_seconds(self):
+        self.assertIn("rest = mobile_text_field(", TRAINING_CONTROLLER_SOURCE)
+        self.assertIn('hint_text=str(rest_default)', TRAINING_CONTROLLER_SOURCE)
+        self.assertIn("four_field_grid(weight, reps, sets, rest", TRAINING_CONTROLLER_SOURCE)
+        self.assertIn('"rest_seconds": rest_seconds', TRAINING_CONTROLLER_SOURCE)
+        self.assertIn("rest_notifier.trigger_after", TRAINING_CONTROLLER_SOURCE)
+
     def test_exercise_library_closes_before_setup_sheet_opens(self):
         start = TRAINING_CONTROLLER_SOURCE.index("        def open_setup(exercise):")
         end = TRAINING_CONTROLLER_SOURCE.index("        def exercise_row(exercise):", start)
@@ -953,12 +960,13 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
             "动作摘要",
             [text.value for text in self.controls_of_type(edit_sheet, ft.Text)],
         )
-        weight_field, reps_field, sets_field = self.controls_of_type(edit_sheet, ft.TextField)
+        weight_field, reps_field, sets_field, rest_field = self.controls_of_type(edit_sheet, ft.TextField)
         self.assertEqual(weight_field.value, "40")
         self.assertEqual(weight_field.hint_text, "自重留空")
         self.assertEqual(weight_field.hint_style.color, "#98A39F")
         self.assertNotIn("(", weight_field.hint_text)
         self.assertNotIn(" ", weight_field.hint_text)
+        self.assertEqual(rest_field.value, "90")
         save_button = edit_sheet.content.content.controls[2].content.controls[1]
 
         sets_field.value = "2"
@@ -968,11 +976,13 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         weight_field.value = "55"
         reps_field.value = "5"
         sets_field.value = "4"
+        rest_field.value = "120"
         save_button.on_click(None)
         updated_sets = state["training"]["session"]["exercises"][0]["sets"]
         self.assertEqual(len(updated_sets), 4)
         self.assertEqual([item["weight_kg"] for item in updated_sets[:3]], [10, 20, 30])
         self.assertEqual((updated_sets[3]["weight_kg"], updated_sets[3]["reps"]), (55, 5))
+        self.assertEqual(state["training"]["session"]["exercises"][0]["rest_seconds"], 120)
 
     def test_active_progress_preserves_the_real_completed_set_position(self):
         bench = self.strength_exercise("bench", "杠铃卧推", [False, False, False, False])
