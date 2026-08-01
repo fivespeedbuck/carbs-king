@@ -1,11 +1,11 @@
-# Build 88 发布状态（2026-08-01）
+# Build 89 发布状态（2026-08-01）
 
-- 当前正式发布线为 `1.2.3 / Build 88`，APK SHA-256 为 `F1DD624C4906E3F5AA28B73534D467A6DBF3F4BFFBB27D7BF7E698A039102739`。
-- 源码版本已预备下一次 Build 89；当前发布详情以 `CURRENT_HANDOFF.md` 和 `docs/BUILD88_FINAL_SUMMARY_2026-08-01.md` 为准。
+- 当前正式发布线为 `1.2.3 / Build 89`，APK SHA-256 为 `CE2CB6F28778F2A3D3F68BB4DA88E414B89C7EB3EDC1CC0214260F12E89E3AF8`。
+- 源码版本已预备下一次 Build 90；详情以 `CURRENT_HANDOFF.md` 和 `docs/BUILD89_FINAL_SUMMARY_2026-08-01.md` 为准。
 
 # 碳水大王：项目上下文
 
-> 给新 Codex 会话的稳定项目记忆。先阅读本文件，再阅读 `CURRENT_HANDOFF.md`，随后以工作区、`git status` 与源码为准。不要把历史聊天当作当前事实。
+> 给新 Codex 会话的稳定项目记忆。先按 Obsidian 全局路由加载项目入口，再阅读本文件和 `CURRENT_HANDOFF.md`，随后以工作区、`git status` 与源码为准。不要把历史聊天当作当前事实。
 
 ## 项目身份
 
@@ -18,9 +18,11 @@
 
 ## 当前版本与发布
 
-- 当前发布线：`1.2.3 / Build 82`；完整阶段结果见 `CURRENT_HANDOFF.md` 和 `CHANGELOG.md`。
-- `pyproject.toml` 与 `src/app_version.py` 当前准备下一次 Build 83；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
-- GitHub Release `v1.2.3` 使用 Build 82 APK；本地发布基线 SHA-256 为 `B5509404BF82482688DB0592EA39041D7C33905F1095A00D810590E6847B51C9`。
+- 当前发布线：`1.2.3 / Build 89`；完整阶段结果见 `CURRENT_HANDOFF.md`、`CHANGELOG.md` 和 `docs/BUILD89_FINAL_SUMMARY_2026-08-01.md`。
+- `pyproject.toml` 与 `src/app_version.py` 已准备下一次 Build 90；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
+- Build 89：添加饮食使用底部向上展开的不透明白色选择面板；动作选择页收窄左侧部位栏、加宽动作卡并显示 GIF；“我”页体重/体脂编辑写入当天明确趋势测量。APK 和 iQOO 11S 真机验收通过。
+- GitHub Release `v1.2.3` 使用 Build 89 APK；SHA-256 为 `CE2CB6F28778F2A3D3F68BB4DA88E414B89C7EB3EDC1CC0214260F12E89E3AF8`，文件大小为 `201,779,811` 字节。
+- Build 89 资源基线为 1,326 GIF、1,326 JPG、2 MP3、0 WAV。
 - 应用内更新首选 GitHub Releases API，遇到 403、网络错误、超时或无效 JSON 时自动读取根目录 `update_manifest.json`；发布 APK 时必须同步更新该清单。
 - Android 更新必须沿用既有签名；先核验包名、版本、签名、ZIP 对齐、媒体资源数量，再交付。
 - APK 不提交 Git；通过 GitHub Release 上传。动作媒体已使用 Git LFS，普通 Git 推送大媒体容易因代理出现 HTTP 408。
@@ -84,8 +86,8 @@
 
 ## 新会话启动清单
 
-1. 阅读本文件与 `CURRENT_HANDOFF.md`。
-2. 运行 `git status --short`，阅读当前 diff；不得假设工作区干净。
-3. 核对 `README.md`、`CHANGELOG.md`、`pyproject.toml` 与远端 Release，确定当前发布线。
-4. 先报告当前正在做什么、哪些未验证，再决定是否继续开发、测试、打包或发布。
-5. 只在当前任务完成并经用户确认后才构建 APK / 发布 GitHub。
+1. 先按 `D:\obsidian\obsidian\00-入口\读取路由.md` 读取碳水大王的功能地图、当前状态、下一阶段规划和代码索引。
+2. 阅读本文件与 `CURRENT_HANDOFF.md`。
+3. 运行 `git status --short`，阅读当前 diff；不得假设工作区干净。
+4. 核对 `README.md`、`CHANGELOG.md`、`pyproject.toml` 与远端 Release，确定当前发布线。
+5. 先报告当前正在做什么、哪些未验证，再决定是否继续开发、测试、打包或发布；只在任务完成并经用户确认后才构建 APK / 发布 GitHub。

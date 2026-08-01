@@ -60,18 +60,21 @@ class Build76RegressionTests(unittest.TestCase):
         self.assertIn('sort_exercises(results, usage_stats, selected["sort"])', self.training)
 
     def test_equipment_filters_pack_visible_rows_and_keep_more_reachable(self):
-        self.assertIn("child_aspect_ratio=2.25", self.training)
+        self.assertIn("child_aspect_ratio=1.78", self.training)
         self.assertIn("runs_count=1", self.training)
-        self.assertIn("right=8", self.training)
+        self.assertIn("right=2", self.training)
         self.assertIn("def pack_equipment_controls(items, ordered_count):", self.training)
         self.assertIn("for row_index, used in enumerate(used_widths):", self.training)
         self.assertIn('compact_row = ft.Row(', self.training)
         self.assertIn('"更多器械"', self.training)
         self.assertIn('scroll=_SCROLL_HIDDEN', self.training)
-        self.assertIn('content=category_rows, width=52', self.training)
+        self.assertIn('content=category_rows, width=42', self.training)
         self.assertNotIn('sort_row, selection_status', self.training)
         self.assertIn('"更多器械",', self.training)
         self.assertIn('selected["equipment"] != "全部" and selected["equipment"] not in equipment', self.training)
+        self.assertIn("browser_width = max(260, min(398", self.training)
+        self.assertIn("equipment_panel_width = max(238, browser_width - 51)", self.training)
+        self.assertIn('width=browser_width, height=560', self.training)
 
     def test_training_entry_icons_have_visible_white_backplates(self):
         self.assertIn('size=36, color=PRIMARY), width=60, height=60, bgcolor=CARD', self.today)
@@ -181,6 +184,8 @@ class Build76RegressionTests(unittest.TestCase):
         self.assertIn("control.controls[1] = ft.Container(", self.diet)
         self.assertIn("height=INPUT_FIELD_HEIGHT", self.diet)
         self.assertIn("update_food_selector(food_dd, foods[:24])", self.diet)
+        self.assertIn("def upward_choice_input", self.diet)
+        self.assertIn('data="upward-choice-sheet"', self.diet)
 
     def test_runtime_build_matches_pyproject(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8-sig")

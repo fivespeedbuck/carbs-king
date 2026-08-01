@@ -16,12 +16,12 @@
 
 | 页面 | 控制器 | 视图/服务 |
 | --- | --- | --- |
-| 今日 | `src/today_controller.py` | `src/today_views.py`、`src/today_service.py` |
+| 今日 | `src/today_controller.py`、`src/daily_record_controller.py` | `src/today_views.py`、`src/nutrition_service.py` |
 | 训练 | `src/training_controller.py` | `src/training_views.py`、`src/training_picker_views.py`、`src/training_plan_views.py`、`src/training_summary_views.py` |
 | 饮食 | `src/diet_controller.py` | `src/diet_views.py`、`src/diet_service.py`、`src/food_library.py` |
 | 数据 | `src/analytics_page.py` | `src/analytics_ui.py`、`src/analytics_trend_views.py`、`src/analytics_service.py` |
-| 我 | `src/profile_controller.py` | `src/profile_views.py`、`src/profile_details_views.py`、`src/profile_theme_views.py`、`src/profile_update_views.py` |
-| 恢复 | `src/recovery_controller.py` | `src/recovery_views.py`、`src/recovery_service.py` |
+| 我 | `src/profile_controller.py` | `src/profile_views.py`、`src/profile_details_views.py`、`src/profile_theme_views.py`、`src/profile_update_views.py`、`src/profile_feature_views.py` |
+| 恢复 | `src/recovery_controller.py` | 复用 `src/form_views.py`、`src/ui_components.py` 与日记录控制器；当前没有独立的恢复视图或服务文件。 |
 
 ## 训练功能定位
 
@@ -38,7 +38,9 @@
 ## 饮食与更新功能定位
 
 - 食物搜索和目录：`src/food_library.py`。
-- 添加饮食、常用回填、空搜索结果与食物库编辑：`src/diet_controller.py`；Android 下拉菜单表面样式位于 `src/ui_components.py`。
+- 添加饮食、常用回填、空搜索结果、底部向上白色选择面板与食物库编辑：`src/diet_controller.py`；其他页面的通用 Android 下拉样式位于 `src/ui_components.py`。
+- “我”页体重/体脂保存同步当天趋势：`src/profile_controller.py` 调用 `src/analytics_service.py` 的明确测量合并逻辑，再由 `src/daily_record_controller.py` 写入当天记录。
+- 动作选择卡 GIF、帮助/选择按钮与左侧部位栏：`src/training_picker_views.py`；动作浏览区宽度和分页布局：`src/training_controller.py`。
 - 营养计算：`src/app_utils.py`、`src/nutrition_service.py`。
 - Release 版本检查：`src/app_version.py`、`src/update_service.py`、`src/profile_update_views.py`；GitHub API 不可用时读取根目录 `update_manifest.json`。
 - 版本配置：`pyproject.toml`；构建后由 `build_apk_update.ps1` 同步预备下一 Build。

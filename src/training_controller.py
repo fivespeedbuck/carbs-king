@@ -451,6 +451,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
     def open_add_exercise_dialog(after_save=None):
         ensure_session()
         dialog_width = responsive_width()
+        # Full-screen forms only reserve their own 16 px side padding. The
+        # generic dialog width keeps an additional 24 px alert-dialog gutter,
+        # which previously left a false right boundary on the phone picker.
+        browser_width = max(260, min(398, int(to_float(getattr(page, "width", None), 430)) - 32))
         page_size = 24
         selected = {"category": "胸", "subgroup": "全部", "equipment": "全部", "sort": "frequent", "limit": page_size, "show_more_equipment": False}
         common_equipment_names = (
@@ -463,7 +467,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         categories = tuple(dict.fromkeys([*EXERCISE_CATEGORIES, *(item.get("category", "其他") for item in custom_exercises)]))
         # Leave more of the phone width to the filters and results while
         # keeping the body-part rail readable.
-        equipment_panel_width = max(226, dialog_width - 64)
+        equipment_panel_width = max(238, browser_width - 51)
         # Rendering a whole body-part at once can mean hundreds of cards in
         # the web canvas. Keep the picker responsive and reveal more on demand.
         list_holder = ft.GridView(
@@ -474,21 +478,21 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             # Phone cards need a real lower breathing area beneath the add
             # button and prescription, rather than inheriting desktop-tight
             # proportions from the original grid.
-            child_aspect_ratio=2.25,
+            child_aspect_ratio=1.78,
             spacing=8,
             run_spacing=8,
             expand=True,
             build_controls_on_demand=True,
             cache_extent=180,
-            padding=ft.Padding(left=0, top=0, right=8, bottom=0),
+            padding=ft.Padding(left=0, top=0, right=2, bottom=0),
         )
         load_more_holder = ft.Column(spacing=6)
-        category_rows = ft.Column(spacing=3, width=68, scroll=_SCROLL_HIDDEN)
+        category_rows = ft.Column(spacing=3, width=42, scroll=_SCROLL_HIDDEN)
         subgroup_rows = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
         equipment_rows = ft.Column(spacing=6, width=equipment_panel_width)
         selection_status = ft.Text("已选择 0 个动作", size=13, color=SUB, weight="bold")
         search_notice = ft.Text("", size=12, color=ORANGE, visible=False)
-        search = mobile_text_field("搜索动作名称、器械或目标肌群", "", width=dialog_width)
+        search = mobile_text_field("搜索动作名称、器械或目标肌群", "", width=browser_width)
         library_dlg = None
         pending_setup = {"dialog": None}
         keyboard_focus_target = {"control": None}
@@ -898,7 +902,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 lambda e, item=exercise: toggle_exercise(item),
                 selected=exercise_name in selected_names,
                 on_delete=None,
-                title_width=max(140, equipment_panel_width - 110),
+                title_width=max(96, equipment_panel_width - 150),
             )
 
         def toggle_exercise(exercise):
@@ -1140,10 +1144,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         rebuild_list()
         custom_item = {"name": "", "category": "自定义", "equipment": "其他", "target_muscles": [], "cues": [], "mistakes": [], "default_weight_kg": None, "default_reps": 10, "default_sets": 4, "recording_mode": "strength", "distance_enabled": True}
         browser_panel = ft.Row([
-            ft.Container(content=category_rows, width=52, padding=ft.Padding(left=0, top=0, right=0, bottom=0)),
+            ft.Container(content=category_rows, width=42, padding=ft.Padding(left=0, top=0, right=0, bottom=0)),
             ft.VerticalDivider(width=1, color="#D9E6E1"),
             ft.Column([subgroup_rows, equipment_rows, search_notice, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8),
-        ], width=dialog_width, height=560, spacing=8)
+        ], width=browser_width, height=560, spacing=4)
         add_custom_action = ft.IconButton(
             icon=ft.Icons.ADD,
             tooltip="新建自定义动作",

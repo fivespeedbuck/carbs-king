@@ -2,11 +2,11 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 88**
+- 当前版本：**1.2.3 / Build 89**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-[![下载 Build 88 APK](https://img.shields.io/badge/下载-Build_88_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+[![下载 Build 89 APK](https://img.shields.io/badge/下载-Build_89_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -72,6 +72,7 @@
 - 饮食页包含“今日饮食 / 食物库”互斥视图。
 - 食物库提供 2000+ 条可搜索食物，包含基础食材、家常菜、外卖/地方菜、早餐小吃、便利店食品与日常餐饮；记录单位、基准数量、计量口径、热量和三大营养素，可新增和编辑。
 - 添加饮食提供一两口、几口、半份和一份四种快捷份量，并支持按餐次记录堂食或外卖。
+- 餐次和食物选项使用从底部向上展开的不透明白色选择面板，避免 OriginOS 原生下拉菜单透明或越出手机边界。
 - 补剂库与今日补剂记录保留在“身体与恢复”页面。
 - 当日汇总直接对照宏量目标区间，减少在多个页面之间来回查看。
 
@@ -87,6 +88,7 @@
 
 - 记录体重、体脂、胸围、腰围、臀围、上臂围、大腿围和小腿围，并计算 BMR/TDEE 与建议热量目标。
 - 体重和体脂可分别标记为本次实测，围度独立记录。
+- 在“我”页实际修改体重或体脂时，会同步生成当天趋势测量，不需要再到数据页重复录入。
 - 记录每日饮水、补剂、入睡时间、起床时间和小睡。
 - 恢复数据与训练、饮食使用同一日期口径，便于在趋势和汇总中对照。
 
@@ -155,14 +157,14 @@ flet run
 
 ## 测试与质量
 
-Build 88 的最终自动检查结果：
+Build 89 的最终自动检查结果：
 
-- `455 passed`
+- `458 passed`
 - `441 subtests passed`
 - Python 语法编译检查通过
 - Git 差异格式检查通过
 - `430 × 900` 动作库常用词真实交互验收通过
-- APK 包名、versionCode 88、v2 签名、内层资源和原生提醒运行时门禁通过
+- APK 包名、versionCode 89、v2 签名、内层资源和原生提醒运行时门禁通过
 
 运行完整测试：
 
@@ -188,7 +190,7 @@ Windows 下可以运行：
 - 优先使用项目专属的备份签名密钥。
 - 资源与原生提醒门禁通过后，才把 `pyproject.toml` 和 `src/app_version.py` 中的 Build 自动加一，为下次更新做准备。
 
-当前发布包为 `1.2.3 / Build 88`，构建脚本已把下一次 Build 预备为 `89`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
+当前发布包为 `1.2.3 / Build 89`，构建脚本已把下一次 Build 预备为 `90`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
 
 ## 目录结构
 
@@ -209,7 +211,7 @@ carbs-king/
 ## 版本与 Release
 
 - [v1.2.3 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
-- [Build 88 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+- [Build 89 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 

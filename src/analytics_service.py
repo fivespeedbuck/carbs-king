@@ -377,6 +377,32 @@ def make_body_measurement(
     return result
 
 
+def merge_body_measurement(
+    previous: Any,
+    *,
+    weight_kg: Any = None,
+    bodyfat_percent: Any = None,
+    record_weight: bool = False,
+    record_bodyfat: bool = False,
+    measured_at: str,
+) -> dict[str, Any]:
+    """Record edited body values without clearing the other measured metric."""
+    existing = _mapping(previous)
+    existing_weight = existing.get("weight_kg") if bool(existing.get("weight_measured")) else None
+    existing_bodyfat = (
+        existing.get("bodyfat_percent") if bool(existing.get("bodyfat_measured")) else None
+    )
+    next_weight = _number(weight_kg) if record_weight else None
+    next_bodyfat = _number(bodyfat_percent) if record_bodyfat else None
+    if next_weight is None and next_bodyfat is None:
+        return dict(existing)
+    return make_body_measurement(
+        weight_kg=next_weight if next_weight is not None else existing_weight,
+        bodyfat_percent=next_bodyfat if next_bodyfat is not None else existing_bodyfat,
+        measured_at=measured_at,
+    )
+
+
 def _has_food(record: Mapping[str, Any]) -> bool:
     meals = record.get("meals")
     if isinstance(meals, Mapping) and any(
@@ -521,6 +547,7 @@ __all__ = [
     "calendar_day_summary",
     "format_body_parts",
     "make_body_measurement",
+    "merge_body_measurement",
     "normalize_body_measurement",
     "normalize_body_part",
     "summarize_daily_training",

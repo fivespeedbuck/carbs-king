@@ -169,7 +169,7 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertNotIn("neck_cm", keys)
         self.assertNotIn("shoulder_cm", keys)
 
-    def test_profile_ui_moves_measurement_recording_to_data_page(self):
+    def test_profile_body_edits_also_create_today_measurement_records(self):
         controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8-sig")
         details = (ROOT / "src" / "profile_details_views.py").read_text(encoding="utf-8-sig")
         data_controller = (ROOT / "src" / "data_record_controller.py").read_text(encoding="utf-8-sig")
@@ -177,6 +177,11 @@ class ProfileMeasurementContractTests(unittest.TestCase):
 
         self.assertNotIn("def record_current_measurement", controller)
         self.assertNotIn('def save_profile_fields', controller)
+        self.assertIn("from analytics_service import merge_body_measurement", controller)
+        self.assertIn("def record_current_body_measurement", controller)
+        self.assertIn("weight_changed=(field is weight_field", controller)
+        self.assertIn("bodyfat_changed=(field is bodyfat_field", controller)
+        self.assertIn("record_current_body_measurement(weight_changed=True, bodyfat_changed=True)", controller)
         self.assertIn('"查看身体围度"', details)
         self.assertIn('"收起身体围度"', details)
         self.assertNotIn('"记录本次测量"', details)

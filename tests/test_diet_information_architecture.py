@@ -258,10 +258,20 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
 
         self.assertEqual(food_input.field.value, "白米饭")
         self.assertEqual(quantity_input.field.value, "200")
-        option_values = [option.key for option in food_input.field.options]
+        option_values = food_input.choice_values
         self.assertIn("白米饭", option_values)
         self.assertLessEqual(len(option_values), 25)
         self.assertEqual(state["meals"]["午餐"], [])
+
+        food_input.open_choice_panel()
+        choice_sheet = opened[-1]
+        self.assertIsInstance(choice_sheet, ft.BottomSheet)
+        self.assertEqual(choice_sheet.bgcolor, "#FFFFFF")
+        self.assertEqual(choice_sheet.data, "upward-choice-sheet")
+        self.assertEqual(choice_sheet.content.bgcolor, "#FFFFFF")
+        option_list = choice_sheet.content.content.controls[1]
+        self.assertLessEqual(option_list.height, 330)
+        self.assertEqual(option_list.controls[-1].data, "upward-choice-safe-bottom")
 
     def test_labels_use_fixed_two_line_slot_and_equal_field_height(self):
         short = mobile_text_field("数量", "1")
@@ -382,6 +392,20 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertFalse(selector.field.disabled)
         self.assertEqual(selector.value, "罗氏虾")
         self.assertEqual(selector.field.menu_height, 48)
+
+    def test_add_food_uses_an_opaque_upward_choice_sheet(self):
+        start = DIET_CONTROLLER_SOURCE.index("    def open_add_food_dialog")
+        end = DIET_CONTROLLER_SOURCE.index("    def open_food_library_dialog", start)
+        section = DIET_CONTROLLER_SOURCE[start:end]
+
+        self.assertIn("def upward_choice_input", section)
+        self.assertIn('data="upward-choice-sheet"', section)
+        self.assertIn('data="upward-choice-safe-bottom"', section)
+        self.assertIn("list_height = min(330", section)
+        self.assertIn('bgcolor="#FFFFFF"', section)
+        self.assertIn("ft.BottomSheet(", section)
+        self.assertNotIn('meal_dd = mobile_dropdown(', section)
+        self.assertNotIn('food_dd = mobile_dropdown(', section)
 
     def test_custom_unit_visibility_uses_real_dropdown_select_event(self):
         updates = []
