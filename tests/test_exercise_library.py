@@ -18,10 +18,11 @@ from storage_service import load_json, save_json  # noqa: E402
 
 
 class ExerciseLibraryTests(unittest.TestCase):
-    def test_offline_library_has_1324_unique_source_ids(self):
-        self.assertEqual(len(EXERCISE_LIBRARY), 1324)
-        self.assertEqual(len({item["id"] for item in EXERCISE_LIBRARY}), 1324)
-        self.assertEqual(len({item["name"] for item in EXERCISE_LIBRARY}), 1324)
+    def test_offline_library_keeps_1324_source_ids_and_curated_additions(self):
+        self.assertEqual(len(EXERCISE_LIBRARY), 1326)
+        self.assertEqual(len({item["id"] for item in EXERCISE_LIBRARY}), 1326)
+        self.assertEqual(len({item["id"] for item in EXERCISE_LIBRARY if item["id"].startswith("dataset:")}), 1324)
+        self.assertEqual(len({item["name"] for item in EXERCISE_LIBRARY}), 1326)
         self.assertTrue(all(str(item["name"]).strip() for item in EXERCISE_LIBRARY))
         self.assertFalse(
             [item["name"] for item in EXERCISE_LIBRARY if re.search(r"[A-Za-z]{3,}", item["name"])],
@@ -120,6 +121,9 @@ class ExerciseLibraryTests(unittest.TestCase):
             with self.subTest(first_result=query):
                 self.assertEqual(search_exercises(query)[0]["id"], expected_id)
 
+        self.assertEqual(search_exercises("站姿器械下夹胸")[0]["id"], "curated:standing-machine-lower-chest-fly")
+        self.assertEqual(search_exercises("站姿器械侧平举")[0]["id"], "curated:standing-machine-lateral-raise")
+
     def test_common_machine_titles_and_filters_are_user_facing(self):
         by_id = {item["id"]: item for item in EXERCISE_LIBRARY}
         self.assertEqual(by_id["dataset:0739"]["name"], "45度倒蹬")
@@ -130,6 +134,8 @@ class ExerciseLibraryTests(unittest.TestCase):
         self.assertEqual(by_id["dataset:0579"]["equipment"], "大剪刀")
         self.assertEqual(by_id["dataset:2285"]["equipment"], "鹦鹉螺机")
         self.assertEqual(by_id["dataset:0251"]["subgroup"], "下胸")
+        self.assertEqual(by_id["curated:standing-machine-lower-chest-fly"]["equipment"], "固定轨迹器械")
+        self.assertEqual(by_id["curated:standing-machine-lateral-raise"]["subgroup"], "中束")
 
     def test_search_relaxes_over_specific_filters_instead_of_showing_blank(self):
         matches, scope = search_exercises_with_fallback("双杠臂屈伸", "胸", "中胸", "杠铃")

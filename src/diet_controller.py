@@ -22,7 +22,7 @@ from food_library import FOOD_CATEGORIES, food_catalog, search_foods
 from form_views import FormViewContext, build_full_form_sheet
 from repositories import AppRepositories
 from ui_components import (
-    BORDER, GREEN, INPUT_FIELD_HEIGHT, INPUT_LABEL_HEIGHT, INPUT_LABEL_SPACING,
+    BORDER, GREEN, INPUT_FIELD_HEIGHT,
     PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, card, page_card, macro_progress_bar,
     make_button, mobile_dropdown, mobile_text_field, quantity_unit_grid, section_title,
     small_text, thin_border, two_field_grid,
@@ -208,21 +208,15 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             return food.get("unit", "g") if food else "g"
 
         qty = mobile_text_field(f"数量（{current_unit()}）", keyboard_type=_KEYBOARD_NUMBER, expand=True)
-        # Flet's dense TextField paints a 48–50px outline even when its
-        # configured height is raised. Dropdowns are not subject to that
-        # compact-mode reduction, so make the paired text fields non-dense
-        # and give all four controls the same field-height contract.
-        aligned_input_height = INPUT_LABEL_HEIGHT + INPUT_LABEL_SPACING + INPUT_FIELD_HEIGHT
+        # Align the native fields themselves.  Do not fix the LabeledInput
+        # wrapper height: Dropdown and TextField have different Android
+        # decoration insets, so that wrapper constraint can make one outline
+        # overflow while the other remains compressed.
         for control in (meal_dd, qty, search, food_dd):
-            control.height = aligned_input_height
-            control.controls[0].height = INPUT_LABEL_HEIGHT
-            control.spacing = INPUT_LABEL_SPACING
+            control.height = None
+            control.field.height = INPUT_FIELD_HEIGHT
+            control.field.dense = True
             control.field.content_padding = 12
-        for control in (meal_dd, food_dd):
-            control.field.height = INPUT_FIELD_HEIGHT
-        for control in (qty, search):
-            control.field.height = INPUT_FIELD_HEIGHT
-            control.field.dense = False
 
         def choose_portion(grams):
             # Dishes are recorded by what was actually eaten, not the whole

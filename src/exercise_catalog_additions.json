@@ -1,0 +1,42 @@
+[
+  {
+    "id": "curated:standing-machine-lower-chest-fly",
+    "name": "站姿器械下夹胸",
+    "category": "胸",
+    "subgroup": "下胸",
+    "equipment": "固定轨迹器械",
+    "target_muscles": ["胸肌", "肱三头肌", "三角肌前束"],
+    "cues": ["调整圆盘转轴高度，使摆臂转轴略低于肩部。", "面对器械站稳，双手分别握住两侧圆盘摆臂末端的把手。", "手臂微屈，沿固定弧线向下、向内夹至下胸前方。", "顶点短暂停顿，再控制还原，避免耸肩或借力甩动。"],
+    "mistakes": ["把手未与圆盘摆臂对齐就强行发力。", "肘部完全锁死或含胸耸肩。"],
+    "image": "exercises/images/custom-standing-machine-lower-chest-fly.jpg",
+    "gif": "exercises/gifs/custom-standing-machine-lower-chest-fly.gif",
+    "default_weight_kg": null,
+    "default_reps": 10,
+    "default_sets": 4,
+    "recording_mode": "strength",
+    "distance_enabled": false,
+    "cardio_metric_fields": [],
+    "aliases": ["器械下夹胸", "固定器械下夹胸", "站姿下夹胸"],
+    "default_duration_seconds": null
+  },
+  {
+    "id": "curated:standing-machine-lateral-raise",
+    "name": "站姿器械侧平举",
+    "category": "肩",
+    "subgroup": "中束",
+    "equipment": "固定轨迹器械",
+    "target_muscles": ["三角肌中束", "斜方肌"],
+    "cues": ["调整圆盘转轴高度，使转轴与肩关节大致齐平。", "站在踏板上，双手分别握住两侧圆盘摆臂末端的把手。", "沿固定弧线将手臂向两侧抬至接近肩高，肘部微屈。", "控制下放至起始位，保持躯干稳定，不借力摆动。"],
+    "mistakes": ["耸肩或用腰部摆动借力。", "抬得过高，导致斜方肌过度代偿。"],
+    "image": "exercises/images/custom-standing-machine-lateral-raise.jpg",
+    "gif": "exercises/gifs/custom-standing-machine-lateral-raise.gif",
+    "default_weight_kg": null,
+    "default_reps": 12,
+    "default_sets": 4,
+    "recording_mode": "strength",
+    "distance_enabled": false,
+    "cardio_metric_fields": [],
+    "aliases": ["器械侧平举", "固定器械侧平举", "圆盘侧平举"],
+    "default_duration_seconds": null
+  }
+]
