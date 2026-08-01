@@ -10,6 +10,7 @@ from analytics_service import (  # noqa: E402
     build_period_series,
     calendar_day_summary,
     make_body_measurement,
+    merge_body_measurement,
     normalize_body_measurement,
     summarize_daily_training,
 )
@@ -141,6 +142,38 @@ class LowCarbAssessmentTests(unittest.TestCase):
 
 
 class MeasurementTests(unittest.TestCase):
+    def test_profile_measurement_merge_preserves_the_other_explicit_metric(self):
+        previous = make_body_measurement(
+            weight_kg="72.5", measured_at="2026-07-31T07:00:00+08:00"
+        )
+
+        result = merge_body_measurement(
+            previous,
+            bodyfat_percent="17.4",
+            record_bodyfat=True,
+            measured_at="2026-07-31T08:00:00+08:00",
+        )
+
+        self.assertEqual(result["weight_kg"], 72.5)
+        self.assertTrue(result["weight_measured"])
+        self.assertEqual(result["bodyfat_percent"], 17.4)
+        self.assertTrue(result["bodyfat_measured"])
+        self.assertEqual(result["measured_at"], "2026-07-31T08:00:00+08:00")
+
+    def test_invalid_profile_measurement_does_not_clear_existing_record(self):
+        previous = make_body_measurement(
+            bodyfat_percent="17.4", measured_at="2026-07-31T08:00:00+08:00"
+        )
+
+        result = merge_body_measurement(
+            previous,
+            weight_kg="not-a-number",
+            record_weight=True,
+            measured_at="2026-07-31T09:00:00+08:00",
+        )
+
+        self.assertEqual(result, previous)
+
     def test_canonical_measurement_is_used_for_trends(self):
         record = {"profile": {
             "weight_kg": "72.0",

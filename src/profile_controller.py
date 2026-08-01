@@ -25,6 +25,7 @@ from app_defaults import CIRCUMFERENCE_FIELDS, DEFAULT_MACRO_MULTIPLIERS
 from app_state import AppState
 from app_version import BUILD_NUMBER, VERSION_NAME
 from app_utils import to_float
+from analytics_service import merge_body_measurement
 from apk_update_download import (
     ApkUpdateError,
     default_apk_destination,
@@ -401,6 +402,19 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             "profile_inited": bool(state.get("profile_inited", False)),
         }
         repositories.profile.save(profile_data)
+
+    def record_current_body_measurement(*, weight_changed=False, bodyfat_changed=False):
+        """Write profile body edits into the current day's explicit trend point."""
+        measurement = merge_body_measurement(
+            state.get("measurement"),
+            weight_kg=state.get("weight"),
+            bodyfat_percent=state.get("bodyfat"),
+            record_weight=weight_changed,
+            record_bodyfat=bodyfat_changed,
+            measured_at=iso_now(),
+        )
+        if measurement:
+            state["measurement"] = measurement
 
     def load_challenges():
         repository = repositories.goal_challenges
@@ -1358,11 +1372,17 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         def persist_body_profile(event=None):
             """Save the body/profile field that just finished editing."""
             set_input_focused(False)
+            previous_weight = str(state.get("weight", "")).strip()
+            previous_bodyfat = str(state.get("bodyfat", "")).strip()
             assign_visible_fields()
+            field = getattr(event, "control", None)
+            record_current_body_measurement(
+                weight_changed=(field is weight_field and state["weight"] != previous_weight),
+                bodyfat_changed=(field is bodyfat_field and state["bodyfat"] != previous_bodyfat),
+            )
             state["age_reference_year"] = datetime.date.today().year
             save_profile_from_state()
             save_current()
-            field = getattr(event, "control", None)
             labels = {
                 id(weight_field): "体重已保存",
                 id(bodyfat_field): "体脂已保存",
@@ -1605,6 +1625,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                 snack(str(targets["profile_message"]))
                 return
             state["profile_inited"] = True
+            record_current_body_measurement(weight_changed=True, bodyfat_changed=True)
             save_profile_from_state()
             save_current()
             close_control(dlg)

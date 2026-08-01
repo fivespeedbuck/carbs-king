@@ -346,6 +346,7 @@ class TrainingUiContractTests(unittest.TestCase):
         exercise = {
             "name": "杠铃卧推",
             "equipment": "杠铃",
+            "gif": "assets/exercises/gifs/barbell-bench-press.gif",
             "recording_mode": "strength",
             "default_weight_kg": 60,
             "default_reps": 8,
@@ -360,6 +361,7 @@ class TrainingUiContractTests(unittest.TestCase):
         )
         action_column = control.content.controls[-1]
         detail_column = control.content.controls[0]
+        media = control.content.controls[1]
         help_button, toggle_button = action_column.controls[0], action_column.controls[-1]
 
         self.assertTrue(control.ink)
@@ -368,6 +370,10 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertEqual(detail_column.alignment, training_controller_module.ft.MainAxisAlignment.SPACE_BETWEEN)
         self.assertEqual(detail_column.controls[0].controls[0].height, 32)
         self.assertEqual(len(detail_column.controls[1].controls), 2)
+        self.assertEqual(media.data, "exercise-card-media")
+        self.assertEqual(media.width, 76)
+        self.assertEqual(media.content.data, "exercise-card-media-image")
+        self.assertTrue(media.content.src.endswith("barbell-bench-press.gif"))
         self.assertEqual(help_button.icon, training_controller_module.ft.Icons.HELP_OUTLINE)
         self.assertEqual(toggle_button.icon, training_controller_module.ft.Icons.CHECK_CIRCLE)
         help_button.on_click(None)

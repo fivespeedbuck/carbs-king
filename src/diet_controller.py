@@ -25,7 +25,7 @@ from ui_components import (
     BORDER, GREEN, INPUT_FIELD_HEIGHT,
     PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, card, page_card, macro_progress_bar,
     make_button, mobile_dropdown, mobile_text_field, quantity_unit_grid, section_title,
-    small_text, thin_border, two_field_grid,
+    set_input_focused, small_text, thin_border, two_field_grid,
 )
 
 
@@ -53,9 +53,13 @@ def resolve_food_unit(selected_unit: Any, custom_unit: Any = "") -> str:
 
 
 def update_food_selector(selector: Any, matches: list[Mapping[str, Any]]) -> None:
-    """Keep an empty food search from opening a blank Android dropdown menu."""
+    """Update either the Add Food choice sheet or a legacy Dropdown."""
     names = [str(item.get("name") or "").strip() for item in matches]
     names = [name for name in names if name]
+    set_choices = getattr(selector, "set_choices", None)
+    if callable(set_choices):
+        set_choices(names)
+        return
     selector.options = [ft.dropdown.Option(name) for name in names]
     selector.field.disabled = not names
     selector.field.hint_text = "无匹配食物" if not names else "请选择食物"
@@ -212,9 +216,113 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
     def open_add_food_dialog(default_meal="午餐"):
         dialog_width = responsive_width()
 
-        meal_dd = mobile_dropdown("餐次", default_meal, [ft.dropdown.Option(m) for m in MEALS], expand=True)
+        def upward_choice_input(label, value, choices):
+            """Opaque bottom choice sheet used instead of Android's transparent popup."""
+            control = mobile_text_field(label, value or "", expand=True)
+            field = control.field
+            field.read_only = True
+            field.show_cursor = False
+            field.can_request_focus = False
+            field.suffix_icon = ft.Icons.ARROW_DROP_DOWN
+            control.choice_values = []
+
+            def set_choices(values):
+                clean = [str(item).strip() for item in values if str(item).strip()]
+                control.choice_values = clean
+                field.hint_text = "无匹配食物" if not clean else "请选择"
+                if len(clean) == 1:
+                    control.value = clean[0]
+                elif str(control.value or "") not in clean:
+                    control.value = ""
+
+            def open_choices(e=None):
+                values = list(control.choice_values)
+                if not values:
+                    return
+                set_input_focused(False)
+                choice_sheet = None
+
+                def choose(selected_value):
+                    control.value = selected_value
+                    close_control(choice_sheet)
+                    handler = control.on_change
+                    if callable(handler):
+                        handler(None)
+                    else:
+                        page.update()
+
+                rows = [ft.Container(
+                    content=ft.Text(
+                        item,
+                        size=16,
+                        color=TEXT,
+                        weight="bold" if item == control.value else None,
+                        max_lines=1,
+                        overflow="ellipsis",
+                    ),
+                    height=50,
+                    padding=ft.Padding(left=18, top=0, right=18, bottom=0),
+                    alignment=ft.Alignment.CENTER_LEFT,
+                    bgcolor=PRIMARY_SOFT if item == control.value else "#FFFFFF",
+                    border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
+                    ink=True,
+                    on_click=lambda event, selected=item: choose(selected),
+                ) for item in values]
+                # Keep the final option above Android's gesture/navigation
+                # area. The spacer scrolls into view after the last row.
+                safe_bottom_spacer = ft.Container(
+                    height=28,
+                    bgcolor="#FFFFFF",
+                    data="upward-choice-safe-bottom",
+                )
+                list_height = min(330, max(78, len(rows) * 50 + 28))
+                choice_sheet = ft.BottomSheet(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Container(
+                                content=ft.Row([
+                                    ft.Text(label, size=18, weight="bold", color=TEXT),
+                                    ft.IconButton(
+                                        icon=ft.Icons.CLOSE,
+                                        tooltip="关闭",
+                                        on_click=lambda event: close_control(choice_sheet),
+                                    ),
+                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                padding=ft.Padding(left=18, top=4, right=8, bottom=4),
+                                bgcolor="#FFFFFF",
+                            ),
+                            ft.Column(
+                                [*rows, safe_bottom_spacer],
+                                height=list_height,
+                                spacing=0,
+                                scroll=_SCROLL_HIDDEN,
+                            ),
+                        ], spacing=0, tight=True),
+                        bgcolor="#FFFFFF",
+                        border_radius=ft.BorderRadius(
+                            top_left=16, top_right=16, bottom_left=0, bottom_right=0
+                        ),
+                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                    ),
+                    bgcolor="#FFFFFF",
+                    barrier_color="#66000000",
+                    dismissible=True,
+                    draggable=True,
+                    show_drag_handle=True,
+                    use_safe_area=True,
+                    data="upward-choice-sheet",
+                )
+                open_control(choice_sheet)
+
+            control.set_choices = set_choices
+            control.open_choice_panel = open_choices
+            field.on_click = open_choices
+            set_choices(choices)
+            return control
+
+        meal_dd = upward_choice_input("餐次", default_meal, MEALS)
         search = mobile_text_field("搜索食物", expand=True)
-        food_dd = mobile_dropdown("食物", None, [], expand=True)
+        food_dd = upward_choice_input("食物", None, [])
         update_food_selector(food_dd, foods[:24])
 
         def current_unit():
@@ -328,7 +436,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             visible_names = [str(food.get("name", "")) for food in foods[:24]]
             if name and name not in visible_names:
                 visible_names.insert(0, name)
-            food_dd.options = [ft.dropdown.Option(value) for value in visible_names if value]
+            food_dd.set_choices([value for value in visible_names if value])
             food_dd.value = name
             search.value = ""
             qty.value = f"{to_float(item.get('qty')):g}"

@@ -139,7 +139,7 @@ def build_exercise_card(
     *,
     selected: bool = False,
     on_delete: Callable[[Any], None] | None = None,
-    title_width: float = 166.0,
+    title_width: float = 140.0,
 ) -> ft.Control:
     weight = exercise.get("default_weight_kg")
     reps = exercise.get("default_reps")
@@ -159,6 +159,19 @@ def build_exercise_card(
         title_width,
         maximum=14,
         minimum=10,
+    )
+    media_src = str(exercise.get("gif") or exercise.get("image") or "").strip()
+    media = (
+        ft.Image(
+            src=media_src,
+            fit="contain",
+            gapless_playback=True,
+            cache_width=160,
+            cache_height=160,
+            data="exercise-card-media-image",
+        )
+        if media_src
+        else ft.Icon(ft.Icons.FITNESS_CENTER, size=30, color=GREEN)
     )
     return ft.Container(
         content=ft.Row([
@@ -196,6 +209,17 @@ def build_exercise_card(
                     ft.Text(default_text, size=12, color=SUB, max_lines=1, overflow="ellipsis"),
                 ], spacing=1),
             ], expand=True, spacing=1, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Container(
+                content=media,
+                width=76,
+                height=104,
+                bgcolor="#FFFFFF",
+                border_radius=8,
+                alignment=ft.Alignment.CENTER,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                on_click=on_help,
+                data="exercise-card-media",
+            ),
             ft.Column([
                 ft.IconButton(icon=ft.Icons.HELP_OUTLINE, tooltip="动作说明", icon_color=GREEN, width=44, height=44, icon_size=27, on_click=on_help),
                 *([ft.IconButton(
@@ -218,7 +242,7 @@ def build_exercise_card(
                     on_click=on_toggle,
                 ),
             ], width=44, spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+        ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.STRETCH),
         bgcolor=PRIMARY_SOFT if selected else "#FFFFFF",
         border=thin_border(PRIMARY) if selected else thin_border(),
         border_radius=12,
@@ -284,10 +308,19 @@ def build_category_sidebar(
     display_labels = {"核心稳定": "核心"}
     return [
         ft.Container(
-            content=ft.Text(display_labels.get(category, category), size=15, weight="bold" if selected == category else None, color="#FFFFFF" if selected == category else SUB),
+            content=ft.Text(
+                display_labels.get(category, category),
+                size=14,
+                weight="bold" if selected == category else None,
+                color="#FFFFFF" if selected == category else SUB,
+                text_align="center",
+                max_lines=1,
+                overflow="ellipsis",
+            ),
             bgcolor=PRIMARY if selected == category else None,
             border_radius=8,
-            padding=ft.Padding(left=8, top=12, right=8, bottom=12),
+            padding=ft.Padding(left=3, top=12, right=3, bottom=12),
+            alignment=ft.Alignment.CENTER,
             on_click=lambda e, value=category: on_select(value),
             ink=True,
         )
