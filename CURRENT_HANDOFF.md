@@ -1,37 +1,37 @@
-# 当前交接：2026-07-31 Build 81 组合成员卡紧凑间距
+# 当前交接：2026-08-01 Build 82 动作素材与饮食表单对齐
 
 ## 当前状态
 
 - 正式目录：`D:\carbs-king`
-- 源码 PR：[#11](https://github.com/fivespeedbuck/carbs-king/pull/11) 已合并到 `main`（merge commit `b1fa945`）。
-- Build 81 已完成全量测试、APK 资源门禁、原生提醒运行时门禁、包名、版本和 v2 签名检查。
-- GitHub `v1.2.3` Release 已替换为 Build 81，远端只保留单一 `carbs_king.apk`，size/digest 已核对一致。
-- `pyproject.toml` 与 `src/app_version.py` 已预备下一次 Build 82。
+- 发布基线：`1.2.3 / Build 82`
+- Build 82 APK 已完成全量测试、资源门禁、APK 内资源、包名和 v2 签名核验。
+- 构建脚本已将 `pyproject.toml` 与 `src/app_version.py` 预备至下一次 Build 83。
 
-## 最终 APK
+## 本次发布内容
+
+- 新增固定轨迹器械动作：站姿器械下夹胸、站姿器械侧平举。
+- 两条动作均带有离线 JPG 和双帧 GIF；APK 内资源数量为 1,326 GIF、1,326 JPG。
+- 已尝试调整“添加饮食”中餐次/数量、搜索食物/食物并排控件的高度设置；iQOO 11S 真机视觉效果未变化，问题保留至下一版定位修复。
+
+## Build 82 APK
 
 - 文件：`build/apk/carbs_king.apk`
 - 包名：`com.chenyang.carbs_king`
 - versionName：`1.2.3`
-- versionCode：`81`
-- 大小：`201,668,435` 字节
-- SHA-256：`0D385C6B6C36BD926E5235D2FF9F1308D81C343CCCC2D17C0F8E3626B0D1923D`
-- APK v2 签名有效；证书 SHA-256：`172A8B5C7A909A79FB483F83CF9FEA71FE6567937C900C1D47EAF0FD67AD75CE`。
+- versionCode：`82`
+- 大小：`201,768,011` 字节
+- SHA-256：`B5509404BF82482688DB0592EA39041D7C33905F1095A00D810590E6847B51C9`
+- v2 签名证书 SHA-256：`172A8B5C7A909A79FB483F83CF9FEA71FE6567937C900C1D47EAF0FD67AD75CE`
 
-## 本次结果
+## 验证
 
-- 超级组/复合组成员卡保留标题、部位·组数、重量×次数和训练中完成组数；训练前高度从 112 收紧为 88，训练中从 126 收紧为 104。
-- 成员内框、卡片间距、拖动与编辑操作均保留，底部空白不再显著大于内容行距。
-- Build 80 的前台组间声音修复保持不变；用户已确认切回前台后声音恢复正常，后台声音不再继续迭代。
+- 全量测试：446 项通过，441 个子测试通过。
+- Python 编译检查与 Git 差异格式检查通过。
+- 动作库测试：12 项通过，16 个子测试通过。
+- 资源门禁：源资源与 APK 内资源均通过；新增动作数据文件已被打入 Python 应用包。
 
-## 验证基线
+## 后续事项
 
-- 全量测试：446 passed，441 subtests passed。
-- APK 内层资源：1324 GIF、1324 JPG、2 MP3、1 WAV。
-- 原生提醒门禁：`RestAlarmReceiver`、插件类、通知/精确闹钟权限、v3 渠道、`raw/rest_coin` 和 R8 可达性均通过。
-
-## 远端发布结果
-
-- `main/update_manifest.json` 已公开 Build 81、`201,668,435` 字节和本文件 SHA-256。
-- `v1.2.3` Release 只保留一个 `carbs_king.apk`，状态为 `uploaded`。
-- 远端 digest 为 `sha256:0d385c6b6c36bd926e5235d2ff9f1308d81c343cccc2d17c0f8e3626b0d1923d`。
+- 下一版优先定位并修复 iQOO 11S 上饮食表单两组并排控件仍不对齐的问题；不能以 Build 82 的源码设置或自动化测试替代真机验收。
+- 其余未实现需求见 `PENDING_FEATURES.md`。
+- `gif/` 下四张原始 PNG 仅为制作来源，不应纳入提交或 APK。

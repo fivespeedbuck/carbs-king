@@ -236,8 +236,15 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         dialog_body = opened[-1].content.content.controls[1].content
         shortcut_panel = dialog_body.controls[0]
         shortcut_item = shortcut_panel.controls[1].controls[0]
+        meal_input = dialog_body.controls[1].controls[0].content
         quantity_input = dialog_body.controls[1].controls[1].content
+        search_input = dialog_body.controls[3].controls[0].content
         food_input = dialog_body.controls[3].controls[1].content
+        for control in (meal_input, quantity_input, search_input, food_input):
+            self.assertIsNone(control.height)
+            self.assertEqual(control.field.height, 52)
+            self.assertTrue(control.field.dense)
+            self.assertEqual(control.field.content_padding, 12)
         self.assertEqual(shortcut_panel.controls[0].content.value, "常用")
         self.assertNotIn("最近", str(shortcut_panel))
 
@@ -377,11 +384,9 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertIn("two_field_grid(meal_dd, qty, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
         self.assertIn("two_field_grid(search, food_dd, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
         self.assertIn("for control in (meal_dd, qty, search, food_dd):", DIET_CONTROLLER_SOURCE)
-        self.assertIn("control.height = aligned_input_height", DIET_CONTROLLER_SOURCE)
-        self.assertIn("for control in (meal_dd, food_dd):", DIET_CONTROLLER_SOURCE)
-        self.assertIn("for control in (qty, search):", DIET_CONTROLLER_SOURCE)
+        self.assertIn("control.height = None", DIET_CONTROLLER_SOURCE)
         self.assertIn("control.field.height = INPUT_FIELD_HEIGHT", DIET_CONTROLLER_SOURCE)
-        self.assertIn("control.field.dense = False", DIET_CONTROLLER_SOURCE)
+        self.assertIn("control.field.dense = True", DIET_CONTROLLER_SOURCE)
         self.assertIn("control.field.content_padding = 12", DIET_CONTROLLER_SOURCE)
         self.assertIn("food_dd.field.menu_height = 300", DIET_CONTROLLER_SOURCE)
 

@@ -26,7 +26,7 @@
 ## 训练功能定位
 
 - 动作模型与训练记录：`src/training_models.py`、`src/training_service.py`。
-- 动作目录加载、常用中文名、别名相关性和筛选放宽：`src/exercise_library.py`、`src/exercise_catalog_data.json`、`src/exercise_catalog_overrides.json`。
+- 动作目录加载、常用中文名、别名相关性和筛选放宽：`src/exercise_library.py`、`src/exercise_catalog_data.json`、`src/exercise_catalog_overrides.json`、`src/exercise_catalog_additions.json`。
 - 上游动作导入与审计：`tools/assemble_exercise_catalog.py`、`tools/audit_exercise_catalog.py`。
 - 训练前/训练中排序：`src/training_plan_views.py`、`src/training_controller.py`。
 - 训练游标和顶部进度：`src/training_experience_service.py`、`src/training_views.py`。

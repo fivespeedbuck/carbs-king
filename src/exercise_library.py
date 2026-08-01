@@ -473,6 +473,13 @@ def _load_offline_dataset() -> list[dict[str, Any]]:
         return []
     if not isinstance(values, list):
         return []
+    additions_path = Path(__file__).with_name("exercise_catalog_additions.json")
+    try:
+        additions = json.loads(additions_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        additions = []
+    if isinstance(additions, list):
+        values.extend(additions)
     catalog = [item for item in values if isinstance(item, dict) and str(item.get("name") or "").strip()]
     # Keep reviewed naming/classification corrections separate from the large
     # generated data file so a future upstream rebuild cannot silently undo
