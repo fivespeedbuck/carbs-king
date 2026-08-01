@@ -2,11 +2,11 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 82**
+- 当前版本：**1.2.3 / Build 88**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-[![下载 Build 82 APK](https://img.shields.io/badge/下载-Build_82_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+[![下载 Build 88 APK](https://img.shields.io/badge/下载-Build_88_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -62,6 +62,8 @@
 - 支持超级组和复合组，安排页按整组拖动，训练中显示组内进度和下一个动作。
 - 动作库可按常练、最近和名称排序，练过的动作可优先显示。
 - 组间休息支持 `-10 秒`、`+10 秒`、暂停/继续和跳过。
+- 每个力量动作可单独设置休息时间，默认 90 秒；切后台、锁屏或息屏后继续显示悬浮倒计时并在到点时提醒。
+- 删除的完成训练进入 15 天回收站，可恢复到原日期的“当日已练”。
 - 训练结束统一二次确认，避免误触丢失尚未完成的训练。
 
 ### 饮食与补剂
@@ -99,7 +101,7 @@
 1. 下载 [carbs_king.apk](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)。
 2. 在 Android 中允许当前文件管理器或浏览器“安装未知应用”。
 3. 打开 APK 并安装。已有旧版时，请直接覆盖安装，**不要先卸载旧版**。
-4. 首次使用休息提醒时，根据系统提示允许通知和精确闹钟权限。
+4. 首次使用休息提醒时，根据系统提示允许通知、精确闹钟和悬浮窗权限。
 
 覆盖更新需要同时满足：包名相同、签名证书相同、Build 不低于已安装版本。官方 v62 使用固定备份密钥签名，包名保持为 `com.chenyang.carbs_king`。
 
@@ -107,13 +109,14 @@
 
 ## 休息提醒与系统边界
 
-Build 79 使用 Android 原生 `BroadcastReceiver + AlarmManager` 调度组间休息提醒：
+Build 88 使用 Android 原生 `ForegroundService + BroadcastReceiver + AlarmManager` 调度组间休息提醒：
 
-- 应用保持可见时，倒计时结束会直接播放内置提示音；切到后台、锁屏或应用失焦时，继续使用原生闹钟通知。
+- 应用保持可见时，倒计时结束会直接播放内置提示音；切到后台、锁屏或息屏时，悬浮倒计时与原生闹钟继续工作。
+- 悬浮窗显示剩余时间和下一动作，颜色跟随应用主题，点击可返回应用；修改休息时间会更新同一条持续通知。
 - 提醒使用内置 `rest_coin` 声音和高优先级中文通知渠道；首次训练休息前会检查通知和精确闹钟权限。
 - 通知声音和振动遵守 Android 的静音、勿扰模式及通知渠道设置。
 - 如果用户主动“强行停止”应用，Android 会禁止该应用已安排的闹钟；重新打开应用后才能恢复后续调度。
-- Build 79 不包含手机重启后的未完成提醒恢复机制。
+- Build 88 不包含手机重启后的未完成提醒恢复机制；Android“强行停止”应用后系统也会停止相关能力。
 - OriginOS 等系统的电池优化策略可能影响实际准时性，建议允许通知、精确闹钟，并根据真机情况调整后台电量管理。
 
 ## 数据持久化与备份
@@ -152,14 +155,14 @@ flet run
 
 ## 测试与质量
 
-Build 79 的最终自动检查结果：
+Build 88 的最终自动检查结果：
 
-- `444 passed`
+- `455 passed`
 - `441 subtests passed`
 - Python 语法编译检查通过
 - Git 差异格式检查通过
 - `430 × 900` 动作库常用词真实交互验收通过
-- APK 包名、versionCode 78、v2 签名、内层资源和原生提醒运行时门禁通过
+- APK 包名、versionCode 88、v2 签名、内层资源和原生提醒运行时门禁通过
 
 运行完整测试：
 
@@ -185,7 +188,7 @@ Windows 下可以运行：
 - 优先使用项目专属的备份签名密钥。
 - 资源与原生提醒门禁通过后，才把 `pyproject.toml` 和 `src/app_version.py` 中的 Build 自动加一，为下次更新做准备。
 
-当前发布包为 `1.2.3 / Build 82`，构建脚本已把下一次 Build 预备为 `83`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
+当前发布包为 `1.2.3 / Build 88`，构建脚本已把下一次 Build 预备为 `89`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
 
 ## 目录结构
 
@@ -206,7 +209,7 @@ carbs-king/
 ## 版本与 Release
 
 - [v1.2.3 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
-- [Build 82 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+- [Build 88 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 

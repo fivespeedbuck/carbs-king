@@ -74,6 +74,7 @@ class Exercise:
     default_weight_kg: float | None = None
     default_reps: int = 10
     default_sets: int = 4
+    default_rest_seconds: int = 90
     default_duration_seconds: int | None = None
     favorite: bool = False
     archived: bool = False
@@ -99,6 +100,12 @@ class Exercise:
             default_weight_kg=_float(data.get("default_weight_kg")),
             default_reps=_int(data.get("default_reps")) or 10,
             default_sets=_int(data.get("default_sets")) or 4,
+            default_rest_seconds=max(
+                0,
+                _int(data.get("default_rest_seconds"))
+                if _int(data.get("default_rest_seconds")) is not None
+                else 90,
+            ),
             default_duration_seconds=_int(data.get("default_duration_seconds")),
             favorite=_bool(data.get("favorite")),
             archived=_bool(data.get("archived")),
@@ -139,6 +146,7 @@ class TemplateExercise:
     recording_mode: str = "strength"
     duration_seconds: int | None = None
     distance_km: float | None = None
+    rest_seconds: int = 90
     group_id: str = ""
     group_order: int | None = None
     note: str = ""
@@ -160,6 +168,12 @@ class TemplateExercise:
             recording_mode=normalize_recording_mode(data.get("recording_mode")),
             duration_seconds=_int(data.get("duration_seconds")),
             distance_km=_float(data.get("distance_km")),
+            rest_seconds=max(
+                0,
+                _int(data.get("rest_seconds"))
+                if _int(data.get("rest_seconds")) is not None
+                else 90,
+            ),
             group_id=_text(data.get("group_id")),
             group_order=_int(data.get("group_order")),
             note=_text(data.get("note")),
@@ -240,6 +254,7 @@ class SessionExercise:
     recording_mode: str = "strength"
     duration_seconds: int | None = None
     distance_km: float | None = None
+    rest_seconds: int = 90
     cardio_metrics: dict[str, float] = field(default_factory=dict)
     cardio_metric_fields: list[str] = field(default_factory=list)
     completed: bool = False
@@ -269,6 +284,12 @@ class SessionExercise:
             recording_mode=recording_mode,
             duration_seconds=_int(data.get("duration_seconds")),
             distance_km=_float(data.get("distance_km")),
+            rest_seconds=max(
+                0,
+                _int(data.get("rest_seconds"))
+                if _int(data.get("rest_seconds")) is not None
+                else 90,
+            ),
             cardio_metrics={
                 str(key): float(value)
                 for key, value in data.get("cardio_metrics", {}).items()

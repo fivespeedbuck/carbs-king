@@ -32,6 +32,10 @@ DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts_v3"
 DEFAULT_NOTIFICATION_CHANNEL_NAME = "组间休息提醒（高优先级）"
 REST_ALARM_ACTION = "com.chenyang.carbs_king.REST_ALARM"
 REST_ALARM_RECEIVER_CLASS = "com.chenyang.carbs_king.restalarm.RestAlarmReceiver"
+REST_OVERLAY_SERVICE_CLASS = "com.chenyang.carbs_king.restalarm.RestOverlayService"
+REST_OVERLAY_UPDATE_ACTION = "com.chenyang.carbs_king.REST_OVERLAY_UPDATE"
+REST_OVERLAY_VISIBILITY_ACTION = "com.chenyang.carbs_king.REST_OVERLAY_VISIBILITY"
+REST_OVERLAY_STOP_ACTION = "com.chenyang.carbs_king.REST_OVERLAY_STOP"
 REST_NOTIFICATION_CAPABILITY = (
     "Flet 0.85.3 supplies the Python runtime and Pyjnius foreground bridge. "
     "The local carbs_king_rest_alarm Flutter plugin merges a native, explicit "
@@ -66,6 +70,7 @@ class ScheduledRestNotification:
     system_alarm_exact: bool = False
     process_death_notification_supported: bool = False
     timer_started: bool = False
+    overlay_service_started: bool = False
     reason: str = ""
     errors: tuple[str, ...] = ()
 
@@ -78,6 +83,7 @@ class CanceledRestNotification:
     timer_canceled: bool = False
     system_alarm_attempted: bool = False
     system_alarm_canceled: bool = False
+    overlay_service_stopped: bool = False
     errors: tuple[str, ...] = ()
 
 
@@ -127,6 +133,9 @@ class AndroidSystemNotifier:
         self.NotificationBuilder = autoclass("android.app.Notification$Builder")
         self.PendingIntent = autoclass("android.app.PendingIntent")
         self.Intent = autoclass("android.content.Intent")
+        self.JavaString = autoclass("java.lang.String")
+        self.Settings = autoclass("android.provider.Settings")
+        self.Uri = autoclass("android.net.Uri")
         self.RingtoneManager = autoclass("android.media.RingtoneManager")
         self.AudioAttributes = autoclass("android.media.AudioAttributes$Builder")
         self.Uri = autoclass("android.net.Uri")
@@ -273,10 +282,10 @@ class AndroidAlarmScheduler:
         intent = self.Intent(REST_ALARM_ACTION)
         intent.setClassName(self.activity.getPackageName(), REST_ALARM_RECEIVER_CLASS)
         intent.setPackage(self.activity.getPackageName())
-        intent.putExtra("rest_cycle_id", cycle_id)
+        intent.putExtra("rest_cycle_id", self.JavaString(str(cycle_id)))
         intent.putExtra("rest_notification_id", int(request_code))
-        intent.putExtra("rest_notification_title", title)
-        intent.putExtra("rest_notification_body", body)
+        intent.putExtra("rest_notification_title", self.JavaString(str(title)))
+        intent.putExtra("rest_notification_body", self.JavaString(str(body)))
         return intent
 
     def _pending_intent(
@@ -308,6 +317,19 @@ class AndroidAlarmScheduler:
         if int(self.BuildVersion.SDK_INT) < 31:
             return True
         return bool(alarm_manager.canScheduleExactAlarms())
+
+    def has_exact_alarm_access(self) -> bool:
+        return self._can_schedule_exact_alarm(self._alarm_service())
+
+    def request_exact_alarm_access(self) -> bool:
+        if self.has_exact_alarm_access() or int(self.BuildVersion.SDK_INT) < 31:
+            return True
+        intent = self.Intent(
+            self.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+            self.Uri.parse(f"package:{self.activity.getPackageName()}"),
+        )
+        self.activity.startActivity(intent)
+        return False
 
     def schedule(
         self,
@@ -386,6 +408,107 @@ class AndroidAlarmScheduler:
         return bool(preferences.edit().putBoolean(str(cycle_id), True).commit())
 
 
+class AndroidRestOverlayController:
+    """Drive the native foreground countdown and optional overlay."""
+
+    def __init__(self) -> None:
+        from jnius import autoclass  # type: ignore
+
+        activity_host_class = os.getenv("MAIN_ACTIVITY_HOST_CLASS_NAME")
+        if not activity_host_class:
+            raise RuntimeError("MAIN_ACTIVITY_HOST_CLASS_NAME is unavailable")
+        activity_host = autoclass(activity_host_class)
+        self.activity = activity_host.mActivity
+        if self.activity is None:
+            raise RuntimeError("Android activity is unavailable")
+        self.BuildVersion = autoclass("android.os.Build$VERSION")
+        self.Intent = autoclass("android.content.Intent")
+        self.Settings = autoclass("android.provider.Settings")
+        self.Uri = autoclass("android.net.Uri")
+        self.JavaString = autoclass("java.lang.String")
+        self._active_cycle_id = ""
+        self._app_visible = True
+        self._permission_requested = False
+
+    def has_permission(self) -> bool:
+        return int(self.BuildVersion.SDK_INT) < 23 or bool(
+            self.Settings.canDrawOverlays(self.activity)
+        )
+
+    def request_permission(self) -> bool:
+        if self.has_permission() or self._permission_requested:
+            return self.has_permission()
+        self._permission_requested = True
+        intent = self.Intent(
+            self.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            self.Uri.parse(f"package:{self.activity.getPackageName()}"),
+        )
+        self.activity.startActivity(intent)
+        return False
+
+    def _service_intent(self, action: str) -> Any:
+        intent = self.Intent(action)
+        intent.setClassName(self.activity.getPackageName(), REST_OVERLAY_SERVICE_CLASS)
+        intent.setPackage(self.activity.getPackageName())
+        return intent
+
+    def _start(self, intent: Any) -> None:
+        if int(self.BuildVersion.SDK_INT) >= 26:
+            self.activity.startForegroundService(intent)
+        else:
+            self.activity.startService(intent)
+
+    def start(
+        self,
+        *,
+        cycle_id: str,
+        delay_seconds: float,
+        next_action: str = "",
+        theme_color: str = "",
+    ) -> bool:
+        normalized = str(cycle_id or "").strip()
+        if not normalized:
+            return False
+        self._active_cycle_id = normalized
+        needs_permission = not self.has_permission()
+        intent = self._service_intent(REST_OVERLAY_UPDATE_ACTION)
+        intent.putExtra("rest_cycle_id", self.JavaString(normalized))
+        intent.putExtra(
+            "rest_ends_at_epoch_ms",
+            int(time.time() * 1000) + int(max(0.0, delay_seconds) * 1000),
+        )
+        intent.putExtra("rest_next_action", self.JavaString(str(next_action or "")))
+        intent.putExtra("rest_theme_color", self.JavaString(str(theme_color or "")))
+        intent.putExtra("rest_app_visible", bool(self._app_visible))
+        self._start(intent)
+        # Start the foreground service before opening Android settings. The
+        # settings launch pauses the app immediately and can otherwise send a
+        # visibility event before the service has called startForeground().
+        if needs_permission:
+            self.request_permission()
+        return True
+
+    def set_app_visible(self, visible: bool) -> None:
+        self._app_visible = bool(visible)
+        if not self._active_cycle_id:
+            return
+        intent = self._service_intent(REST_OVERLAY_VISIBILITY_ACTION)
+        intent.putExtra("rest_app_visible", self._app_visible)
+        # Visibility only updates an already-running foreground service.
+        self.activity.startService(intent)
+
+    def stop(self, *, cycle_id: str = "") -> bool:
+        normalized = str(cycle_id or "").strip()
+        if normalized and normalized != self._active_cycle_id:
+            return False
+        if not self._active_cycle_id:
+            return False
+        intent = self._service_intent(REST_OVERLAY_STOP_ACTION)
+        self.activity.startService(intent)
+        self._active_cycle_id = ""
+        return True
+
+
 def _default_system_notifier() -> Any | None:
     if not _is_android_runtime():
         return None
@@ -396,6 +519,12 @@ def _default_alarm_scheduler() -> Any | None:
     if not _is_android_runtime():
         return None
     return AndroidAlarmScheduler()
+
+
+def _default_overlay_controller() -> Any | None:
+    if not _is_android_runtime():
+        return None
+    return AndroidRestOverlayController()
 
 
 def _stable_notification_id(cycle_id: str) -> int:
@@ -418,6 +547,7 @@ class RestNotifier:
         haptic_factory: Callable[..., Any] | None = ft.HapticFeedback,
         system_factory: Callable[[], Any | None] | None = _default_system_notifier,
         alarm_scheduler_factory: Callable[[], Any | None] | None = _default_alarm_scheduler,
+        overlay_controller_factory: Callable[[], Any | None] | None = _default_overlay_controller,
         notification_title: str = "Rest finished",
         notification_body: str = "Start your next set.",
         notified_cycle_ids: Iterable[str] = (),
@@ -441,6 +571,7 @@ class RestNotifier:
         self.notification_body = notification_body
         self.system_notifier = self._create_system_notifier(system_factory)
         self.alarm_scheduler = self._create_alarm_scheduler(alarm_scheduler_factory)
+        self.overlay_controller = self._create_overlay_controller(overlay_controller_factory)
         self._request_notification_permission_early()
         self.audio = self._create_service(
             "audio", audio_factory, src=bell_asset, volume=1.0
@@ -462,6 +593,13 @@ class RestNotifier:
                 state = str(getattr(raw_state, "value", raw_state)).casefold()
                 with self._lock:
                     self._app_is_foreground = state in {"show", "resume", "restart"}
+                    is_foreground = self._app_is_foreground
+                set_visible = getattr(self.overlay_controller, "set_app_visible", None)
+                if callable(set_visible):
+                    try:
+                        set_visible(is_foreground)
+                    except Exception as exc:
+                        self._setup_errors.append(f"overlay lifecycle: {exc}")
                 if callable(previous_handler):
                     previous_handler(event)
 
@@ -489,6 +627,17 @@ class RestNotifier:
             self._setup_errors.append(f"system alarm setup: {exc}")
             return None
 
+    def _create_overlay_controller(
+        self, factory: Callable[[], Any | None] | None
+    ) -> Any | None:
+        if factory is None:
+            return None
+        try:
+            return factory()
+        except Exception as exc:
+            self._setup_errors.append(f"overlay service setup: {exc}")
+            return None
+
     def _request_notification_permission_early(self) -> None:
         request_permission = getattr(
             self.system_notifier, "request_post_permission", None
@@ -499,6 +648,49 @@ class RestNotifier:
             request_permission()
         except Exception as exc:
             self._setup_errors.append(f"notification permission request: {exc}")
+
+    def background_permission_status(self) -> dict[str, bool]:
+        def checked(target: Any, method_name: str, default: bool = False) -> bool:
+            method = getattr(target, method_name, None)
+            if not callable(method):
+                return default
+            try:
+                return bool(method())
+            except Exception:
+                return False
+
+        android = _is_android_runtime()
+        return {
+            "android": android,
+            "notification": checked(
+                self.system_notifier, "has_post_permission", default=not android
+            ),
+            "exact_alarm": checked(
+                self.alarm_scheduler, "has_exact_alarm_access", default=not android
+            ),
+            "overlay": checked(
+                self.overlay_controller, "has_permission", default=not android
+            ),
+        }
+
+    def request_notification_permission(self) -> bool:
+        request = getattr(self.system_notifier, "request_post_permission", None)
+        if not callable(request):
+            return not _is_android_runtime()
+        request()
+        return self.background_permission_status()["notification"]
+
+    def request_exact_alarm_permission(self) -> bool:
+        request = getattr(self.alarm_scheduler, "request_exact_alarm_access", None)
+        if not callable(request):
+            return not _is_android_runtime()
+        return bool(request())
+
+    def request_overlay_permission(self) -> bool:
+        request = getattr(self.overlay_controller, "request_permission", None)
+        if not callable(request):
+            return not _is_android_runtime()
+        return bool(request())
 
     def _create_service(
         self, name: str, factory: Callable[..., Any] | None, **kwargs: Any
@@ -673,7 +865,14 @@ class RestNotifier:
                 self._notified_cycle_ids.discard(normalized)
             return None
 
-    def trigger_after(self, cycle_id: str, delay_seconds: float) -> ScheduledRestNotification:
+    def trigger_after(
+        self,
+        cycle_id: str,
+        delay_seconds: float,
+        *,
+        next_action: str = "",
+        theme_color: str = "",
+    ) -> ScheduledRestNotification:
         """Schedule a rest alert.
 
         Android builds hand delivery to an AlarmManager broadcast received by
@@ -697,7 +896,7 @@ class RestNotifier:
         )
         if not notification_permission_ready:
             errors.append(
-                "Android notification channel is unavailable; using in-process fallback"
+                "Android notification channel is unavailable; native alarm audio remains scheduled"
             )
         check_permission = getattr(self.system_notifier, "has_post_permission", None)
         if callable(check_permission):
@@ -708,16 +907,18 @@ class RestNotifier:
                 errors.append(f"notification permission check: {exc}")
         if not notification_permission_ready:
             errors.append(
-                "notification permission is not granted; using in-process fallback"
+                "notification permission is not granted; native alarm audio remains scheduled"
             )
-        if self.alarm_scheduler is not None and notification_permission_ready:
+        # Native alarm audio does not require notification permission. Always
+        # hand the due time to AlarmManager when its receiver is available.
+        if self.alarm_scheduler is not None:
             try:
                 alarm_result = self.alarm_scheduler.schedule(
                     cycle_id=normalized,
                     delay_seconds=delay,
                     request_code=_stable_notification_id(normalized),
                     title=self.notification_title,
-                    body=self.notification_body,
+                    body=str(next_action or self.notification_body),
                 )
             except Exception as exc:
                 errors.append(f"system alarm: {exc}")
@@ -732,6 +933,19 @@ class RestNotifier:
                 self._native_owned_cycle_ids.add(normalized)
             else:
                 self._native_owned_cycle_ids.discard(normalized)
+        overlay_service_started = False
+        if self.overlay_controller is not None:
+            try:
+                overlay_service_started = bool(
+                    self.overlay_controller.start(
+                        cycle_id=normalized,
+                        delay_seconds=delay,
+                        next_action=str(next_action or ""),
+                        theme_color=str(theme_color or ""),
+                    )
+                )
+            except Exception as exc:
+                errors.append(f"overlay service: {exc}")
         timer_started = False
         if not native_owns_delivery:
             token = object()
@@ -767,6 +981,7 @@ class RestNotifier:
                 alarm_result and alarm_result.process_death_notification_supported
             ),
             timer_started=timer_started,
+            overlay_service_started=overlay_service_started,
             reason=self._scheduled_reason(alarm_result, errors),
             errors=tuple(errors),
         )
@@ -775,7 +990,11 @@ class RestNotifier:
         return self.trigger_after(cycle_id, due_monotonic_seconds - time.monotonic())
 
     def cancel(
-        self, cycle_id: str, *, release_claim: bool = True
+        self,
+        cycle_id: str,
+        *,
+        release_claim: bool = True,
+        stop_overlay: bool = True,
     ) -> CanceledRestNotification:
         normalized = str(cycle_id or "").strip()
         if not normalized:
@@ -807,14 +1026,28 @@ class RestNotifier:
                 )
             except Exception as exc:
                 errors.append(f"system alarm cancel: {exc}")
+        overlay_service_stopped = False
+        if stop_overlay and self.overlay_controller is not None:
+            try:
+                overlay_service_stopped = bool(
+                    self.overlay_controller.stop(cycle_id=normalized)
+                )
+            except Exception as exc:
+                errors.append(f"overlay service stop: {exc}")
 
         return CanceledRestNotification(
             cycle_id=normalized,
-            canceled=timer_canceled or system_alarm_canceled or had_claim,
+            canceled=(
+                timer_canceled
+                or system_alarm_canceled
+                or overlay_service_stopped
+                or had_claim
+            ),
             claim_released=release_claim and had_claim,
             timer_canceled=timer_canceled,
             system_alarm_attempted=system_alarm_attempted,
             system_alarm_canceled=system_alarm_canceled,
+            overlay_service_stopped=overlay_service_stopped,
             errors=tuple(errors),
         )
 

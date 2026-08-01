@@ -6,20 +6,19 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
-import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 
 class RestAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_REST_ALARM) return
 
-        val cycleId = intent.getStringExtra(EXTRA_CYCLE_ID)?.trim().orEmpty()
+        val cycleId = intent.textExtra(EXTRA_CYCLE_ID).trim()
         if (cycleId.isEmpty()) return
 
         synchronized(deliveryLock) {
@@ -29,16 +28,17 @@ class RestAlarmReceiver : BroadcastReceiver() {
             // The app process might be paused or reclaimed, so playback must
             // happen in the native receiver rather than depend on Flet's
             // background lifecycle. USAGE_ALARM follows the alarm stream.
-            val audioStarted = playBundledAlarm(context)
+            context.stopService(Intent(context, RestOverlayService::class.java))
+            val pendingResult = goAsync()
+            val audioStarted = playBundledAlarm(context) { pendingResult.finish() }
             var notificationPosted = false
-            // A v3 channel may already own a sound selected by Android. Do not
-            // post through it after native playback starts, otherwise one rest
-            // can ring twice. The channel remains the audible fallback only
-            // when direct bundled playback could not start.
-            if (!audioStarted && canPostNotifications(context)) {
+            // Direct native playback owns the sound. The notification channel
+            // is deliberately silent so lock-screen visibility and vibration
+            // do not create a second ringtone.
+            if (canPostNotifications(context)) {
                 val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 1).coerceAtLeast(1)
-                val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { DEFAULT_TITLE }
-                val body = intent.getStringExtra(EXTRA_BODY).orEmpty().ifBlank { DEFAULT_BODY }
+                val title = intent.textExtra(EXTRA_TITLE).ifBlank { DEFAULT_TITLE }
+                val body = intent.textExtra(EXTRA_BODY).ifBlank { DEFAULT_BODY }
                 val manager = context.getSystemService(NotificationManager::class.java)
                 ensureChannel(context, manager)
 
@@ -67,6 +67,7 @@ class RestAlarmReceiver : BroadcastReceiver() {
                     .setVisibility(Notification.VISIBILITY_PUBLIC)
                     .setAutoCancel(true)
                     .setOnlyAlertOnce(true)
+                    .setTimeoutAfter(60_000)
                 contentIntent?.let(builder::setContentIntent)
 
                 manager.notify(notificationId, builder.build())
@@ -78,12 +79,19 @@ class RestAlarmReceiver : BroadcastReceiver() {
             if (audioStarted || notificationPosted) {
                 deliveries.edit().putBoolean(cycleId, true).commit()
             }
+            if (!audioStarted) pendingResult.finish()
         }
     }
 
-    private fun playBundledAlarm(context: Context): Boolean {
+    private fun playBundledAlarm(context: Context, onFinished: () -> Unit): Boolean {
         val player = MediaPlayer()
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        val wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "${context.packageName}:rest-alarm",
+        )
         try {
+            wakeLock.acquire(15_000)
             player.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
@@ -97,9 +105,13 @@ class RestAlarmReceiver : BroadcastReceiver() {
             source.use {
                 player.setDataSource(it.fileDescriptor, it.startOffset, it.length)
             }
-            player.setOnCompletionListener(::releasePlayer)
+            player.setOnCompletionListener { completed ->
+                releasePlayer(completed, wakeLock)
+                onFinished()
+            }
             player.setOnErrorListener { failed, _, _ ->
-                releasePlayer(failed)
+                releasePlayer(failed, wakeLock)
+                onFinished()
                 true
             }
             synchronized(deliveryLock) { activePlayers.add(player) }
@@ -109,13 +121,15 @@ class RestAlarmReceiver : BroadcastReceiver() {
         } catch (_: Exception) {
             synchronized(deliveryLock) { activePlayers.remove(player) }
             player.release()
+            if (wakeLock.isHeld) wakeLock.release()
             return false
         }
     }
 
-    private fun releasePlayer(player: MediaPlayer) {
+    private fun releasePlayer(player: MediaPlayer, wakeLock: PowerManager.WakeLock) {
         synchronized(deliveryLock) { activePlayers.remove(player) }
         player.release()
+        if (wakeLock.isHeld) wakeLock.release()
     }
 
     private fun canPostNotifications(context: Context): Boolean =
@@ -123,17 +137,15 @@ class RestAlarmReceiver : BroadcastReceiver() {
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
+    private fun Intent.textExtra(key: String): String =
+        when (val value = extras?.get(key)) {
+            is String -> value
+            is CharArray -> String(value)
+            else -> value?.toString().orEmpty()
+        }
+
     private fun ensureChannel(context: Context, manager: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val sound = Uri.Builder()
-            .scheme(ContentResolver.SCHEME_ANDROID_RESOURCE)
-            .authority(context.packageName)
-            .appendPath(R.raw.rest_coin.toString())
-            .build()
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
         val channel = NotificationChannel(
             CHANNEL_ID,
             CHANNEL_NAME,
@@ -141,7 +153,7 @@ class RestAlarmReceiver : BroadcastReceiver() {
         ).apply {
             description = "组间休息结束提醒"
             enableVibration(true)
-            setSound(sound, audioAttributes)
+            setSound(null, null)
             setBypassDnd(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
@@ -158,8 +170,8 @@ class RestAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_TITLE = "rest_notification_title"
         private const val EXTRA_BODY = "rest_notification_body"
         private const val PREFS_NAME = "carbs_king_rest_alarm_deliveries"
-        // Android 8+ channel sound is immutable after creation; Build 78 uses a new ID.
-        private const val CHANNEL_ID = "rest_cycle_alerts_v3"
+        // This native-only channel stays silent because the receiver owns playback.
+        private const val CHANNEL_ID = "rest_cycle_native_alerts_v1"
         private const val CHANNEL_NAME = "组间休息提醒（高优先级）"
         private const val DEFAULT_TITLE = "组间休息结束"
         private const val DEFAULT_BODY = "下一组可以开始了"

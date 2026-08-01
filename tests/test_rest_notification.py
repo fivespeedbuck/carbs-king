@@ -125,6 +125,24 @@ class FakeAlarmScheduler:
         return True
 
 
+class FakeOverlayController:
+    def __init__(self):
+        self.starts = []
+        self.visibility = []
+        self.stops = []
+
+    def start(self, *, cycle_id, delay_seconds, next_action="", theme_color=""):
+        self.starts.append((cycle_id, delay_seconds, next_action, theme_color))
+        return True
+
+    def set_app_visible(self, visible):
+        self.visibility.append(bool(visible))
+
+    def stop(self, *, cycle_id=""):
+        self.stops.append(cycle_id)
+        return True
+
+
 class FailingAlarmScheduler:
     def schedule(self, *, cycle_id, delay_seconds, request_code, title, body):
         raise RuntimeError("alarm service unavailable")
@@ -398,7 +416,7 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("system alarm: alarm service unavailable", scheduled.errors)
         self.assertTrue(result.claimed)
 
-    async def test_permission_denial_keeps_foreground_fallback_and_skips_alarm(self):
+    async def test_permission_denial_still_schedules_native_alarm_audio(self):
         page = ThreadSafeFakePage(asyncio.get_running_loop())
         alarm = FakeAlarmScheduler()
         system = PermissionDeniedSystemNotifier()
@@ -412,15 +430,14 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
 
         scheduled = notifier.trigger_after("rest-permission", 0)
         await asyncio.sleep(0.05)
-        result = await asyncio.wrap_future(page.tasks[0])
 
         self.assertEqual(system.requests, 1)
-        self.assertEqual(alarm.schedules, [])
-        self.assertTrue(scheduled.timer_started)
-        self.assertFalse(scheduled.system_alarm_scheduled)
+        self.assertEqual(len(alarm.schedules), 1)
+        self.assertFalse(scheduled.timer_started)
+        self.assertTrue(scheduled.system_alarm_scheduled)
         self.assertIn("permission is not granted", scheduled.errors[0])
-        self.assertTrue(result.sound_played)
-        self.assertEqual(notifier.audio.play_count, 1)
+        self.assertEqual(page.tasks, [])
+        self.assertEqual(notifier.audio.play_count, 0)
 
     async def test_cancel_paused_cycle_stops_timer_and_alarm_and_releases_claim(self):
         page = ThreadSafeFakePage(asyncio.get_running_loop())
@@ -458,16 +475,28 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
     async def test_adjustment_can_cancel_and_reschedule_same_cycle(self):
         page = ThreadSafeFakePage(asyncio.get_running_loop())
         alarm = FakeAlarmScheduler()
+        overlay = FakeOverlayController()
         notifier = RestNotifier(
             page,
             audio_factory=FakeAudio,
             haptic_factory=FakeHaptic,
             alarm_scheduler_factory=lambda: alarm,
+            overlay_controller_factory=lambda: overlay,
         )
 
-        old_schedule = notifier.trigger_after("rest-adjust", 0.2)
-        canceled = notifier.cancel("rest-adjust")
-        new_schedule = notifier.trigger_after("rest-adjust", 0)
+        old_schedule = notifier.trigger_after(
+            "rest-adjust",
+            0.2,
+            next_action="下一个：卧推 · 第2组",
+            theme_color="#8464C2",
+        )
+        canceled = notifier.cancel("rest-adjust", stop_overlay=False)
+        new_schedule = notifier.trigger_after(
+            "rest-adjust",
+            0,
+            next_action="下一个：卧推 · 第2组",
+            theme_color="#8464C2",
+        )
         await asyncio.sleep(0.05)
         await asyncio.sleep(0.2)
 
@@ -489,6 +518,31 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
+        self.assertEqual(
+            overlay.starts,
+            [
+                ("rest-adjust", 0.2, "下一个：卧推 · 第2组", "#8464C2"),
+                ("rest-adjust", 0.0, "下一个：卧推 · 第2组", "#8464C2"),
+            ],
+        )
+        self.assertEqual(overlay.stops, [])
+
+    async def test_lifecycle_hides_and_shows_native_overlay(self):
+        page = FakePage()
+        overlay = FakeOverlayController()
+        RestNotifier(
+            page,
+            audio_factory=FakeAudio,
+            haptic_factory=FakeHaptic,
+            system_factory=None,
+            alarm_scheduler_factory=None,
+            overlay_controller_factory=lambda: overlay,
+        )
+
+        page.on_app_lifecycle_state_change(type("Event", (), {"state": "pause"})())
+        page.on_app_lifecycle_state_change(type("Event", (), {"state": "resume"})())
+
+        self.assertEqual(overlay.visibility, [False, True])
 
     async def test_skip_cancel_keeps_claim_so_cycle_does_not_ring(self):
         page = ThreadSafeFakePage(asyncio.get_running_loop())
@@ -552,26 +606,50 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
             / "android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/"
             "carbs_king/restalarm/RestAlarmReceiver.kt"
         ).read_text(encoding="utf-8")
+        overlay_service = (
+            root
+            / "android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/"
+            "carbs_king/restalarm/RestOverlayService.kt"
+        ).read_text(encoding="utf-8")
         adapter = (root / "src/rest_notification.py").read_text(encoding="utf-8")
 
         self.assertIn("carbs_king_rest_alarm", project)
         self.assertIn('path = "../../android/rest_alarm_plugin"', project)
         self.assertIn('"android.permission.POST_NOTIFICATIONS" = true', project)
         self.assertIn('"android.permission.USE_EXACT_ALARM" = true', project)
+        self.assertIn('"android.permission.SYSTEM_ALERT_WINDOW" = true', project)
+        self.assertIn('"android.permission.FOREGROUND_SERVICE_SPECIAL_USE" = true', project)
         self.assertIn('android:exported="false"', manifest)
+        self.assertIn('.RestOverlayService', manifest)
         self.assertIn(REST_ALARM_ACTION, manifest)
         self.assertIn("class RestAlarmReceiver : BroadcastReceiver()", receiver)
         self.assertIn("setBypassDnd(false)", receiver)
         self.assertIn("setOnlyAlertOnce(true)", receiver)
         self.assertIn("getBoolean(cycleId, false)", receiver)
-        self.assertIn('CHANNEL_ID = "rest_cycle_alerts_v3"', receiver)
+        self.assertIn('CHANNEL_ID = "rest_cycle_native_alerts_v1"', receiver)
         self.assertIn("R.raw.rest_coin", receiver)
         self.assertIn("NotificationManager.IMPORTANCE_HIGH", receiver)
         self.assertIn("AudioAttributes.USAGE_ALARM", receiver)
         self.assertIn("MediaPlayer", receiver)
         self.assertIn("playBundledAlarm", receiver)
-        self.assertIn("if (!audioStarted && canPostNotifications(context))", receiver)
+        self.assertIn("val pendingResult = goAsync()", receiver)
+        self.assertIn("if (canPostNotifications(context))", receiver)
         self.assertIn('DEFAULT_NOTIFICATION_CHANNEL_ID = "rest_cycle_alerts_v3"', adapter)
+        self.assertIn('self.JavaString = autoclass("java.lang.String")', adapter)
+        self.assertIn('intent.putExtra("rest_cycle_id", self.JavaString(', adapter)
+        self.assertIn("is CharArray -> String(value)", receiver)
+        overlay_start_at = adapter.index("class AndroidRestOverlayController")
+        overlay_start_at = adapter.index("    def start(", overlay_start_at)
+        overlay_start = adapter[
+            overlay_start_at:adapter.index("    def set_app_visible", overlay_start_at)
+        ]
+        self.assertLess(overlay_start.index("self._start(intent)"), overlay_start.index("self.request_permission()"))
+        self.assertIn('intent.putExtra("rest_theme_color"', overlay_start)
+        self.assertIn('const val EXTRA_THEME_COLOR = "rest_theme_color"', overlay_service)
+        self.assertIn("orientation = LinearLayout.VERTICAL", overlay_service)
+        self.assertIn("panel.postOnAnimation", overlay_service)
+        overlay_visibility = adapter[adapter.index("    def set_app_visible"):adapter.index("    def stop", adapter.index("    def set_app_visible"))]
+        self.assertIn("self.activity.startService(intent)", overlay_visibility)
         native_sound = root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
         foreground_sound = root / "assets/rest_coin.mp3"
         build_script = (root / "build_apk_update.ps1").read_text(encoding="utf-8-sig")

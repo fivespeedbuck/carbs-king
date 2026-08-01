@@ -15,15 +15,20 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RECEIVER_CLASS = "com.chenyang.carbs_king.restalarm.RestAlarmReceiver"
+OVERLAY_SERVICE_CLASS = "com.chenyang.carbs_king.restalarm.RestOverlayService"
 PLUGIN_CLASS = "com.chenyang.carbs_king.restalarm.CarbsKingRestAlarmPlugin"
 UPDATE_PROVIDER_CLASS = "androidx.core.content.FileProvider"
 ACTION = "com.chenyang.carbs_king.REST_ALARM"
-CHANNEL_ID = "rest_cycle_alerts_v3"
+FOREGROUND_CHANNEL_ID = "rest_cycle_alerts_v3"
+NATIVE_CHANNEL_ID = "rest_cycle_native_alerts_v1"
 PERMISSIONS = (
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.VIBRATE",
     "android.permission.WAKE_LOCK",
     "android.permission.USE_EXACT_ALARM",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
     "android.permission.REQUEST_INSTALL_PACKAGES",
 )
 
@@ -50,7 +55,7 @@ def _find_packaged_blob(apk: Path, expected: bytes) -> str:
 def verify_outputs(manifest: str, resources: str, dex: str) -> dict[str, object]:
     missing_manifest = [
         token
-        for token in (*PERMISSIONS, RECEIVER_CLASS, ACTION, UPDATE_PROVIDER_CLASS)
+        for token in (*PERMISSIONS, RECEIVER_CLASS, OVERLAY_SERVICE_CLASS, ACTION, UPDATE_PROVIDER_CLASS)
         if token not in manifest
     ]
     if missing_manifest:
@@ -59,7 +64,11 @@ def verify_outputs(manifest: str, resources: str, dex: str) -> dict[str, object]
         )
     if not re.search(r"raw[/\\:]rest_coin|raw\s+rest_coin", resources):
         raise ApkRuntimeGateError("final APK resource table is missing raw/rest_coin")
-    missing_dex = [token for token in ("RestAlarmReceiver", "CarbsKingRestAlarmPlugin") if token not in dex]
+    missing_dex = [
+        token
+        for token in ("RestAlarmReceiver", "RestOverlayService", "CarbsKingRestAlarmPlugin")
+        if token not in dex
+    ]
     if missing_dex:
         raise ApkRuntimeGateError("DEX is missing: " + ", ".join(missing_dex))
     return {
@@ -67,35 +76,49 @@ def verify_outputs(manifest: str, resources: str, dex: str) -> dict[str, object]
         "receiver": RECEIVER_CLASS,
         "action": ACTION,
         "raw_sound": "raw/rest_coin",
-        "dex_classes": [RECEIVER_CLASS, PLUGIN_CLASS],
+        "dex_classes": [RECEIVER_CLASS, OVERLAY_SERVICE_CLASS, PLUGIN_CLASS],
     }
 
 
 def verify_sources(repo_root: Path = REPO_ROOT) -> dict[str, object]:
     receiver = repo_root / "android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/carbs_king/restalarm/RestAlarmReceiver.kt"
+    overlay_service = repo_root / "android/rest_alarm_plugin/android/src/main/kotlin/com/chenyang/carbs_king/restalarm/RestOverlayService.kt"
     python_adapter = repo_root / "src/rest_notification.py"
     update_installer = repo_root / "src/apk_update_download.py"
     native_sound = repo_root / "android/rest_alarm_plugin/android/src/main/res/raw/rest_coin.mp3"
     flet_sound = repo_root / "assets/rest_coin.mp3"
     update_manifest = repo_root / "android/rest_alarm_plugin/android/src/main/AndroidManifest.xml"
-    for path in (receiver, python_adapter, update_installer, native_sound, flet_sound, update_manifest):
+    for path in (receiver, overlay_service, python_adapter, update_installer, native_sound, flet_sound, update_manifest):
         if not path.is_file():
             raise ApkRuntimeGateError(f"required source is missing: {path}")
     receiver_text = receiver.read_text(encoding="utf-8")
     adapter_text = python_adapter.read_text(encoding="utf-8")
     if "R.raw.rest_coin" not in receiver_text:
         raise ApkRuntimeGateError("Kotlin receiver does not statically retain R.raw.rest_coin")
-    if CHANNEL_ID not in receiver_text or CHANNEL_ID not in adapter_text:
-        raise ApkRuntimeGateError(f"Kotlin and Python must both use {CHANNEL_ID}")
+    if NATIVE_CHANNEL_ID not in receiver_text:
+        raise ApkRuntimeGateError(f"Kotlin receiver must use {NATIVE_CHANNEL_ID}")
+    if FOREGROUND_CHANNEL_ID not in adapter_text:
+        raise ApkRuntimeGateError(f"Python foreground notifier must use {FOREGROUND_CHANNEL_ID}")
     if native_sound.read_bytes() != flet_sound.read_bytes():
         raise ApkRuntimeGateError("native and Flet rest sounds differ")
     manifest_text = update_manifest.read_text(encoding="utf-8")
     installer_text = update_installer.read_text(encoding="utf-8")
-    if "REQUEST_INSTALL_PACKAGES" not in manifest_text:
-        raise ApkRuntimeGateError("Android APK installer permission is missing")
+    required_manifest = (
+        "REQUEST_INSTALL_PACKAGES",
+        "SYSTEM_ALERT_WINDOW",
+        "FOREGROUND_SERVICE_SPECIAL_USE",
+        ".RestOverlayService",
+    )
+    missing_manifest = [token for token in required_manifest if token not in manifest_text]
+    if missing_manifest:
+        raise ApkRuntimeGateError("Android source manifest is missing: " + ", ".join(missing_manifest))
     if "FileProvider.getUriForFile" not in installer_text or 'f"{package_name}.provider"' not in installer_text:
         raise ApkRuntimeGateError("APK installer does not reuse Flet's content URI provider")
-    return {"channel_id": CHANNEL_ID, "sound_sha256": _sha256(native_sound)}
+    return {
+        "foreground_channel_id": FOREGROUND_CHANNEL_ID,
+        "native_channel_id": NATIVE_CHANNEL_ID,
+        "sound_sha256": _sha256(native_sound),
+    }
 
 
 def _sdk_root() -> Path:

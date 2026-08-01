@@ -20,6 +20,7 @@ DATA_FILENAMES = [
     "daily_records.json",
     "user_profile.json",
     "training_data.json",
+    "training_recycle_bin.json",
     "achievement_unlocks.json",
     "goal_challenges.json",
 ]
@@ -57,6 +58,7 @@ PROFILE_FILE = APP_DIR / "user_profile.json"
 ACHIEVEMENT_FILE = APP_DIR / "achievement_unlocks.json"
 GOAL_CHALLENGE_FILE = APP_DIR / "goal_challenges.json"
 TRAINING_FILE = APP_DIR / "training_data.json"
+TRAINING_RECYCLE_BIN_FILE = APP_DIR / "training_recycle_bin.json"
 
 def migrate_legacy_data():
     """Move older-build data into Flet's persistent directory once."""
@@ -207,6 +209,6 @@ def save_user_profile(data):
 
 __all__ = [
     "ACHIEVEMENT_FILE", "APP_DIR", "FOOD_FILE", "GOAL_CHALLENGE_FILE",
-    "PROFILE_FILE", "RECORD_FILE", "SUPP_FILE", "TRAINING_FILE", "load_json",
+    "PROFILE_FILE", "RECORD_FILE", "SUPP_FILE", "TRAINING_FILE", "TRAINING_RECYCLE_BIN_FILE", "load_json",
     "load_user_profile", "normalize_profile_age", "save_json", "save_user_profile",
 ]

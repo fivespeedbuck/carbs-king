@@ -63,6 +63,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
     save_profile = deps.save_profile
     reload_date = deps.reload_date
     training_path = app_dir / "training_data.json"
+    training_recycle_path = app_dir / "training_recycle_bin.json"
 
     def load_goal_challenges() -> dict[str, Any]:
         if repositories.goal_challenges is None:
@@ -86,6 +87,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             "achievement_unlocks": copy.deepcopy(repositories.achievements.load()),
             "goal_challenges": load_goal_challenges(),
             "training_data": copy.deepcopy(load_json(training_path, {})),
+            "training_recycle_bin": copy.deepcopy(load_json(training_recycle_path, [])),
         }
 
     def _validate_section(key: str, value: Any, expected_type: type) -> None:
@@ -116,6 +118,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
                 "achievement_unlocks": dict,
                 "goal_challenges": dict,
                 "training_data": dict,
+                "training_recycle_bin": list,
             }
             for key, expected_type in expected_types.items():
                 if key in payload:
@@ -234,6 +237,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         repositories.achievements.save(payload["achievement_unlocks"])
         save_goal_challenges(payload["goal_challenges"])
         save_json(training_path, payload["training_data"])
+        save_json(training_recycle_path, payload["training_recycle_bin"])
 
     def _replace_runtime(payload: dict[str, Any]) -> None:
         records.clear()
@@ -266,6 +270,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             for key in (
                 "daily_records", "food_library", "supplement_library", "user_profile",
                 "achievement_unlocks", "goal_challenges", "training_data",
+                "training_recycle_bin",
             ):
                 if key in import_data:
                     target[key] = copy.deepcopy(import_data[key])
@@ -275,6 +280,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         target.setdefault("achievement_unlocks", copy.deepcopy(before["achievement_unlocks"]))
         target.setdefault("goal_challenges", copy.deepcopy(before["goal_challenges"]))
         target.setdefault("training_data", copy.deepcopy(before["training_data"]))
+        target.setdefault("training_recycle_bin", copy.deepcopy(before["training_recycle_bin"]))
 
         save_pre_import_snapshot()
         try:
@@ -326,6 +332,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             repositories.achievements.save({})
             save_goal_challenges({})
             save_json(training_path, {"custom_exercises": custom_exercises})
+            save_json(training_recycle_path, [])
 
             records.clear()
             _sync_profile_state(cleared_profile)
@@ -337,6 +344,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
                 repositories.achievements.save(before["achievement_unlocks"])
                 save_goal_challenges(before["goal_challenges"])
                 save_json(training_path, before["training_data"])
+                save_json(training_recycle_path, before["training_recycle_bin"])
                 records.clear()
                 records.update(copy.deepcopy(before["daily_records"]))
                 _sync_profile_state(before["user_profile"])

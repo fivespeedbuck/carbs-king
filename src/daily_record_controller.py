@@ -18,7 +18,7 @@ from app_defaults import CIRCUMFERENCE_FIELDS, DAY_TYPES, DEFAULT_MACRO_MULTIPLI
 from app_utils import to_float
 from repositories import AppRepositories
 from training_clock_service import active_session_with_start
-from training_service import migrate_legacy_training, normalize_session_payload
+from training_service import append_session_once, migrate_legacy_training, normalize_session_payload
 
 
 @dataclass(frozen=True)
@@ -372,6 +372,26 @@ class DailyRecordController:
         training = current.get("training", {})
         training = dict(training) if isinstance(training, Mapping) else {}
         current["training"] = self._replace_training_session(training, session)
+        self.deps.records[target_date] = current
+        self.persist_records()
+
+    def restore_training_session(self, target_date: str, session: dict[str, Any]) -> None:
+        """Restore a completed session to the original day's completed list."""
+        restored = copy.deepcopy(dict(session))
+        restored["date"] = target_date
+        restored["status"] = "completed"
+        if target_date == self.deps.state.get("date"):
+            training = self.deps.state["training"]
+            training["sessions"] = append_session_once(training.get("sessions", []), restored)
+            self.save()
+            return
+
+        current = self.deps.records.get(target_date, {})
+        current = copy.deepcopy(dict(current)) if isinstance(current, Mapping) else {}
+        training = current.get("training", {})
+        training = dict(training) if isinstance(training, Mapping) else self._blank_training()
+        training["sessions"] = append_session_once(training.get("sessions", []), restored)
+        current["training"] = training
         self.deps.records[target_date] = current
         self.persist_records()
 

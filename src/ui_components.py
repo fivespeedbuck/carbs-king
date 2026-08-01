@@ -292,9 +292,15 @@ def mobile_dropdown(label, value, options, width=None, on_change=None, expand=Fa
     dropdown = ft.Dropdown(value=value, options=options, height=INPUT_FIELD_HEIGHT, expand=True)
     try:
         dropdown.text_size = 16
+        dropdown.color = TEXT
         dropdown.dense = True
         dropdown.border_radius = 8
         dropdown.bgcolor = "#FFFFFF"
+        dropdown.menu_style = ft.MenuStyle(
+            bgcolor="#FFFFFF",
+            shadow_color="#33000000",
+            elevation=8,
+        )
         dropdown.border_color = BORDER
         dropdown.focused_border_color = PRIMARY
         dropdown.content_padding = 12
@@ -317,7 +323,7 @@ def responsive_field_grid(
     spacing: int = FIELD_GRID_SPACING,
 ) -> ft.ResponsiveRow:
     """Lay out compact fields without allowing label length to shift field baselines."""
-    count = max(1, min(3, int(columns)))
+    count = max(1, min(4, int(columns)))
     collapsed = viewport_width is not None and float(viewport_width) < FIELD_GRID_COLLAPSE_WIDTH
     default_span = 12 // count
     full_width_indexes = set(full_width)
@@ -339,6 +345,13 @@ def responsive_field_grid(
 def three_field_grid(first: Any, second: Any, third: Any, *, viewport_width=None) -> ft.ResponsiveRow:
     """Shared weight/reps/sets-style three-column field group."""
     return responsive_field_grid([first, second, third], columns=3, viewport_width=viewport_width)
+
+
+def four_field_grid(first: Any, second: Any, third: Any, fourth: Any, *, viewport_width=None) -> ft.ResponsiveRow:
+    """Shared weight/reps/sets/rest-style four-column field group."""
+    return responsive_field_grid(
+        [first, second, third, fourth], columns=4, viewport_width=viewport_width
+    )
 
 
 def two_field_grid(first: Any, second: Any, *, viewport_width=None) -> ft.ResponsiveRow:
@@ -442,7 +455,7 @@ __all__ = [
     "single_line_font_size",
     "LabeledInput", "input_is_focused", "make_button", "thin_border", "card", "page_card",
     "section_title", "small_text", "labeled_plain_field", "mobile_text_field",
-    "mobile_dropdown", "plain_number_field", "responsive_field_grid", "three_field_grid",
+    "mobile_dropdown", "plain_number_field", "responsive_field_grid", "three_field_grid", "four_field_grid",
     "two_field_grid", "quantity_unit_grid", "custom_progress_bar",
     "macro_progress_bar", "water_progress_bar", "pill",
 ]
