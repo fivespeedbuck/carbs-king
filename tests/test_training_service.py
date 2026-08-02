@@ -16,6 +16,7 @@ from training_models import (  # noqa: E402
     TrainingSession,
     TrainingSet,
     TrainingTemplate,
+    TRAINING_SCHEMA_VERSION,
 )
 from training_service import (  # noqa: E402
     append_session_once,
@@ -247,7 +248,7 @@ class LegacyMigrationTests(unittest.TestCase):
         payload = {"schema_version": 1, "exercises": [], "templates": [], "sessions": []}
         normalized = normalize_training_data(payload)
 
-        self.assertEqual(normalized.schema_version, 2)
+        self.assertEqual(normalized.schema_version, TRAINING_SCHEMA_VERSION)
         self.assertEqual(normalized.exercises, [])
         self.assertEqual(normalized.templates, [])
         self.assertEqual(normalized.sessions, [])

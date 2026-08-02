@@ -18,6 +18,8 @@ class TrainingData(TypedDict, total=False):
     summary_note: str
     targets: list[dict[str, Any]]
     carb_reminder_dismissed_signature: str
+    carb_mode: str
+    carb_snapshot: dict[str, Any]
     session: dict[str, Any] | None
     sessions: list[dict[str, Any]]
 
@@ -73,7 +75,7 @@ class ProfileState:
 @dataclass
 class DailyState:
     selected_date: str = field(default_factory=lambda: date.today().isoformat())
-    day_type: str = "高碳日"
+    day_type: str = "低碳日"
     measurement: dict[str, Any] | None = None
     circumference: dict[str, Any] | None = None
     meals: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
@@ -84,6 +86,8 @@ class DailyState:
         summary_note="",
         targets=[],
         carb_reminder_dismissed_signature="",
+        carb_mode="auto",
+        carb_snapshot={},
         session=None,
         sessions=[],
     ))

@@ -54,6 +54,7 @@ class TodayDashboardActions:
     open_training: Callable[[Any], None]
     open_meal: Callable[[str], None]
     open_recovery: Callable[[Any], None]
+    open_intake: Callable[[Any], None] = lambda e: None
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,7 @@ def build_today_dashboard(
         border_radius=12,
         padding=18,
         margin=ft.Margin(left=0, top=0, right=0, bottom=0),
+        on_click=actions.open_intake,
     )
 
     training_subtitle = ft.Text(model.training_subtitle, size=14, color=ON_PRIMARY, weight="bold")

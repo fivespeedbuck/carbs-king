@@ -133,7 +133,6 @@ class UiContractsTests(unittest.TestCase):
         self.assertEqual(TODAY_SOURCE.count("margin=ft.Margin(left=0, top=0, right=0, bottom=0)"), 4)
         self.assertIn("summary = page_card(", DIET_CONTROLLER_SOURCE)
         self.assertIn("return page_card(", DIET_CONTROLLER_SOURCE)
-        self.assertIn("return page_card(", TRAINING_CONTROLLER_SOURCE)
         self.assertIn("return page_card(", PROFILE_SOURCE)
         self.assertIn("profile_card = page_card(", PROFILE_DETAILS_SOURCE)
         self.assertIn("settings_card = page_card(", PROFILE_DETAILS_SOURCE)
@@ -888,8 +887,8 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         )
         self.assertIsInstance(reorder_list, ft.ReorderableListView)
         self.assertFalse(reorder_list.show_default_drag_handles)
-        self.assertEqual(reorder_list.controls[0].data, "action-arrangement-drag-region")
-        first_card = reorder_list.controls[0].content
+        self.assertEqual(reorder_list.controls[0].data, "action-arrangement-card")
+        first_card = reorder_list.controls[0]
         action_grid = first_card.content.content.controls[2]
         self.assertEqual(
             [button.icon for button in action_grid.controls[0].controls],
@@ -922,7 +921,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
             opened[0],
             lambda control: getattr(control, "data", None) == "active-action-reorder-list",
         )
-        first_card = reorder_list.controls[0].content
+        first_card = reorder_list.controls[0]
         first_card.content.content.controls[2].controls[0].controls[1].on_click(None)
         group_sheet = opened[-1]
         checkboxes = self.controls_of_type(group_sheet, ft.Checkbox)

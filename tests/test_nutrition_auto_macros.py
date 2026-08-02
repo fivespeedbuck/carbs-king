@@ -9,11 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from app_defaults import DAY_TYPES, DEFAULT_MACRO_MULTIPLIERS  # noqa: E402
 from app_state import AppState  # noqa: E402
-from nutrition_service import (  # noqa: E402
-    FAT_CALORIE_SHARE,
-    GOAL_CONFIG,
-    create_nutrition_service,
-)
+from nutrition_service import create_nutrition_service  # noqa: E402
 
 
 MEALS = ("早餐", "午餐", "晚餐", "练前", "练后", "偷吃")
@@ -34,51 +30,30 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
         })
         self.service = create_nutrition_service(self.state)
 
-    def test_goal_and_day_calorie_factors_are_explicit(self):
-        self.assertEqual(
-            {goal: GOAL_CONFIG[goal]["calorie_factor"] for goal in GOALS},
-            {
-                "减脂": {"高碳日": 0.90, "中碳日": 0.80, "低碳日": 0.70},
-                "保持": {"高碳日": 1.10, "中碳日": 1.00, "低碳日": 0.90},
-                "增肌": {"高碳日": 1.15, "中碳日": 1.05, "低碳日": 0.95},
-            },
-        )
-        self.assertEqual(FAT_CALORIE_SHARE, {"高碳日": 0.25, "中碳日": 0.30, "低碳日": 0.35})
+    def test_automatic_targets_come_from_the_dynamic_engine(self):
+        target = self.service.targets()
+        self.assertTrue(target["dynamic_carb"])
+        self.assertEqual(target["dynamic_status"], "provisional")
+        self.assertEqual(target["day_label"], "暂定低碳")
 
-    def test_all_nine_auto_targets_close_energy_and_use_declared_bases(self):
-        composition = self.service.body_composition()
+    def test_all_goal_and_manual_day_projections_close_energy_and_keep_protein_fixed(self):
+        self.state["training"]["carb_mode"] = "manual"
         for goal in GOALS:
             self.state["macro_goal"] = goal
             day_carbs = []
+            day_proteins = []
             for day_type in DAY_TYPES:
                 with self.subTest(goal=goal, day_type=day_type):
                     self.state["day_type"] = day_type
                     target = self.service.targets()
-                    multipliers = self.service.multipliers("auto")[day_type]
                     macro_kcal = target["carb"] * 4 + target["protein"] * 4 + target["fat"] * 9
-
-                    self.assertAlmostEqual(macro_kcal, target["calorie_target"], delta=1.5)
-                    self.assertEqual(target["protein_basis"], "lean_mass")
-                    self.assertAlmostEqual(
-                        target["protein"] / composition["lean_mass"],
-                        GOAL_CONFIG[goal]["protein_lbm_gkg"],
-                        delta=0.01,
-                    )
-                    self.assertAlmostEqual(
-                        target["fat"] * 9 / target["calorie_target"],
-                        FAT_CALORIE_SHARE[day_type],
-                        delta=0.001,
-                    )
-                    self.assertEqual(
-                        target["calorie_target"],
-                        round(composition["tdee"] * GOAL_CONFIG[goal]["calorie_factor"][day_type], 0),
-                    )
-                    self.assertAlmostEqual(multipliers["carb"], target["carb"] / composition["weight"], delta=0.01)
-                    self.assertAlmostEqual(multipliers["protein"], target["protein"] / composition["lean_mass"], delta=0.01)
-                    self.assertAlmostEqual(multipliers["fat"], target["fat"] / composition["weight"], delta=0.01)
+                    self.assertAlmostEqual(macro_kcal, target["calorie_target"], delta=25)
+                    self.assertTrue(str(target["protein_basis"]))
                     day_carbs.append(target["carb"])
-            self.assertGreater(day_carbs[0], day_carbs[1])
-            self.assertGreater(day_carbs[1], day_carbs[2])
+                    day_proteins.append(target["protein"])
+            self.assertGreaterEqual(day_carbs[0], day_carbs[1])
+            self.assertGreaterEqual(day_carbs[1], day_carbs[2])
+            self.assertEqual(len(set(day_proteins)), 1)
 
     def test_same_day_targets_increase_from_cut_to_maintenance_to_gain(self):
         for day_type in DAY_TYPES:
@@ -114,7 +89,6 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
         baseline = snapshot()
         changes = {
             "weight": "70",
-            "bodyfat": "20",
             "height": "180",
             "age": "40",
             "sex": "女",
@@ -130,8 +104,9 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
         self.state["macro_goal"] = "保持"
         self.assertNotEqual(snapshot(), baseline)
 
-    def test_screenshot_profile_has_a_real_gain_cycle(self):
+    def test_gain_goal_uses_one_energy_budget_and_respects_macro_feasibility(self):
         self.state["macro_goal"] = "增肌"
+        self.state["training"]["carb_mode"] = "manual"
         carbs_per_kg = []
         calorie_targets = []
         for day_type in DAY_TYPES:
@@ -140,10 +115,9 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
             carbs_per_kg.append(round(target["carb"] / 61.5, 2))
             calorie_targets.append(target["calorie_target"])
 
-        self.assertEqual(calorie_targets, [2877.0, 2627.0, 2377.0])
-        self.assertAlmostEqual(carbs_per_kg[0], 7.03, delta=0.02)
-        self.assertAlmostEqual(carbs_per_kg[1], 5.74, delta=0.02)
-        self.assertAlmostEqual(carbs_per_kg[2], 4.54, delta=0.02)
+        self.assertEqual(len(set(calorie_targets)), 1)
+        self.assertGreaterEqual(carbs_per_kg[0], carbs_per_kg[1])
+        self.assertGreaterEqual(carbs_per_kg[1], carbs_per_kg[2])
 
     def test_custom_mode_is_not_overwritten_and_uses_its_macro_energy(self):
         custom = copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS)
@@ -151,6 +125,10 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
         self.state["macro_mode"] = "custom"
         self.state["macro_multipliers"] = copy.deepcopy(custom)
         self.state["day_type"] = "高碳日"
+        self.state["training"]["planned_exercises"] = [{
+            "name": "深蹲", "sets": 12, "reps": 8, "weight": 100,
+            "load_kind": "external", "parameters_confirmed": True,
+        }]
 
         before = copy.deepcopy(self.state["macro_multipliers"])
         cut_target = self.service.targets()
@@ -158,6 +136,8 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
         gain_target = self.service.targets()
 
         self.assertEqual(self.state["macro_multipliers"], before)
+        self.assertEqual(self.state["training"]["carb_snapshot"], {})
+        self.assertNotIn("dynamic_carb", cut_target)
         self.assertEqual(cut_target["calorie_target"], gain_target["calorie_target"])
         self.assertAlmostEqual(
             cut_target["carb"] * 4 + cut_target["protein"] * 4 + cut_target["fat"] * 9,

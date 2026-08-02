@@ -13,6 +13,14 @@ from typing import Any
 
 from app_defaults import DEFAULT_MACRO_MULTIPLIERS
 from app_state import AppState
+from food_library import (
+    DELETED_SYSTEM_FOOD_KEY,
+    apply_food_changes,
+    food_catalog,
+    legacy_user_food_changes,
+    serialize_user_foods,
+    split_user_food_changes,
+)
 from repositories import AppRepositories
 from storage_service import load_json, save_json
 
@@ -74,14 +82,14 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         if repositories.goal_challenges is not None:
             repositories.goal_challenges.save(value)
 
-    def make_full_backup_payload() -> dict[str, Any]:
+    def make_runtime_backup_payload() -> dict[str, Any]:
         return {
             "format": "carbs_king_backup",
-            "backup_version": 2,
+            "backup_version": 3,
             "app_version": app_version,
             "exported_at": datetime.datetime.now().isoformat(timespec="seconds"),
             "daily_records": copy.deepcopy(repositories.records.load()),
-            "food_library": copy.deepcopy(repositories.foods.load()),
+            "food_library": copy.deepcopy(foods),
             "supplement_library": copy.deepcopy(repositories.supplements.load()),
             "user_profile": copy.deepcopy(load_profile()),
             "achievement_unlocks": copy.deepcopy(repositories.achievements.load()),
@@ -89,6 +97,14 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             "training_data": copy.deepcopy(load_json(training_path, {})),
             "training_recycle_bin": copy.deepcopy(load_json(training_recycle_path, [])),
         }
+
+    def make_full_backup_payload() -> dict[str, Any]:
+        payload = make_runtime_backup_payload()
+        user_foods, deleted_builtin_foods = split_user_food_changes(payload["food_library"])
+        payload["food_library_mode"] = "user_changes"
+        payload["food_library"] = user_foods
+        payload["deleted_builtin_foods"] = deleted_builtin_foods
+        return payload
 
     def _validate_section(key: str, value: Any, expected_type: type) -> None:
         if not isinstance(value, expected_type):
@@ -113,6 +129,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             expected_types = {
                 "daily_records": dict,
                 "food_library": list,
+                "deleted_builtin_foods": list,
                 "supplement_library": list,
                 "user_profile": dict,
                 "achievement_unlocks": dict,
@@ -123,6 +140,10 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             for key, expected_type in expected_types.items():
                 if key in payload:
                     _validate_section(key, payload[key], expected_type)
+                    normalized[key] = copy.deepcopy(payload[key])
+
+            for key in ("format", "backup_version", "app_version", "food_library_mode"):
+                if key in payload:
                     normalized[key] = copy.deepcopy(payload[key])
 
             # Older exports occasionally used this shorter key.
@@ -147,6 +168,9 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
 
         if not normalized:
             raise ValueError("未识别到可导入的碳水大王备份数据")
+        deleted_foods = normalized.get("deleted_builtin_foods", [])
+        if not all(isinstance(item, str) and item.strip() for item in deleted_foods):
+            raise ValueError("deleted_builtin_foods 中包含无效条目")
         return normalized
 
     def validate_full_backup(import_data: dict[str, Any]) -> None:
@@ -160,11 +184,24 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             ("user_profile", dict),
         ):
             _validate_section(key, import_data[key], expected)
+        food_mode = import_data.get("food_library_mode")
+        if food_mode not in {None, "user_changes"}:
+            raise ValueError("食物库备份模式不受支持")
+        deleted_foods = import_data.get("deleted_builtin_foods", [])
+        if not isinstance(deleted_foods, list) or not all(
+            isinstance(item, str) and item.strip() for item in deleted_foods
+        ):
+            raise ValueError("deleted_builtin_foods 中包含无效条目")
 
     def import_summary(import_data: dict[str, Any]) -> str:
+        food_count = len(import_data.get("food_library", []))
+        if import_data.get("food_library_mode") != "user_changes":
+            food_count = len(legacy_user_food_changes(import_data.get("food_library", [])))
+        deleted_count = len(import_data.get("deleted_builtin_foods", []))
+        deleted_text = f"、删除 {deleted_count} 项" if deleted_count else ""
         return " · ".join((
             f"每日记录 {len(import_data.get('daily_records', {}))} 天",
-            f"食物 {len(import_data.get('food_library', []))} 项",
+            f"个人食物 {food_count} 项{deleted_text}",
             f"补剂 {len(import_data.get('supplement_library', []))} 项",
             "个人资料",
         ))
@@ -231,7 +268,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
 
     def _write_all(payload: dict[str, Any]) -> None:
         repositories.records.save(payload["daily_records"])
-        repositories.foods.save(payload["food_library"])
+        repositories.foods.save(serialize_user_foods(payload["food_library"]))
         repositories.supplements.save(payload["supplement_library"])
         save_profile(payload["user_profile"])
         repositories.achievements.save(payload["achievement_unlocks"])
@@ -253,13 +290,22 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         if mode not in {"merge", "replace"}:
             raise ValueError("不支持的导入方式")
 
-        before = make_full_backup_payload()
+        before = make_runtime_backup_payload()
         target = copy.deepcopy(before)
+        imported_food_changes: list[dict[str, Any]] | None = None
+        if "food_library" in import_data:
+            if import_data.get("food_library_mode") == "user_changes":
+                imported_food_changes = [
+                    *({DELETED_SYSTEM_FOOD_KEY: key} for key in import_data.get("deleted_builtin_foods", [])),
+                    *copy.deepcopy(import_data["food_library"]),
+                ]
+            else:
+                imported_food_changes = legacy_user_food_changes(import_data["food_library"])
         if mode == "merge":
             if "daily_records" in import_data:
                 target["daily_records"].update(copy.deepcopy(import_data["daily_records"]))
-            if "food_library" in import_data:
-                target["food_library"] = merge_named_items(target["food_library"], import_data["food_library"])
+            if imported_food_changes is not None:
+                target["food_library"] = apply_food_changes(target["food_library"], imported_food_changes)
             if "supplement_library" in import_data:
                 target["supplement_library"] = merge_named_items(
                     target["supplement_library"], import_data["supplement_library"]
@@ -268,12 +314,14 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
                 target["user_profile"].update(copy.deepcopy(import_data["user_profile"]))
         else:
             for key in (
-                "daily_records", "food_library", "supplement_library", "user_profile",
+                "daily_records", "supplement_library", "user_profile",
                 "achievement_unlocks", "goal_challenges", "training_data",
                 "training_recycle_bin",
             ):
                 if key in import_data:
                     target[key] = copy.deepcopy(import_data[key])
+            if imported_food_changes is not None:
+                target["food_library"] = food_catalog(imported_food_changes)
 
         # Legacy full backups did not contain these sections; preserving the
         # current values avoids deleting data that the old format could not carry.
@@ -298,7 +346,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
 
     def clear_personal_data() -> dict[str, int]:
         """Delete personal records while preserving all three reusable libraries."""
-        before = make_full_backup_payload()
+        before = make_runtime_backup_payload()
         default_state = AppState.default(())
         cleared_profile = {
             "weight": default_state["weight"],

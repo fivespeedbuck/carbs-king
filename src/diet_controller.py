@@ -15,11 +15,13 @@ import flet as ft
 from app_defaults import DAY_TYPES
 from app_state import AppState
 from app_utils import calc_item, to_float
+from carb_cycle_views import build_intake_detail_content
 from controller_runtime import ControllerRuntime
+from dynamic_carb_engine import build_manual_switch_prompt
 from diet_service import PersistedSupplementList, DietViewState, diet_route_for_view, normalize_diet_view
 from diet_views import DietShellRenderers, build_diet_shell, diet_shortcut_panel
-from food_library import FOOD_CATEGORIES, food_catalog, search_foods
-from form_views import FormViewContext, build_full_form_sheet
+from food_library import FOOD_CATEGORIES, food_catalog, search_foods, serialize_user_foods
+from form_views import FormViewContext, build_dialog, build_full_form_sheet
 from repositories import AppRepositories
 from ui_components import (
     BORDER, GREEN, INPUT_FIELD_HEIGHT,
@@ -577,14 +579,14 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                 data[k] = to_float(fields[k].value)
 
             if editing:
-                foods[edit_index] = data
+                foods[edit_index] = {**item, **data}
             else:
                 if any(f.get("name") == name for f in foods):
                     snack("食物已存在")
                     return
                 foods.append(data)
 
-            repositories.foods.save(foods)
+            repositories.foods.save(serialize_user_foods(foods))
             close_control(dlg)
             refresh()
             snack("食物库已保存")
@@ -616,7 +618,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
     def delete_food(idx):
         if 0 <= idx < len(foods):
             foods.pop(idx)
-            repositories.foods.save(foods)
+            repositories.foods.save(serialize_user_foods(foods))
             refresh()
 
     def render_diet_page():
@@ -624,9 +626,45 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         targets = get_targets()
 
         def set_day(day_name):
-            state["day_type"] = day_name
-            save_current()
-            refresh()
+            snapshot = state.get("training", {}).get("carb_snapshot", {})
+            engine = snapshot.get("engine_snapshot", {}) if isinstance(snapshot, Mapping) else {}
+
+            def apply_day(_=None):
+                state["day_type"] = day_name
+                state["training"]["carb_mode"] = "manual"
+                save_current()
+                refresh()
+
+            if state.get("macro_mode") == "custom" or not isinstance(engine, Mapping):
+                apply_day()
+                return
+            prompt = build_manual_switch_prompt(engine, day_name)
+            if not prompt["requires_confirmation"]:
+                apply_day()
+                return
+            confirm = build_dialog(
+                "切换今日目标？",
+                ft.Text(str(prompt["message"])),
+                [
+                    make_button("取消", on_click=lambda e: close_control(confirm), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                    make_button("确认切换", on_click=lambda e: (close_control(confirm), apply_day()), expand=True),
+                ],
+                on_close=lambda e: close_control(confirm),
+            )
+            open_control(confirm)
+
+        def open_intake_detail(_=None):
+            snapshot = state.get("training", {}).get("carb_snapshot", {})
+            detail = build_dialog(
+                "今日摄入详情",
+                ft.Container(
+                    content=build_intake_detail_content(total, targets, snapshot),
+                    width=responsive_width(), height=560,
+                ),
+                [make_button("知道了", on_click=lambda e: close_control(detail), expand=True)],
+                on_close=lambda e: close_control(detail),
+            )
+            open_control(detail)
 
         day_buttons = []
         for day_name in DAY_TYPES:
@@ -642,9 +680,9 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             ]
         )
         summary = page_card(ft.Column([
-            section_title("饮食总览"),
+            ft.Container(content=section_title("饮食总览"), on_click=open_intake_detail),
             ft.Row(day_buttons, spacing=7),
-            *target_controls,
+            ft.Container(content=ft.Column(target_controls, spacing=8), on_click=open_intake_detail),
         ], spacing=8), padding=14)
         active = DietViewState(normalize_diet_view(state.get("current_view")))
 

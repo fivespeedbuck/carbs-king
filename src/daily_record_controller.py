@@ -82,6 +82,8 @@ class DailyRecordController:
 
         sleep_minutes = self.deps.sleep_total_minutes()
         training = state["training"]
+        carb_snapshot = training.get("carb_snapshot", {})
+        carb_snapshot = copy.deepcopy(carb_snapshot) if isinstance(carb_snapshot, Mapping) else {}
         water = list(state["water"])
         return {
             "date": state["date"],
@@ -118,6 +120,8 @@ class DailyRecordController:
                 "summary_note": training.get("summary_note", ""),
                 "targets": list(training.get("targets", [])),
                 "carb_reminder_dismissed_signature": training.get("carb_reminder_dismissed_signature", ""),
+                "carb_mode": training.get("carb_mode", "auto"),
+                "carb_snapshot": copy.deepcopy(carb_snapshot),
                 "session": training.get("session"),
                 "sessions": list(training.get("sessions", [])),
             },
@@ -424,6 +428,8 @@ class DailyRecordController:
             "summary_note": "",
             "targets": [],
             "carb_reminder_dismissed_signature": "",
+            "carb_mode": "auto",
+            "carb_snapshot": {},
             "session": None,
             "sessions": [],
         }
@@ -459,6 +465,8 @@ class DailyRecordController:
                 "summary_note": str(raw.get("summary_note", "")),
                 "targets": [dict(item, intensity=item.get("intensity", "中等")) for item in targets if isinstance(item, dict)],
                 "carb_reminder_dismissed_signature": str(raw.get("carb_reminder_dismissed_signature", "")),
+                "carb_mode": str(raw.get("carb_mode") or "auto"),
+                "carb_snapshot": copy.deepcopy(raw.get("carb_snapshot", {})) if isinstance(raw.get("carb_snapshot"), Mapping) else {},
                 "session": session,
                 "sessions": archived,
             }, clock_migrated
@@ -497,7 +505,7 @@ class DailyRecordController:
                 ):
                     state[state_key] = str(profile.get(record_key, state.get(state_key, fallback)))
             day_type = profile.get("day_type")
-            state["day_type"] = day_type if day_type in DAY_TYPES else "高碳日"
+            state["day_type"] = day_type if day_type in DAY_TYPES else "低碳日"
             saved_meals = record.get("meals", {}) if isinstance(record.get("meals", {}), dict) else {}
             state["meals"] = {
                 meal: [item for item in saved_meals.get(meal, []) if isinstance(item, dict)]
@@ -527,7 +535,7 @@ class DailyRecordController:
                     state["weight"] = f"{previous_body['weight']:g}"
                 if previous_body.get("bodyfat") is not None:
                     state["bodyfat"] = f"{previous_body['bodyfat']:g}"
-            state["day_type"] = "高碳日"
+            state["day_type"] = "低碳日"
             state["measurement"] = None
             state["circumference"] = None
             state["meals"] = {meal: [] for meal in self.deps.meals}

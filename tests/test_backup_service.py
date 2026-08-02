@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from app_state import AppState  # noqa: E402
 from backup_service import BackupServiceDependencies, create_backup_service  # noqa: E402
+from food_library import food_catalog, serialize_user_foods  # noqa: E402
 from repositories import AppRepositories  # noqa: E402
 from storage_service import load_json, save_json  # noqa: E402
 
@@ -35,7 +36,7 @@ class MemoryRepository:
 
 def build_service(root: Path):
     records = {"2026-07-22": {"calendar_event": {"text": "原事项"}}}
-    foods = [{"name": "米饭", "base_qty": 100, "custom": {"keep": True}}]
+    foods = food_catalog([{"name": "米饭", "base_qty": 100, "custom": {"keep": True}}])
     supplements = [{"name": "肌酸", "default_amount": 5}]
     profile_store = {"value": {"weight": "80", "profile_inited": True, "unknown": "keep"}}
     achievements = {"first_training": "2026-07-20T08:00:00"}
@@ -45,7 +46,7 @@ def build_service(root: Path):
     }
     repositories = AppRepositories(
         MemoryRepository(records),
-        MemoryRepository(foods),
+        MemoryRepository(serialize_user_foods(foods)),
         MemoryRepository(supplements),
         MemoryRepository(profile_store["value"]),
         MemoryRepository(achievements),
@@ -92,7 +93,10 @@ class BackupServiceTests(unittest.TestCase):
             service, _, _, _, _, _, _, _ = build_service(Path(temp))
             payload = service.build_payload()
 
-            self.assertEqual(payload["backup_version"], 2)
+            self.assertEqual(payload["backup_version"], 3)
+            self.assertEqual(payload["food_library_mode"], "user_changes")
+            self.assertEqual([item["name"] for item in payload["food_library"]], ["米饭"])
+            self.assertEqual(payload["deleted_builtin_foods"], [])
             self.assertIn("daily_records", payload)
             self.assertIn("food_library", payload)
             self.assertIn("supplement_library", payload)
@@ -101,6 +105,63 @@ class BackupServiceTests(unittest.TestCase):
             self.assertIn("goal_challenges", payload)
             self.assertEqual(payload["training_recycle_bin"][0]["id"], "trash-1")
             self.assertEqual(payload["training_data"]["custom_exercises"][0]["name"], "自定义动作")
+
+    def test_export_contains_only_custom_and_modified_foods(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service, _, repositories, _, foods, _, _, _ = build_service(Path(temp))
+            foods[:] = food_catalog()
+            repositories.foods.save([])
+
+            bundled = next(item for item in foods if item.get("id"))
+            foods[foods.index(bundled)] = {**bundled, "kcal": 999}
+            foods.append({"name": "我的训练餐", "base_qty": 100, "kcal": 321})
+            payload = service.build_payload()
+
+            self.assertEqual(len(payload["food_library"]), 2)
+            self.assertEqual({item["name"] for item in payload["food_library"]}, {bundled["name"], "我的训练餐"})
+            self.assertEqual(payload["deleted_builtin_foods"], [])
+            self.assertLess(len(payload["food_library"]), len(foods))
+
+    def test_deleted_bundled_food_round_trips_as_a_tombstone(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service, _, repositories, _, foods, _, _, _ = build_service(Path(temp))
+            foods[:] = food_catalog()
+            repositories.foods.save([])
+            deleted = next(item for item in foods if item.get("id"))
+            foods.remove(deleted)
+            payload = service.build_payload()
+
+            self.assertIn(f"id:{deleted['id'].casefold()}", payload["deleted_builtin_foods"])
+
+            foods[:] = food_catalog()
+            service.apply(payload, "replace")
+
+            self.assertFalse(any(item.get("id") == deleted["id"] for item in foods))
+            restarted = food_catalog(repositories.foods.load())
+            self.assertFalse(any(item.get("id") == deleted["id"] for item in restarted))
+
+    def test_legacy_full_catalog_import_keeps_only_likely_user_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service, _, repositories, _, foods, _, _, _ = build_service(Path(temp))
+            legacy_foods = food_catalog()
+            edited_index = next(index for index, item in enumerate(legacy_foods) if item.get("id"))
+            edited_name = legacy_foods[edited_index]["name"]
+            legacy_foods[edited_index] = {"name": edited_name, "base_qty": 100, "kcal": 777}
+            legacy_foods.append({"name": "旧备份自定义餐", "base_qty": 100, "kcal": 456})
+            incoming = {
+                "backup_version": 2,
+                "daily_records": {},
+                "food_library": legacy_foods,
+                "supplement_library": [],
+                "user_profile": {},
+            }
+
+            service.apply(incoming, "replace")
+
+            self.assertGreater(len(foods), 2000)
+            self.assertEqual(next(item for item in foods if item["name"] == edited_name)["kcal"], 777)
+            self.assertTrue(any(item["name"] == "旧备份自定义餐" for item in foods))
+            self.assertEqual(len(repositories.foods.load()), 2)
 
     def test_legacy_full_backup_is_valid_but_partial_backup_is_not(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -122,8 +183,11 @@ class BackupServiceTests(unittest.TestCase):
             root = Path(temp)
             service, state, repositories, records, foods, supplements, profile_store, reloads = build_service(root)
             incoming = {
+                "backup_version": 3,
+                "food_library_mode": "user_changes",
                 "daily_records": {"2026-07-21": {"future_section": {"value": 1}}},
                 "food_library": [{"name": "燕麦", "base_qty": 50, "future": 2}],
+                "deleted_builtin_foods": [],
                 "supplement_library": [{"name": "鱼油", "default_amount": 2}],
                 "user_profile": {"weight": "72", "profile_inited": True, "future_profile": 3},
                 "achievement_unlocks": {"streak_7": "done"},
@@ -134,7 +198,10 @@ class BackupServiceTests(unittest.TestCase):
             service.apply(incoming, "replace")
 
             self.assertEqual(records, incoming["daily_records"])
-            self.assertEqual(foods, incoming["food_library"])
+            restored_oats = next(item for item in foods if item.get("name") == "燕麦")
+            self.assertEqual(restored_oats, incoming["food_library"][0])
+            self.assertGreater(len(foods), 2000)
+            self.assertEqual(repositories.foods.load(), incoming["food_library"])
             self.assertEqual(supplements, incoming["supplement_library"])
             self.assertEqual(profile_store["value"]["future_profile"], 3)
             self.assertEqual(repositories.achievements.value, incoming["achievement_unlocks"])
@@ -146,7 +213,7 @@ class BackupServiceTests(unittest.TestCase):
     def test_old_full_restore_preserves_sections_missing_from_legacy_format(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            service, _, repositories, _, _, _, _, _ = build_service(root)
+            service, _, repositories, _, foods, _, _, _ = build_service(root)
             old_achievements = repositories.achievements.load()
             old_training = load_json(root / "training_data.json", {})
             incoming = {
@@ -160,12 +227,15 @@ class BackupServiceTests(unittest.TestCase):
 
             self.assertEqual(repositories.achievements.value, old_achievements)
             self.assertEqual(load_json(root / "training_data.json", {}), old_training)
+            self.assertGreater(len(foods), 2000)
+            self.assertEqual(service.build_payload()["food_library"], [])
 
     def test_failed_restore_rolls_every_section_back(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             service, state, repositories, records, foods, supplements, profile_store, reloads = build_service(root)
             before = service.build_payload()
+            before_foods = copy.deepcopy(foods)
             repositories.achievements.fail_next_save = True
             incoming = {
                 "daily_records": {},
@@ -180,7 +250,7 @@ class BackupServiceTests(unittest.TestCase):
                 service.apply(incoming, "replace")
 
             self.assertEqual(records, before["daily_records"])
-            self.assertEqual(foods, before["food_library"])
+            self.assertEqual(foods, before_foods)
             self.assertEqual(supplements, before["supplement_library"])
             self.assertEqual(profile_store["value"], before["user_profile"])
             self.assertEqual(repositories.achievements.value, before["achievement_unlocks"])
@@ -194,6 +264,7 @@ class BackupServiceTests(unittest.TestCase):
             service, state, repositories, records, foods, supplements, profile_store, reloads = build_service(root)
             original_foods = copy.deepcopy(foods)
             original_supplements = copy.deepcopy(supplements)
+            original_stored_foods = copy.deepcopy(repositories.foods.load())
 
             result = service.clear_personal_data()
 
@@ -206,7 +277,7 @@ class BackupServiceTests(unittest.TestCase):
             self.assertEqual(state["weight"], "")
             self.assertEqual(foods, original_foods)
             self.assertEqual(supplements, original_supplements)
-            self.assertEqual(repositories.foods.load(), original_foods)
+            self.assertEqual(repositories.foods.load(), original_stored_foods)
             self.assertEqual(repositories.supplements.load(), original_supplements)
             self.assertEqual(
                 load_json(root / "training_data.json", {}),
@@ -220,6 +291,7 @@ class BackupServiceTests(unittest.TestCase):
             root = Path(temp)
             service, _, repositories, records, foods, supplements, profile_store, _ = build_service(root)
             before = service.build_payload()
+            before_foods = copy.deepcopy(foods)
             repositories.achievements.fail_next_save = True
 
             with self.assertRaisesRegex(RuntimeError, "已自动恢复"):
@@ -228,7 +300,7 @@ class BackupServiceTests(unittest.TestCase):
             self.assertEqual(records, before["daily_records"])
             self.assertEqual(profile_store["value"], before["user_profile"])
             self.assertEqual(repositories.achievements.load(), before["achievement_unlocks"])
-            self.assertEqual(foods, before["food_library"])
+            self.assertEqual(foods, before_foods)
             self.assertEqual(supplements, before["supplement_library"])
             self.assertEqual(load_json(root / "training_data.json", {}), before["training_data"])
 
@@ -288,6 +360,7 @@ class BackupServiceTests(unittest.TestCase):
             for key in (
                 "daily_records", "food_library", "supplement_library", "user_profile",
                 "achievement_unlocks", "goal_challenges", "training_data",
+                "food_library_mode", "deleted_builtin_foods",
             ):
                 self.assertEqual(restored[key], exported[key], key)
             self.assertEqual(state["theme_color"], "purple")
