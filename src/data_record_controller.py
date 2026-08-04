@@ -9,6 +9,7 @@ from typing import Any
 
 import flet as ft
 
+from analytics_model import build_data_page_model
 from analytics_views import DataPageConfig, build_data_page_view
 from app_defaults import CIRCUMFERENCE_FIELDS
 from app_state import AppState
@@ -67,10 +68,15 @@ def create_data_record_controller(deps: DataRecordControllerDependencies) -> Dat
 
     def render_data_page():
         data_state = state.setdefault("data_page", {})
+        selector_scroll_offsets = data_state.setdefault("selector_scroll_offsets", {})
 
         def update_data_page(**changes):
             data_state.update(changes)
-            refresh()
+            return build_data_page_model(
+                records_local,
+                end_date=deps.today().isoformat(),
+                config=current_config(),
+            )
 
         def open_circumference_form():
             circumference_options = list(CIRCUMFERENCE_FIELDS)
@@ -209,24 +215,28 @@ def create_data_record_controller(deps: DataRecordControllerDependencies) -> Dat
             )
             open_control(dlg)
 
-        config = DataPageConfig(
-            period_days=int(data_state.get("period_days", 7)),
-            active_tab=str(data_state.get("active_tab", "趋势")),
-            chart_kind=str(data_state.get("chart_kind", "weight")),
-            metric_key=data_state.get("metric_key"),
-            selected_trend_date=data_state.get("selected_trend_date"),
-            body_part_filter=str(data_state.get("body_part_filter", "全部")),
-            selected_date=data_state.get("selected_date") or state.get("date"),
-            calendar_month=data_state.get("calendar_month"),
-            action_trend_open=bool(data_state.get("action_trend_open", False)),
-            selected_exercise=data_state.get("selected_exercise"),
-            raw_expanded=bool(data_state.get("raw_expanded", False)),
-        )
         records_local = repositories.records.load()
+        records_local = records_local if isinstance(records_local, dict) else {}
+
+        def current_config() -> DataPageConfig:
+            return DataPageConfig(
+                period_days=int(data_state.get("period_days", 7)),
+                active_tab=str(data_state.get("active_tab", "趋势")),
+                chart_kind=str(data_state.get("chart_kind", "weight")),
+                metric_key=data_state.get("metric_key"),
+                selected_trend_date=data_state.get("selected_trend_date"),
+                body_part_filter=str(data_state.get("body_part_filter", "全部")),
+                selected_date=data_state.get("selected_date") or state.get("date"),
+                calendar_month=data_state.get("calendar_month"),
+                action_trend_open=bool(data_state.get("action_trend_open", False)),
+                selected_exercise=data_state.get("selected_exercise"),
+                raw_expanded=bool(data_state.get("raw_expanded", False)),
+            )
+
         return build_data_page_view(
-            records_local if isinstance(records_local, dict) else {},
+            records_local,
             end_date=deps.today().isoformat(),
-            config=config,
+            config=current_config(),
             on_period_change=lambda days: update_data_page(period_days=days, selected_trend_date=None),
             on_tab_change=lambda tab: update_data_page(active_tab=tab, action_trend_open=False),
             on_chart_change=lambda kind: update_data_page(chart_kind=kind, metric_key=None, selected_trend_date=None, action_trend_open=False),
@@ -241,6 +251,8 @@ def create_data_record_controller(deps: DataRecordControllerDependencies) -> Dat
             on_calendar_month_change=lambda month: update_data_page(calendar_month=month, selected_date=f"{month}-01"),
             on_calendar_event_change=edit_calendar_event,
             on_toggle_raw=lambda e: update_data_page(raw_expanded=not bool(data_state.get("raw_expanded", False))),
+            selector_scroll_offsets=selector_scroll_offsets,
+            on_selector_scroll_change=lambda key, offset: selector_scroll_offsets.__setitem__(key, offset),
         )
 
     return DataRecordController(render_page=render_data_page)

@@ -2,11 +2,13 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 89**
+- 当前版本：**1.2.3 / Build 101**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-[![下载 Build 89 APK](https://img.shields.io/badge/下载-Build_89_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+> V3.3-final 与 Build 101 回归修复已经发布并设为全模块冻结基线。没有用户针对具体问题的明确授权，不得修改任何已发布模块。
+
+[![下载 Build 101 APK](https://img.shields.io/badge/下载-Build_101_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -192,7 +194,7 @@ Windows 下可以运行：
 - 优先使用项目专属的备份签名密钥。
 - 资源与原生提醒门禁通过后，才把 `pyproject.toml` 和 `src/app_version.py` 中的 Build 自动加一，为下次更新做准备。
 
-当前发布包为 `1.2.3 / Build 89`，构建脚本已把下一次 Build 预备为 `90`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
+当前发布包为 `1.2.3 / Build 89`，构建脚本已把下一次 Build 预备为 `96`。发布新包前应同时核对版本号、Build、更新日志、备用更新清单和 Release 文件名。
 
 ## 目录结构
 

@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 
-TRAINING_SCHEMA_VERSION = 3
+TRAINING_SCHEMA_VERSION = 4
 RECORDING_MODES = ("strength", "timed", "cardio")
 EXERCISE_GROUP_TYPES = ("superset", "compound")
 LOAD_KINDS = ("external", "bodyweight", "added_weight", "assisted", "unknown")
@@ -355,6 +355,7 @@ class TrainingSession:
     exercise_groups: list[ExerciseGroup] = field(default_factory=list)
     summary_note: str = ""
     fatigue_status: str = ""
+    session_rating: int | None = None
     legacy_calories_kcal: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -390,6 +391,11 @@ class TrainingSession:
             exercise_groups=groups,
             summary_note=_text(data.get("summary_note")),
             fatigue_status=_text(data.get("fatigue_status")),
+            session_rating=(
+                _int(data.get("session_rating"))
+                if _int(data.get("session_rating")) in {1, 2, 3, 4, 5}
+                else None
+            ),
             legacy_calories_kcal=_float(data.get("legacy_calories_kcal", data.get("total_calories_kcal"))),
         )
 

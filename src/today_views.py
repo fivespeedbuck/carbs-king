@@ -54,7 +54,6 @@ class TodayDashboardActions:
     open_training: Callable[[Any], None]
     open_meal: Callable[[str], None]
     open_recovery: Callable[[Any], None]
-    open_intake: Callable[[Any], None] = lambda e: None
 
 
 @dataclass(frozen=True)
@@ -104,6 +103,7 @@ def build_today_dashboard(
         [small_text(str(model.targets.get("profile_message", "请完善个人资料后计算营养目标。")))]
         if not profile_ready
         else [
+            macro_progress_bar("热量", model.kcal, target_value=model.kcal_target, kind="calorie", width=bar_width),
             macro_progress_bar("碳水", model.macros["carb"], target_min=model.targets["carb_min"], target_max=model.targets["carb_max"], kind="carb", width=bar_width),
             macro_progress_bar("蛋白", model.macros["protein"], target_min=model.targets["protein_min"], target_max=model.targets["protein_max"], kind="protein", width=bar_width),
             macro_progress_bar("脂肪", model.macros["fat"], target_min=model.targets["fat_min"], target_max=model.targets["fat_max"], kind="fat", width=bar_width),
@@ -112,13 +112,9 @@ def build_today_dashboard(
     macro_card = ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Column([
-                    small_text("今日摄入"),
-                    ft.Text(f"{model.kcal:g}", size=40, weight="bold", color=TEXT),
-                    small_text(f"目标约 {model.kcal_target:g} kcal" if profile_ready else "目标待完善资料后计算"),
-                ], spacing=2),
+                section_title("今日摄入"),
                 pill(model.day_type, ORANGE if model.day_type == "高碳日" else SKY_BLUE if model.day_type == "中碳日" else "#7C5CC4"),
-            ], alignment="spaceBetween", vertical_alignment="start"),
+            ], alignment="spaceBetween", vertical_alignment="center"),
             *macro_content,
         ], spacing=8),
         bgcolor=CARD,
@@ -126,7 +122,6 @@ def build_today_dashboard(
         border_radius=12,
         padding=18,
         margin=ft.Margin(left=0, top=0, right=0, bottom=0),
-        on_click=actions.open_intake,
     )
 
     training_subtitle = ft.Text(model.training_subtitle, size=14, color=ON_PRIMARY, weight="bold")

@@ -11,7 +11,6 @@ from typing import Any
 import flet as ft
 
 from app_state import AppState
-from carb_cycle_views import build_intake_detail_content
 from controller_runtime import ControllerRuntime
 from dynamic_carb_adapter import normalize_training
 from form_views import build_dialog
@@ -108,8 +107,6 @@ class TodayController:
         status = session.status if session else "planned"
         completed = completed_set_count(session) if session else 0
         planned = planned_set_count(session) if session else 0
-        carb_snapshot = state.get("training", {}).get("carb_snapshot", {})
-        carb_snapshot = carb_snapshot if isinstance(carb_snapshot, Mapping) else {}
         training_facts = normalize_training(state.get("training", {}))
         training_state = str(training_facts.get("status") or "unknown")
 
@@ -142,19 +139,6 @@ class TodayController:
                 else "训练计划已确认"
             )
             icon = ft.Icons.FITNESS_CENTER
-
-        def open_intake_detail(_=None):
-            detail = build_dialog(
-                "今日摄入详情",
-                ft.Container(
-                    content=build_intake_detail_content(total, targets, carb_snapshot),
-                    width=self.deps.runtime.responsive_width(),
-                    height=560,
-                ),
-                [make_button("知道了", on_click=lambda e: self.deps.runtime.close_control(detail), expand=True)],
-                on_close=lambda e: self.deps.runtime.close_control(detail),
-            )
-            self.deps.runtime.open_control(detail)
 
         def open_today_decision(_=None):
             if training_state not in {"unknown", "explicit_rest"}:
@@ -200,7 +184,6 @@ class TodayController:
                 open_training=lambda e: self.deps.training.resume_session_date(active_date)
                 if active_date and active_date != state.get("date")
                 else open_today_decision(e),
-                open_intake=open_intake_detail,
                 open_meal=lambda meal: (state.update({"selected_meal": meal}), self.deps.runtime.navigate("diet")),
                 open_recovery=lambda e: self.deps.runtime.navigate("daily_details"),
             ),

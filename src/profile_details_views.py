@@ -9,21 +9,25 @@ import flet as ft
 
 from ui_components import (
     GREEN, PRIMARY, PRIMARY_SOFT, TEXT, page_card, make_button, section_title,
-    small_text, two_field_grid,
+    small_text, two_field_grid, SUB,
 )
+from ui_components import YELLOW
 
 
 def build_profile_metrics(targets: Mapping[str, Any]) -> ft.Control:
     if not targets.get("is_ready", True):
         return ft.Container(height=0)
+    lean_mass = targets.get("lean_mass")
+    rows = []
+    if lean_mass is not None:
+        rows.append(ft.Row([small_text("去脂体重"), ft.Text(f"{lean_mass} kg", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"))
+    rows.extend([
+        ft.Row([small_text("BMR（基础代谢率）"), ft.Text(f"{int(targets['bmr'])} kcal", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
+        ft.Row([small_text("TDEE（每日总能量消耗）"), ft.Text(f"≈ {int(targets['tdee'])} kcal", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
+        ft.Row([small_text("目标热量"), ft.Text(f"{int(targets['calorie_target'])} kcal", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
+    ])
     return ft.Container(
-        content=ft.Column([
-            ft.Row([small_text("去脂体重"), ft.Text(f"{targets['lean_mass']} kg", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
-            ft.Row([small_text("BMR（基础代谢率）"), ft.Text(f"{int(targets['bmr'])} kcal", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
-            ft.Row([small_text("TDEE（每日总能量消耗）"), ft.Text(f"≈ {int(targets['tdee'])} kcal", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
-            ft.Row([small_text("活动系数"), ft.Text(f"{targets['activity_factor']}", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
-            ft.Row([small_text("目标热量"), ft.Text(f"{int(targets['calorie_target'])} kcal", size=14, weight="bold", color=TEXT)], alignment="spaceBetween"),
-        ], spacing=6), bgcolor="#F8FAFC", border_radius=8, padding=12,
+        content=ft.Column(rows, spacing=6), bgcolor="#F8FAFC", border_radius=8, padding=12,
     )
 
 
@@ -38,6 +42,8 @@ def build_profile_details(
     sex: str,
     activity_habit: str,
     circumference_values: Mapping[str, Any],
+    circumference_status: Mapping[str, Mapping[str, Any]] | None = None,
+    stale_profile_fields: Mapping[str, bool] | None = None,
     circumference_expanded: bool,
     on_toggle_circumference: Callable[[Any], None],
     on_sex_change: Callable[[str], None],
@@ -51,6 +57,14 @@ def build_profile_details(
     viewport_width: int | float | None = None,
 ) -> ft.Control:
     weight_box, bodyfat_box, height_box, age_box = field_boxes
+    stale_profile_fields = stale_profile_fields or {}
+    circumference_status = circumference_status or {}
+    for field_key, field_box in (("weight", weight_box), ("bodyfat", bodyfat_box)):
+        if not stale_profile_fields.get(field_key):
+            continue
+        controls = getattr(field_box, "controls", [])
+        if controls and getattr(controls[0], "content", None) is not None:
+            controls[0].content.color = YELLOW
     circumference_labels = (
         ("chest_cm", "胸围"), ("waist_cm", "腰围"), ("hip_cm", "臀围"),
         ("arm_cm", "上臂围"), ("thigh_cm", "大腿围"), ("calf_cm", "小腿围"),
@@ -61,9 +75,14 @@ def build_profile_details(
         for key, label in circumference_labels:
             raw = circumference_values.get(key, "")
             value = f"{raw} cm" if raw not in (None, "") else "未记录"
+            stale = bool(circumference_status.get(key, {}).get("stale"))
             values.append(ft.Container(
-                content=ft.Column([small_text(label), ft.Text(value, size=14, weight="bold", color=TEXT)], spacing=3),
-                bgcolor="#F8FAFC", border_radius=8, padding=10, expand=True,
+                content=ft.Column([
+                    small_text(label, color=YELLOW if stale else SUB),
+                    ft.Text(value, size=14, weight="bold", color=YELLOW if stale else TEXT),
+                    small_text("建议更新" if stale else " ", color=YELLOW),
+                ], spacing=3),
+                bgcolor="#FFF8D6" if stale else "#F8FAFC", border_radius=8, padding=10, expand=True,
             ))
         circumference_rows = [
             two_field_grid(*values[index:index + 2], viewport_width=viewport_width)

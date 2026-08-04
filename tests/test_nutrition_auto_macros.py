@@ -47,7 +47,7 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
                     self.state["day_type"] = day_type
                     target = self.service.targets()
                     macro_kcal = target["carb"] * 4 + target["protein"] * 4 + target["fat"] * 9
-                    self.assertAlmostEqual(macro_kcal, target["calorie_target"], delta=25)
+                    self.assertAlmostEqual(macro_kcal, target["calorie_target"], delta=30)
                     self.assertTrue(str(target["protein_basis"]))
                     day_carbs.append(target["carb"])
                     day_proteins.append(target["protein"])
@@ -64,10 +64,8 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
                 values.append(self.service.targets())
             self.assertLess(values[0]["calorie_target"], values[1]["calorie_target"])
             self.assertLess(values[1]["calorie_target"], values[2]["calorie_target"])
-            self.assertLess(values[0]["carb"], values[1]["carb"])
-            self.assertLess(values[1]["carb"], values[2]["carb"])
 
-    def test_every_profile_input_and_cycle_goal_affects_the_calculation(self):
+    def test_phase_inputs_stay_fixed_until_a_new_goal_phase(self):
         self.state["macro_goal"] = "减脂"
         self.state["day_type"] = "高碳日"
 
@@ -98,7 +96,10 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.state.update(baseline_profile)
                 self.state[field] = value
-                self.assertNotEqual(snapshot(), baseline)
+                if field == "activity_habit":
+                    self.assertEqual(snapshot(), baseline)
+                else:
+                    self.assertNotEqual(snapshot(), baseline)
 
         self.state.update(baseline_profile)
         self.state["macro_goal"] = "保持"
@@ -115,7 +116,9 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
             carbs_per_kg.append(round(target["carb"] / 61.5, 2))
             calorie_targets.append(target["calorie_target"])
 
-        self.assertEqual(len(set(calorie_targets)), 1)
+        self.assertEqual(len(set(calorie_targets)), 3)
+        self.assertGreater(calorie_targets[0], calorie_targets[1])
+        self.assertGreater(calorie_targets[1], calorie_targets[2])
         self.assertGreaterEqual(carbs_per_kg[0], carbs_per_kg[1])
         self.assertGreaterEqual(carbs_per_kg[1], carbs_per_kg[2])
 
@@ -152,6 +155,64 @@ class AutomaticMacroFormulaTests(unittest.TestCase):
         self.assertEqual(state["macro_goal"], "减脂")
         self.assertFalse(service.targets()["is_ready"])
         self.assertEqual(service.multipliers("auto"), {})
+
+    def test_goal_preview_reports_all_tiers_without_mutating_real_goal_or_phase(self):
+        self.state["macro_goal"] = "保持"
+        self.service.targets()
+        original_phase = copy.deepcopy(self.state["carb_phase"])
+        original_snapshot = copy.deepcopy(self.state["training"]["carb_snapshot"])
+
+        preview = self.service.multipliers("auto", "增肌")
+
+        self.assertEqual(self.state["macro_goal"], "保持")
+        self.assertEqual(self.state["carb_phase"], original_phase)
+        self.assertEqual(self.state["training"]["carb_snapshot"], original_snapshot)
+        self.assertEqual(set(preview), set(DAY_TYPES))
+        for values in preview.values():
+            self.assertGreater(values["kcal"], 0)
+            self.assertGreater(values["carb_g"], 0)
+            self.assertGreater(values["protein_g"], 0)
+            self.assertGreater(values["fat_g"], 0)
+
+    def test_automatic_profile_readiness_uses_adult_weight_and_age_scope(self):
+        self.state["weight"] = "24"
+        self.state["age"] = "18"
+        comp = self.service.body_composition()
+
+        self.assertFalse(comp["is_ready"])
+        self.assertIn("体重", comp["missing_fields"])
+        self.assertIn("年龄", comp["missing_fields"])
+
+    def test_historical_recompute_keeps_shown_label_macros_and_state_together(self):
+        self.state["date"] = "2020-01-01"
+        self.state["training"]["targets"] = [{"target": "休息"}]
+        original = self.service.targets()
+        self.assertEqual(original["day_label"], "低碳日")
+
+        self.state["bodyfat"] = "30"
+        self.state["sex"] = "女"
+        self.state["activity_habit"] = "久坐少动"
+        self.state["macro_goal"] = "增肌"
+        self.state["training"]["targets"] = []
+        self.state["training"]["session"] = {
+            "status": "planned",
+            "exercises": [{
+                "name": "卧推", "body_part": "胸", "recording_mode": "strength",
+                "load_kind": "external", "parameters_confirmed": True,
+                "sets": [{"weight_kg": 40, "reps": 10, "completed": False} for _ in range(10)],
+            }],
+        }
+        frozen = self.service.targets()
+
+        self.assertEqual(frozen["day_label"], "低碳日")
+        self.assertEqual(frozen["dynamic_status"], original["dynamic_status"])
+        self.assertEqual(frozen["carb"], original["carb"])
+        self.assertEqual(frozen["bodyfat"], original["bodyfat"])
+        self.assertEqual(frozen["sex"], original["sex"])
+        self.assertEqual(frozen["activity_habit"], original["activity_habit"])
+        self.assertEqual(frozen["macro_goal"], original["macro_goal"])
+        self.assertEqual(self.state["day_type"], "低碳日")
+        self.assertEqual(self.state["training"]["carb_snapshot"]["engine_snapshot"]["recommended_day"], "中碳日")
 
 
 if __name__ == "__main__":

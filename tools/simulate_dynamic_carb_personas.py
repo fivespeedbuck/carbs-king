@@ -10,6 +10,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ from dynamic_carb_engine import (  # noqa: E402
     calculate_daily_target,
     calibration_update_is_due,
     estimate_long_term_maintenance,
+    create_phase_baseline,
     select_calibration_window,
 )
 
@@ -69,18 +71,18 @@ def training_facts(kind: str) -> dict[str, Any]:
     if kind == "unknown":
         return {"status": "unknown"}
     templates = {
-        "res_low": {"status": "completed", "resistance": {"work_sets_total": 8, "peak_primary_muscle_sets": 5, "duration_min": 40}},
-        "res_mid": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_primary_muscle_sets": 8, "duration_min": 60}},
-        "res_high": {"status": "completed", "resistance": {"work_sets_total": 22, "peak_primary_muscle_sets": 11, "duration_min": 85}},
-        "bodyweight": {"status": "completed", "resistance": {"work_sets_total": 12, "peak_primary_muscle_sets": 7, "duration_min": 50, "load_kind": "bodyweight"}},
-        "bodyweight_high": {"status": "completed", "resistance": {"work_sets_total": 20, "peak_primary_muscle_sets": 10, "duration_min": 75, "load_kind": "bodyweight"}},
+        "res_low": {"status": "completed", "resistance": {"work_sets_total": 7, "peak_body_part_sets": 5, "duration_min": 40}},
+        "res_mid": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}},
+        "res_high": {"status": "completed", "resistance": {"work_sets_total": 22, "peak_body_part_sets": 11, "duration_min": 85}},
+        "bodyweight": {"status": "completed", "resistance": {"work_sets_total": 12, "peak_body_part_sets": 7, "duration_min": 50, "load_kind": "bodyweight"}},
+        "bodyweight_high": {"status": "completed", "resistance": {"work_sets_total": 20, "peak_body_part_sets": 10, "duration_min": 75, "load_kind": "bodyweight"}},
         "walk": {"status": "completed", "cardio": {"duration_min": 40, "intensity": "low"}},
         "cardio_light": {"status": "completed", "cardio": {"duration_min": 35, "intensity": "moderate"}},
         "cardio_mid": {"status": "completed", "cardio": {"duration_min": 60, "intensity": "moderate"}},
         "cardio_high": {"status": "completed", "cardio": {"duration_min": 90, "intensity": "high"}},
         "endurance_long": {"status": "completed", "cardio": {"duration_min": 150, "intensity": "moderate"}},
-        "mixed": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_primary_muscle_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 50, "intensity": "moderate"}, "sessions": 1},
-        "double": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_primary_muscle_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 60, "intensity": "moderate"}, "sessions": 2},
+        "mixed": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 50, "intensity": "moderate"}, "sessions": 1},
+        "double": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 60, "intensity": "moderate"}, "sessions": 2, "medium_or_higher_sessions": 2},
     }
     return json.loads(json.dumps(templates[kind]))
 
@@ -113,6 +115,7 @@ def simulate_persona(persona: Persona, days: int = DAYS, replicate: int = 0) -> 
     outputs: list[dict[str, Any]] = []
     start_weight = float(persona.profile["weight"])
     formula_prior = float(calculate_body_energy(persona.profile)["maintenance_kcal"])
+    phase = create_phase_baseline(persona.profile, START_DATE)
     true_maintenance_at_start = formula_prior + persona.true_maintenance_bias_kcal
     truth_rho = rng.uniform(7200.0, 9400.0)
     truth_epsilon = rng.uniform(18.0, 30.0)
@@ -131,6 +134,7 @@ def simulate_persona(persona: Persona, days: int = DAYS, replicate: int = 0) -> 
     first_candidate_day: int | None = None
     simulated_updates = 0
     violations: list[str] = []
+    infeasible_days: Counter[str] = Counter()
 
     last_observed_weight = start_weight
     last_bodyfat = persona.profile.get("bodyfat")
@@ -158,6 +162,13 @@ def simulate_persona(persona: Persona, days: int = DAYS, replicate: int = 0) -> 
 
         profile = dict(persona.profile)
         profile["weight"] = round(last_observed_weight, 2)
+        profile.update({
+            "phase_id": phase["phase_id"],
+            "phase_baseline_weight_kg": phase["baseline_weight_kg"],
+            "phase_maintenance_kcal": phase["maintenance_kcal"],
+            "phase_protein_g": phase["protein_g"],
+            "phase_fat_anchor_g": phase["fat_anchor_g"],
+        })
         if last_bodyfat is not None:
             profile["bodyfat_status"] = "observed" if index == bodyfat_observed_index else "carried"
             profile["bodyfat_age_days"] = index - bodyfat_observed_index
@@ -171,14 +182,25 @@ def simulate_persona(persona: Persona, days: int = DAYS, replicate: int = 0) -> 
         macro = result["recommended_macros"]
         reason_codes.update(macro.get("reason_codes", []))
         if macro["status"] != "ok":
-            violations.append(f"{current}:macro_infeasible")
+            codes = set(macro.get("reason_codes", []))
+            if "phase_budget_infeasible" in codes:
+                infeasible_days["phase_budget_infeasible"] += 1
+            else:
+                violations.append(f"{current}:macro_infeasible_without_reason")
         else:
-            if not 0.20 - 1e-9 <= macro["fat_energy_share"] <= 0.35 + 1e-9:
-                violations.append(f"{current}:fat_share")
+            if not 0.20 - 1e-9 <= macro["fat_energy_share"] <= 0.30 + 1e-9:
+                violations.append(f"{current}:fat_share_outside_automatic_range")
             if abs(macro["energy_closure_error"]) > 1e-6:
                 violations.append(f"{current}:energy_closure")
             if min(macro["protein_g"], macro["carb_g"], macro["fat_g"]) < 0:
                 violations.append(f"{current}:negative_macro")
+            displayed = macro["display"]
+            displayed_kcal = 4 * displayed["carb_g"] + 4 * displayed["protein_g"] + 9 * displayed["fat_g"]
+            if abs(displayed_kcal - float(macro["energy_from_display_macros_exact"])) > 1e-9:
+                violations.append(f"{current}:display_macro_recompute")
+            rounded = float(Decimal(str(displayed_kcal)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            if rounded != float(macro["energy_display_kcal"]):
+                violations.append(f"{current}:display_energy_rounding")
 
         reported_intake = None
         if diet_status == "complete":
@@ -242,6 +264,7 @@ def simulate_persona(persona: Persona, days: int = DAYS, replicate: int = 0) -> 
         "carb_g_range": [round(min(carbs), 1), round(max(carbs), 1)] if carbs else None,
         "energy_kcal_range": [round(min(calories)), round(max(calories))] if calories else None,
         "violations": violations,
+        "infeasible_days": dict(infeasible_days),
     }
 
 

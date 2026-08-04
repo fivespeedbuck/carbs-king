@@ -16,6 +16,7 @@ import flet_audio as fta
 from app_state import AppState
 from app_utils import to_float
 from controller_runtime import ControllerRuntime
+from dynamic_carb_adapter import calculate_app_snapshot, engine_from_snapshot, projection_from_snapshot
 from dynamic_carb_engine import validate_exercise_parameters
 from exercise_library import (
     EXERCISE_CATEGORIES, delete_custom_exercise, exercise_catalog, load_custom_exercises,
@@ -82,6 +83,11 @@ CUSTOM_MUSCLE_OPTIONS = {
     "热身动作": ("全身热身",), "拉伸": ("目标肌群拉伸",), "其他": ("其他",),
 }
 CUSTOM_EQUIPMENT_OPTIONS = ("杠铃", "哑铃", "壶铃", "绳索", "悍马机", "史密斯机", "器械", "TRX&弹力带", "自重", "其他")
+
+
+def automatic_day_write_allowed(macro_mode: Any, carb_mode: Any) -> bool:
+    """Automatic training updates must never overwrite custom or manual goals."""
+    return str(macro_mode or "auto") != "custom" and str(carb_mode or "auto") != "manual"
 
 
 @dataclass(frozen=True)
@@ -248,16 +254,33 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         return json.dumps(signature_data, ensure_ascii=False, sort_keys=True)
 
     def training_carb_warning():
+        if state.get("macro_mode") == "custom":
+            return ""
         training = state.get("training", {})
         if training.get("carb_reminder_dismissed_signature") == training_signature():
             return ""
         snapshot = training.get("carb_snapshot", {}) if isinstance(training, dict) else {}
-        engine = snapshot.get("engine_snapshot", {}) if isinstance(snapshot, dict) else {}
+        engine = engine_from_snapshot(snapshot) if isinstance(snapshot, dict) else {}
         recommended = engine.get("recommended_day") if isinstance(engine, dict) else None
         current = state.get("day_type")
         if training.get("carb_mode") == "manual" and recommended and recommended != current:
             return f"当前使用手动目标；根据训练计划建议{recommended}"
         return ""
+
+    def planned_target_text():
+        training = state.get("training", {})
+        snapshot = training.get("carb_snapshot", {}) if isinstance(training, dict) else {}
+        engine = engine_from_snapshot(snapshot) if isinstance(snapshot, dict) else {}
+        recommended = engine.get("recommended_day") if isinstance(engine, dict) else None
+        current = state.get("day_type")
+        if training.get("carb_mode") == "manual":
+            if recommended in {"低碳日", "中碳日", "高碳日"} and recommended != current:
+                return f"当前手动目标：{current} · 训练建议：{recommended}"
+            return f"当前手动目标：{current}" if current else "当前使用手动目标"
+        if state.get("macro_mode") == "custom":
+            return f"当前自定义目标：{current}" if current else "当前使用自定义目标"
+        shown_day = current if current in {"低碳日", "中碳日", "高碳日"} else recommended
+        return f"当前动态碳循环目标：{shown_day}" if shown_day else "当前动态碳循环目标已更新"
 
     def mark_today_rest():
         training = state["training"]
@@ -270,7 +293,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             training["targets"] = [{"target": "休息", "detail": "今日休息", "note": "", "intensity": "恢复"}]
             training["session"] = None
             training["carb_mode"] = "auto"
-            state["day_type"] = "低碳日"
+            if state.get("macro_mode") != "custom":
+                state["day_type"] = "低碳日"
             save_current()
             refresh()
             snack("已设为今日休息，按低碳日执行")
@@ -298,7 +322,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             and str(item.get("target") or "").strip().casefold() not in {"休息", "rest"}
         ]
         training["carb_mode"] = "auto"
-        state["day_type"] = "低碳日"
+        if state.get("macro_mode") != "custom":
+            state["day_type"] = "低碳日"
         set_view("training")
         open_add_exercise_dialog()
 
@@ -344,6 +369,25 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
     def persist_session(session, record_date=None):
         target_date = str(record_date or state.get("date") or session.get("date") or "")
         save_training_session(target_date, session)
+        if target_date == str(state.get("date") or ""):
+            existing = state.get("training", {}).get("carb_snapshot")
+            existing = existing if isinstance(existing, dict) else None
+            historical = bool(target_date and target_date < datetime.date.today().isoformat())
+            snapshot = calculate_app_snapshot(
+                state,
+                effective_date=target_date or None,
+                existing=existing,
+                freeze_shown=historical,
+            )
+            state["training"]["carb_snapshot"] = snapshot
+            shown = projection_from_snapshot(snapshot) if isinstance(snapshot, dict) else None
+            if automatic_day_write_allowed(
+                state.get("macro_mode"), state["training"].get("carb_mode")
+            ) and isinstance(shown, dict):
+                applied_day = shown.get("day_label")
+                if applied_day in {"低碳日", "中碳日", "高碳日"}:
+                    state["day_type"] = applied_day
+            save_current()
 
     def create_empty_session():
         training = state["training"]
@@ -362,6 +406,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             "exercise_groups": [],
             "summary_note": "",
             "fatigue_status": state["training"].get("fatigue_status", "状态一般"),
+            "session_rating": None,
             "rest_until": "",
             "rest_cycle": None,
             "incomplete": False,
@@ -417,11 +462,32 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         category_rows = ft.Column(spacing=3, width=42, scroll=_SCROLL_HIDDEN)
         subgroup_rows = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
         equipment_rows = ft.Column(spacing=6, width=equipment_panel_width)
+        equipment_scroll = {"offset": 0.0}
+
+        def remember_equipment_scroll(event):
+            equipment_scroll["offset"] = max(0.0, float(getattr(event, "pixels", 0.0) or 0.0))
+
+        equipment_compact_row = ft.Row(
+            spacing=6,
+            width=equipment_panel_width,
+            scroll=_SCROLL_HIDDEN,
+            on_scroll=remember_equipment_scroll,
+            scroll_interval=80,
+        )
+
+        def restore_equipment_scroll():
+            async def restore():
+                try:
+                    await equipment_compact_row.scroll_to(offset=equipment_scroll["offset"], duration=0)
+                except Exception:
+                    pass
+            page.run_task(restore)
         selection_status = ft.Text("已选择 0 个动作", size=13, color=SUB, weight="bold")
         search_notice = ft.Text("", size=12, color=ORANGE, visible=False)
         search = mobile_text_field("搜索动作名称、器械或目标肌群", "", width=browser_width)
         library_dlg = None
         pending_setup = {"dialog": None}
+        return_after_add = {"pending": False}
         keyboard_focus_target = {"control": None}
 
         def dismiss_search_focus(after_focus=None):
@@ -454,6 +520,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             pending_setup["dialog"] = None
             if next_dialog is not None:
                 open_control(next_dialog)
+            elif return_after_add["pending"] and after_save is not None:
+                return_after_add["pending"] = False
+                after_save()
 
         usage_stats = exercise_usage_stats(records)
         defaults_cache: dict[str, dict[str, Any]] = {}
@@ -904,6 +973,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 snack("没有可添加的动作")
                 return
             persist_session(session)
+            return_after_add["pending"] = True
             close_control(library_dlg)
             refresh()
             snack(f"已添加 {added} 个动作，可在计划卡片中单独编辑")
@@ -995,21 +1065,16 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 pinned = [selected["equipment"]] if selected["equipment"] in other_equipment else []
                 compact_labels = ["全部", *pinned, *common_equipment]
                 compact_items = [(label, equipment_button(label)) for label in compact_labels]
-                compact_row = ft.Row(
-                    [
-                        *[control for _label, control in compact_items],
-                        *([make_button(
+                equipment_compact_row.controls = [
+                    *[control for _label, control in compact_items],
+                    *([make_button(
                             "更多器械",
                             on_click=lambda e: toggle_more_equipment(),
                             bgcolor=PRIMARY_SOFT,
                             color=GREEN,
                         )] if [item for item in other_equipment if item not in pinned] else []),
-                    ],
-                    spacing=6,
-                    width=equipment_panel_width,
-                    scroll=_SCROLL_HIDDEN,
-                )
-                controls = [compact_row]
+                ]
+                controls = [equipment_compact_row]
             equipment_rows.controls = controls
 
         def choose_category(category):
@@ -1035,15 +1100,23 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             # mode, which also releases a previously pinned uncommon option.
             if equipment == "全部" or equipment in common_equipment_names:
                 selected["show_more_equipment"] = False
+            if was_expanded and not selected["show_more_equipment"]:
+                equipment_scroll["offset"] = 0.0
             selected["limit"] = page_size
             rebuild_filters()
             rebuild_list()
             page.update()
+            if not selected["show_more_equipment"]:
+                restore_equipment_scroll()
 
         def toggle_more_equipment():
             selected["show_more_equipment"] = not selected["show_more_equipment"]
+            if not selected["show_more_equipment"]:
+                equipment_scroll["offset"] = 0.0
             rebuild_filters()
             page.update()
+            if not selected["show_more_equipment"]:
+                restore_equipment_scroll()
 
         def load_more(e=None):
             selected["limit"] += page_size
@@ -1165,12 +1238,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         )
         open_control(help_dlg)
 
-    def bodyweight_weight_field(value=""):
+    def bodyweight_weight_field(value="", *, is_bodyweight=False):
         control = mobile_text_field(
             "重量 kg",
             value,
             keyboard_type=_KEYBOARD_NUMBER,
-            hint_text="自重留空",
+            hint_text="自重" if is_bodyweight else None,
             expand=True,
         )
         control.field.hint_style = ft.TextStyle(color="#98A39F", size=14)
@@ -1190,6 +1263,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         controls: list[ft.Control] = [
             small_text(f"记录模式：{mode_label}"),
         ]
+        if mode == "strength" and str(exercise.get("load_kind") or "") == "bodyweight":
+            controls.append(small_text("自重动作不填写重量输入框", color="#98A39F"))
         media_src = str(source_exercise.get("gif") or source_exercise.get("image") or "")
         if media_src:
             controls.append(ft.Container(
@@ -1219,8 +1294,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         mode = normalize_recording_mode(exercise.get("recording_mode"))
         raw_sets = [item for item in exercise.get("sets", []) if isinstance(item, dict)]
         first_set = raw_sets[0] if raw_sets else {}
+        is_bodyweight = str(exercise.get("load_kind") or "") == "bodyweight"
         weight = bodyweight_weight_field(
-            "" if to_float(first_set.get("weight_kg")) <= 0 else f"{to_float(first_set.get('weight_kg')):g}"
+            "" if to_float(first_set.get("weight_kg")) <= 0 else f"{to_float(first_set.get('weight_kg')):g}",
+            is_bodyweight=is_bodyweight,
         )
         reps = mobile_text_field(
             "次数",
@@ -1263,9 +1340,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             for key in metric_keys
         }
         summary_controls = build_action_summary_controls(exercise)
+        summary_header_count = 2 if is_bodyweight else 1
         controls: list[ft.Control] = [
             section_title(str(exercise.get("name") or "编辑动作")),
-            summary_controls[0],
+            *summary_controls[:summary_header_count],
         ]
         if mode == "strength":
             controls.append(four_field_grid(weight, reps, sets, rest, viewport_width=dialog_width))
@@ -1275,7 +1353,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 controls.append(distance)
             if mode == "cardio" and metric_fields:
                 controls.append(responsive_field_grid(list(metric_fields.values()), columns=2, viewport_width=dialog_width))
-        controls.extend(summary_controls[1:])
+        controls.extend(summary_controls[summary_header_count:])
         edit_dlg = None
 
         def save_edit(e=None):
@@ -1515,6 +1593,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         training.clear()
         training.update({
             "total_duration_min": "", "total_calories_kcal": "", "fatigue_status": "状态一般",
+            "session_rating": None,
             "summary_note": "", "targets": [], "carb_reminder_dismissed_signature": "",
             "carb_mode": "auto", "carb_snapshot": {},
             "session": None, "sessions": [],
@@ -1757,7 +1836,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             return
         current_weight = training_set.get("weight_kg")
         field = bodyweight_weight_field(
-            "" if to_float(current_weight) <= 0 else format_weight_kg(current_weight)
+            "" if to_float(current_weight) <= 0 else format_weight_kg(current_weight),
+            is_bodyweight=str(exercise.get("load_kind") or "") == "bodyweight",
         )
         dlg = None
 
@@ -1811,7 +1891,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     exercise["load_kind"] = "bodyweight"
                 elif any(weight > 0 for weight in weights):
                     exercise["load_kind"] = "external"
-            validation = validate_exercise_parameters(exercise)
+            validation = validate_exercise_parameters(exercise, require_confirmation=False)
             if validation["ready"]:
                 exercise["parameters_confirmed"] = True
                 confirmed += 1
@@ -1819,11 +1899,24 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 pending_names.append(str(exercise.get("name") or "未命名动作"))
         if confirmed:
             persist_session(session)
+        snapshot = state.get("training", {}).get("carb_snapshot", {})
+        engine = engine_from_snapshot(snapshot) if isinstance(snapshot, dict) else {}
+        recommended = engine.get("recommended_day") if isinstance(engine, dict) else None
+        if state.get("macro_mode") == "custom":
+            target_note = "，自定义目标保持不变"
+        elif state.get("training", {}).get("carb_mode") == "manual":
+            target_note = (
+                f"，训练建议更新为{recommended}，当前手动目标保持不变"
+                if recommended in {"低碳日", "中碳日", "高碳日"}
+                else "，当前手动目标保持不变"
+            )
+        else:
+            target_note = f"，今日目标已更新为{recommended}" if recommended in {"低碳日", "中碳日", "高碳日"} else ""
         if pending_names:
-            snack(f"已确认 {confirmed} 个；{'、'.join(pending_names[:3])} 仍需单独补充参数")
+            snack(f"已确认 {confirmed} 个；{'、'.join(pending_names[:3])} 仍需单独补充参数{target_note}")
         else:
             refresh()
-            snack(f"已确认全部 {confirmed} 个动作参数")
+            snack(f"已确认全部 {confirmed} 个动作参数{target_note}")
 
     def open_reps_editor(e=None):
         session, exercise, training_set = current_training_items()
@@ -2127,8 +2220,10 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 else raw_sets[-1] if raw_sets else {}
             )
             width = responsive_width()
+            is_bodyweight = str(item.get("load_kind") or "") == "bodyweight"
             weight = bodyweight_weight_field(
-                "" if to_float(template.get("weight_kg")) <= 0 else f"{to_float(template.get('weight_kg')):g}"
+                "" if to_float(template.get("weight_kg")) <= 0 else f"{to_float(template.get('weight_kg')):g}",
+                is_bodyweight=is_bodyweight,
             )
             reps = mobile_text_field(
                 "次数",
@@ -2180,13 +2275,14 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 snack(f"已更新 {item.get('name', '动作')} 参数")
 
             summary_controls = build_action_summary_controls(item)
+            summary_header_count = 2 if is_bodyweight else 1
             edit_dlg = full_form_sheet(
                 "编辑训练参数",
                 [
                     section_title(str(item.get("name") or "编辑动作")),
-                    summary_controls[0],
+                    *summary_controls[:summary_header_count],
                     four_field_grid(weight, reps, sets, rest, viewport_width=width),
-                    *summary_controls[1:],
+                    *summary_controls[summary_header_count:],
                 ],
                 save_edit,
                 save_label="保存修改",
@@ -2311,7 +2407,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             page.update()
             snack("已解除动作组合")
 
-        def refresh_manager_after_group():
+        def refresh_active_manager():
             nonlocal session, exercises
             # Persisting a session replaces the state object with a normalized
             # copy. Rebind the still-open manager to that fresh object so the
@@ -2327,7 +2423,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         def edit_action_group(exercise_id):
             open_exercise_group_dialog(
                 exercise_id,
-                after_save=refresh_manager_after_group,
+                after_save=refresh_active_manager,
             )
 
         def rebuild_rows():
@@ -2353,8 +2449,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             )]
 
         def add_action(event=None):
-            close_control(manager_dlg)
-            open_add_exercise_dialog(after_save=open_active_action_manager)
+            open_add_exercise_dialog(after_save=refresh_active_manager)
 
         def finish_manager(event=None):
             current_session = session_data()
@@ -2552,7 +2647,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         persist_session(session)
         refresh()
 
-    def finalize_session(incomplete=False):
+    def finalize_session(incomplete=False, session_rating=None):
         session = session_data()
         if not session:
             return
@@ -2560,6 +2655,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         if active_rest:
             rest_notifier.cancel(str(active_rest.get("id", "")), release_claim=False)
         session = finalize_session_clock(session, datetime.datetime.now(), incomplete=incomplete)
+        if session_rating in {1, 2, 3, 4, 5}:
+            session["session_rating"] = session_rating
+            state["training"]["session_rating"] = session_rating
         session["rest_until"] = ""
         session["rest_cycle"] = None
         state["training"]["total_duration_min"] = str(session["total_duration_min"])
@@ -2578,6 +2676,40 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         remaining_work = completion["remaining_work"]
         all_completed = completion["all_sets_completed"]
         dialog_width = responsive_width()
+        rating = {"value": None}
+        rating_hint = ft.Text("可选：记录后可用于长期恢复趋势", size=12, color=SUB)
+        rating_buttons: list[ft.Container] = []
+        rating_labels = {
+            1: "很疲劳",
+            2: "状态较差",
+            3: "一般",
+            4: "状态不错",
+            5: "状态很好",
+        }
+
+        def select_rating(value):
+            rating["value"] = value
+            rating_hint.value = rating_labels[value]
+            for index, button in enumerate(rating_buttons, 1):
+                selected = index == value
+                button.bgcolor = PRIMARY if selected else PRIMARY_SOFT
+                button.content.color = "#FFFFFF" if selected else GREEN
+            page.update()
+
+        rating_buttons.extend([
+            ft.Container(
+                content=ft.Text(str(value), size=15, weight="bold", color=GREEN, text_align="center"),
+                width=42,
+                height=42,
+                border_radius=21,
+                bgcolor=PRIMARY_SOFT,
+                border=thin_border(),
+                alignment=ft.Alignment.CENTER,
+                ink=True,
+                on_click=lambda event, selected=value: select_rating(selected),
+            )
+            for value in range(1, 6)
+        ])
         confirm_dlg = dialog_base(
             "结束训练？",
             ft.Column([
@@ -2588,12 +2720,19 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     color=TEXT,
                 ),
                 small_text("确认结束并保存本次成绩，避免误触。" if all_completed else "可以继续训练，也可以按未完整训练保存当前成绩。"),
+                ft.Text("今天训练状态", size=14, weight="bold", color=TEXT),
+                ft.Row(
+                    rating_buttons,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=12,
+                ),
+                rating_hint,
             ], width=dialog_width, spacing=8, tight=True),
             [
                 ft.Container(
                     content=ft.Row([
                         make_button("继续训练", on_click=lambda e: close_control(confirm_dlg), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
-                        make_button("确认结束", on_click=lambda e: (close_control(confirm_dlg), finalize_session(not all_completed)), bgcolor="#FCECEC", color=RED, expand=True),
+                        make_button("确认结束", on_click=lambda e: (close_control(confirm_dlg), finalize_session(not all_completed, rating["value"])), bgcolor="#FCECEC", color=RED, expand=True),
                     ], spacing=8),
                     width=dialog_width,
                 ),
@@ -2801,6 +2940,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             reorder_group_member=reorder_planned_group_member,
             remove_group_member=remove_planned_group_member,
             rest_today=lambda e: mark_today_rest(),
+            target_text=planned_target_text(),
         ))
 
     def completed_sessions_today() -> list[TrainingSession]:
@@ -2915,4 +3055,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
     )
 
 
-__all__ = ["TrainingController", "TrainingControllerDependencies", "create_training_controller"]
+__all__ = [
+    "TrainingController",
+    "TrainingControllerDependencies",
+    "automatic_day_write_allowed",
+    "create_training_controller",
+]

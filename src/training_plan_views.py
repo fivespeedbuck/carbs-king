@@ -74,6 +74,7 @@ class PlannedTrainingActions:
     reorder_group_member: Callable[[str, str], None] | None = None
     remove_group_member: Callable[[str], None] | None = None
     rest_today: Callable[[Any], None] | None = None
+    target_text: str = ""
 
 
 def _exercise_detail(exercise: Mapping[str, Any]) -> str:
@@ -488,7 +489,12 @@ def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingA
         ft.Container(content=ft.Column([
             ft.Row([ft.Column([small_text("训练计划", color=ON_PRIMARY), ft.Text("当前的训练", size=25, weight="bold", color=ON_PRIMARY)], spacing=2), ft.Icon(ft.Icons.FITNESS_CENTER, size=42, color=ON_PRIMARY)], alignment="spaceBetween"),
             ft.Text(f"{len(exercises)} 个动作 · {sum(len(item.get('sets', [])) for item in exercises if item.get('recording_mode', 'strength') == 'strength')} 个力量组", size=14, color=ON_PRIMARY, weight="bold"),
-            ft.Text("确认动作参数后更新今日目标", size=13, color=ON_PRIMARY, weight="bold"),
+            ft.Text(
+                "确认动作参数后更新今日目标" if pending_count else actions.target_text or "今日目标已更新",
+                size=13,
+                color=ON_PRIMARY,
+                weight="bold",
+            ),
             *([make_button(
                 f"一键确认全部参数（{pending_count}）",
                 on_click=actions.confirm_all_parameters,

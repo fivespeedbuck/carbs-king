@@ -94,24 +94,26 @@ def run_edge_replay() -> dict[str, Any]:
         })["protein_method"]),
         _case("second_session_upgrades_medium_resistance", lambda: classify_training({
             "status": "completed", "sessions": 2,
-            "resistance": {"work_sets_total": 14, "peak_primary_muscle_sets": 8, "duration_min": 60},
+            "medium_or_higher_sessions": 2,
+            "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60},
         })["demand_key"] == "mixed_high"),
         _case("added_cardio_combines_without_double_counting", lambda: classify_training({
             "status": "completed", "sessions": 1,
-            "resistance": {"work_sets_total": 14, "peak_primary_muscle_sets": 8, "duration_min": 60},
+            "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60},
+            "medium_or_higher_sessions": 2,
             "cardio": {"duration_min": 60, "intensity": "moderate"},
-        })["demand_key"] == "mixed_high"),
+        })["demand_key"] == "cardio_high"),
         _case("ordinary_resistance_never_exceeds_maintenance", lambda: (
             lambda result: result["recommended_macros"]["energy_kcal"] <= result["body"]["maintenance_kcal"] + 1e-9
         )(calculate_daily_target(BASE_PROFILE, {
-            "status": "completed", "resistance": {"work_sets_total": 25, "peak_primary_muscle_sets": 12, "duration_min": 90},
+            "status": "completed", "resistance": {"work_sets_total": 25, "peak_body_part_sets": 12, "duration_min": 90},
         }))),
-        _case("long_endurance_can_use_bounded_performance_energy", lambda: (
-            lambda result: result["body"]["maintenance_kcal"] < result["recommended_macros"]["energy_kcal"]
-            <= result["body"]["maintenance_kcal"] + 500
+        _case("long_endurance_never_exceeds_maintenance", lambda: (
+            lambda result: result["recommended_macros"]["energy_kcal"]
+            <= result["body"]["maintenance_kcal"] + 1e-9
         )(calculate_daily_target({
             "sex": "女", "age": 33, "height": 165, "weight": 54, "bodyfat": 20,
-            "goal": "减脂", "activity_habit": "高频训练", "performance_extra_kcal": 500,
+            "goal": "减脂", "activity_habit": "高频训练",
         }, {"status": "completed", "cardio": {"duration_min": 150, "intensity": "moderate"}}))),
         _case("manual_override_keeps_recommendation_separate", lambda: (
             lambda result: result["recommended_day"] == "低碳日" and result["applied_day"] == "高碳日"

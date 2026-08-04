@@ -17,6 +17,7 @@ from training_views import (  # noqa: E402
     build_active_training,
 )
 from training_picker_views import build_exercise_card  # noqa: E402
+from training_plan_views import PlannedTrainingActions, build_planned_training  # noqa: E402
 from ui_components import PRIMARY  # noqa: E402
 
 
@@ -46,6 +47,23 @@ def _actions():
         move_exercise=_noop,
         adjust_sets=_noop,
         manage_actions=_noop,
+    )
+
+
+def _planned_actions(target_text="当前动态碳循环目标：高碳日"):
+    return PlannedTrainingActions(
+        start=_noop,
+        confirm_all_parameters=_noop,
+        add_exercise=_noop,
+        delete_exercise=_noop,
+        reuse_history=_noop,
+        clear=_noop,
+        group_exercise=_noop,
+        delete_group=_noop,
+        show_help=_noop,
+        edit_exercise=_noop,
+        reorder_exercise=_noop,
+        target_text=target_text,
     )
 
 
@@ -93,6 +111,40 @@ def _texts(control):
 
 
 class ActiveTrainingViewTests(unittest.TestCase):
+    def test_confirmed_plan_keeps_current_carb_tier_visible(self):
+        session = {
+            "exercises": [{
+                "id": "pushup",
+                "name": "俯卧撑",
+                "recording_mode": "strength",
+                "parameters_confirmed": True,
+                "load_kind": "bodyweight",
+                "sets": [{"weight_kg": 0, "reps": 10}],
+            }],
+        }
+
+        texts = _texts(build_planned_training(session, _planned_actions()))
+
+        self.assertIn("当前动态碳循环目标：高碳日", texts)
+        self.assertNotIn("确认动作参数后更新今日目标", texts)
+
+    def test_pending_plan_keeps_confirmation_prompt(self):
+        session = {
+            "exercises": [{
+                "id": "pushup",
+                "name": "俯卧撑",
+                "recording_mode": "strength",
+                "parameters_confirmed": False,
+                "load_kind": "bodyweight",
+                "sets": [{"weight_kg": 0, "reps": 10}],
+            }],
+        }
+
+        texts = _texts(build_planned_training(session, _planned_actions()))
+
+        self.assertIn("确认动作参数后更新今日目标", texts)
+        self.assertNotIn("当前动态碳循环目标：高碳日", texts)
+
     def test_rest_layout_hides_work_card_and_keeps_next_item_separate(self):
         result = build_active_training(
             _model(rest_status="running", rest_seconds=88),
@@ -247,6 +299,24 @@ class ActiveTrainingViewTests(unittest.TestCase):
             self.assertEqual(title.max_lines, 1)
             self.assertEqual(placeholder.height, 18)
             self.assertEqual(placeholder.content.value, " ")
+
+    def test_picker_card_displays_last_completed_prescription_over_catalog_defaults(self):
+        exercise = {
+            "name": "杠铃卧推",
+            "equipment": "杠铃",
+            "recording_mode": "strength",
+            "default_weight_kg": 0,
+            "default_reps": 10,
+            "default_sets": 4,
+            "weight_kg": 40,
+            "reps": 7,
+            "sets": 5,
+        }
+
+        card = build_exercise_card(exercise, {"session_count": 2}, _noop, _noop)
+
+        self.assertIn("40 kg × 7 次 / 5 组", _texts(card))
+        self.assertIn("练过 2 次", _texts(card))
 
     def test_weight_and_reps_values_both_have_direct_edit_tap_targets(self):
         result = build_active_training(_model(), _actions())

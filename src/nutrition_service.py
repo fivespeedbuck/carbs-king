@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -10,8 +10,7 @@ from typing import Any
 from app_defaults import DAY_TYPES, DEFAULT_MACRO_MULTIPLIERS
 from app_state import AppState
 from app_utils import to_float
-from dynamic_carb_adapter import calculate_app_snapshot, targets_from_snapshot
-from dynamic_carb_engine import ACTIVITY_FACTORS
+from dynamic_carb_adapter import calculate_app_snapshot, engine_from_snapshot, projection_from_snapshot, targets_from_snapshot
 
 
 PROFILE_REQUIRED_FIELDS = {
@@ -50,13 +49,13 @@ def create_nutrition_service(state: AppState) -> NutritionService:
         age = to_float(raw["age"], -1)
         sex = raw["sex"]
         activity_habit = raw["activity_habit"]
-        if weight <= 0 or weight > 500:
+        if not 25 <= weight <= 500:
             missing.append("体重")
         if not 3 <= bodyfat <= 60:
             missing.append("体脂")
         if not 120 <= height <= 230:
             missing.append("身高")
-        if not 10 <= age <= 90:
+        if not 19 <= age <= 90:
             missing.append("年龄")
         if sex not in {"男", "女"}:
             missing.append("性别")
@@ -103,20 +102,24 @@ def create_nutrition_service(state: AppState) -> NutritionService:
             "activity_factor": activity_factor,
         }
 
-    def automatic_multipliers(comp=None):
+    def automatic_multipliers(comp=None, goal=None):
         result = {}
         weight = to_float(state.get("weight"))
         if weight <= 0:
             return result
+        preview_goal = normalize_goal(goal or state.get("macro_goal", "减脂"))
         for day_type in DAY_TYPES:
             projected_state = dict(state)
             projected_training = dict(state.get("training", {}))
             projected_training["carb_mode"] = "manual"
             projected_state["training"] = projected_training
             projected_state["day_type"] = day_type
+            projected_state["macro_goal"] = preview_goal
+            if preview_goal != normalize_goal(state.get("macro_goal", "减脂")):
+                projected_state["carb_phase"] = {}
             snapshot = calculate_app_snapshot(projected_state, effective_date=str(state.get("date") or "") or None)
             targets = targets_from_snapshot(snapshot)
-            engine = snapshot.get("engine_snapshot") if isinstance(snapshot.get("engine_snapshot"), dict) else {}
+            engine = engine_from_snapshot(snapshot)
             body = engine.get("body") if isinstance(engine.get("body"), dict) else {}
             if targets is None:
                 return {}
@@ -125,13 +128,17 @@ def create_nutrition_service(state: AppState) -> NutritionService:
                 "carb": round(targets["carb"] / weight, 2),
                 "protein": round(targets["protein"] / protein_base, 2),
                 "fat": round(targets["fat"] / weight, 2),
+                "carb_g": targets["carb"],
+                "protein_g": targets["protein"],
+                "fat_g": targets["fat"],
+                "kcal": targets["calorie_target"],
             }
         return result
 
-    def get_multipliers(mode=None):
+    def get_multipliers(mode=None, goal=None):
         selected_mode = mode or state.get("macro_mode", "auto")
         if selected_mode == "auto":
-            return automatic_multipliers()
+            return automatic_multipliers(goal=goal)
         stored = state.get("macro_multipliers", {})
         stored = stored if isinstance(stored, dict) else {}
         result = {}
@@ -157,9 +164,9 @@ def create_nutrition_service(state: AppState) -> NutritionService:
             freeze_shown=freeze_shown,
         )
         training["carb_snapshot"] = snapshot
-        engine = snapshot.get("engine_snapshot")
-        if training.get("carb_mode", "auto") != "manual" and isinstance(engine, dict):
-            applied_day = engine.get("applied_day")
+        shown = projection_from_snapshot(snapshot)
+        if training.get("carb_mode", "auto") != "manual":
+            applied_day = shown.get("day_label")
             state["day_type"] = applied_day if applied_day in DAY_TYPES else "低碳日"
         return snapshot
 
@@ -169,9 +176,17 @@ def create_nutrition_service(state: AppState) -> NutritionService:
         if macro_mode != "custom":
             snapshot = get_dynamic_snapshot()
             dynamic = targets_from_snapshot(snapshot)
-            engine = snapshot.get("engine_snapshot") if isinstance(snapshot.get("engine_snapshot"), dict) else {}
+            shown = projection_from_snapshot(snapshot)
+            engine = engine_from_snapshot(snapshot)
             body = engine.get("body") if isinstance(engine.get("body"), dict) else {}
             macros = engine.get("applied_macros") if isinstance(engine.get("applied_macros"), dict) else {}
+            shown_envelope = snapshot.get("shown_target_snapshot")
+            shown_profile = (
+                shown_envelope.get("profile_facts")
+                if isinstance(shown_envelope, Mapping) and isinstance(shown_envelope.get("profile_facts"), Mapping)
+                else snapshot.get("profile_facts")
+            )
+            shown_profile = shown_profile if isinstance(shown_profile, Mapping) else {}
             if dynamic is not None:
                 maintenance = to_float(body.get("maintenance_kcal"))
                 calorie_target = dynamic["calorie_target"]
@@ -180,28 +195,37 @@ def create_nutrition_service(state: AppState) -> NutritionService:
                     **dynamic,
                     "lean_mass": body.get("lean_mass_kg"),
                     "fat_mass": None,
-                    "bodyfat": to_float(state.get("bodyfat")) or None,
+                    "bodyfat": to_float(shown_profile.get("bodyfat_percent")) or None,
                     "height": body.get("height_cm"),
                     "age": body.get("age_years"),
-                    "sex": state.get("sex"),
+                    "sex": shown_profile.get("sex"),
                     "bmr": round(to_float(body.get("rmr_kcal")), 0),
                     "tdee": round(maintenance, 0),
                     "calorie_factor": round(calorie_target / maintenance, 4) if maintenance else None,
                     "fat_calorie_share": round(dynamic["fat"] * 9 / calorie_target, 4) if calorie_target else None,
                     "protein_basis": body.get("protein_method"),
-                    "activity_habit": state.get("activity_habit"),
-                    "activity_factor": ACTIVITY_FACTORS.get(str(state.get("activity_habit") or "")),
+                    "activity_habit": shown_profile.get("activity_habit"),
+                    "activity_factor": None,
                     "macro_mode": macro_mode,
-                    "macro_goal": macro_goal,
+                    "macro_goal": normalize_goal(shown_profile.get("goal")),
                     "dynamic_carb": True,
-                    "dynamic_status": snapshot.get("ui_projection", {}).get("status"),
-                    "day_label": snapshot.get("ui_projection", {}).get("day_label"),
+                    "dynamic_status": shown.get("status"),
+                    "day_label": shown.get("day_label"),
                     "reason_codes": list(macros.get("reason_codes", [])),
                 }
                 return result
+            runtime = engine.get("runtime_distribution") if isinstance(engine.get("runtime_distribution"), dict) else {}
+            reason_codes = list((engine.get("recommended_macros") or {}).get("reason_codes", [])) \
+                if isinstance(engine.get("recommended_macros"), dict) else []
+            if "phase_budget_infeasible" in reason_codes:
+                profile_message = "当前目标速度与单日安全边界无法同时满足，请降低速度或调整完整周期计划"
+            elif engine:
+                profile_message = "当前资料超出自动计算范围，请检查体重、身高、年龄、性别和运动习惯"
+            else:
+                profile_message = "请完善体重、身高、年龄、性别和运动习惯"
             return {
                 "is_ready": False,
-                "profile_message": "请完善体重、身高、年龄、性别和运动习惯",
+                "profile_message": profile_message,
                 "carb_min": None, "carb_max": None, "carb": None,
                 "protein_min": None, "protein_max": None, "protein": None,
                 "fat_min": None, "fat_max": None, "fat": None,
@@ -210,6 +234,9 @@ def create_nutrition_service(state: AppState) -> NutritionService:
                 "tdee": None, "calorie_target": None,
                 "activity_habit": state.get("activity_habit"), "activity_factor": None,
                 "macro_mode": macro_mode, "macro_goal": macro_goal,
+                "reason_codes": reason_codes,
+                "feasible_speed_min": runtime.get("feasible_speed_min"),
+                "feasible_speed_max": runtime.get("feasible_speed_max"),
             }
 
         comp = body_composition()

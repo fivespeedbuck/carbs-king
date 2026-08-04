@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -19,61 +21,31 @@ if str(SRC) not in sys.path:
 from dynamic_carb_engine import (  # noqa: E402
     calculate_body_energy,
     calculate_daily_target,
+    create_phase_baseline,
     estimate_long_term_maintenance,
 )
+from dynamic_carb_adapter import normalize_training  # noqa: E402
 
 
 DEFAULT_INPUT = ROOT / "release_candidates" / "carbs-king-virtual-100-days-20260415-20260723.json"
 DEFAULT_OUTPUT = ROOT / "release_candidates" / "dynamic-carb-100-day-reference-replay.json"
 
 
-def normalize_training(record: Mapping[str, Any]) -> dict[str, Any]:
-    training = record.get("training") if isinstance(record.get("training"), Mapping) else {}
-    sessions = [item for item in training.get("sessions", []) if isinstance(item, Mapping)]
-    completed = [item for item in sessions if item.get("status") == "completed"]
-    if not completed:
-        return {"status": "explicit_rest"}
-
-    muscle_sets: Counter[str] = Counter()
-    cardio_duration = 0.0
-    total_duration = 0.0
-    for session in completed:
-        total_duration += float(session.get("total_duration_min") or 0)
-        for exercise in session.get("exercises", []):
-            if not isinstance(exercise, Mapping) or not exercise.get("completed", True):
-                continue
-            if exercise.get("recording_mode") == "strength":
-                body_part = str(exercise.get("body_part") or "未分类")
-                muscle_sets[body_part] += sum(
-                    bool(training_set.get("completed")) and not bool(training_set.get("warmup"))
-                    for training_set in exercise.get("sets", [])
-                    if isinstance(training_set, Mapping)
-                )
-            elif exercise.get("recording_mode") == "cardio":
-                cardio_duration += float(exercise.get("duration_seconds") or 0) / 60.0
-
-    facts: dict[str, Any] = {"status": "completed", "sessions": len(completed)}
-    if muscle_sets:
-        facts["resistance"] = {
-            "work_sets_total": sum(muscle_sets.values()),
-            "peak_primary_muscle_sets": max(muscle_sets.values()),
-            "duration_min": total_duration,
-        }
-    if cardio_duration > 0:
-        facts["cardio"] = {"duration_min": cardio_duration, "intensity": "moderate"}
-    return facts
-
-
 def replay_fixture(path: Path = DEFAULT_INPUT) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_bytes = path.read_bytes()
+    payload = json.loads(raw_bytes.decode("utf-8-sig"))
     records = payload.get("daily_records") if isinstance(payload.get("daily_records"), Mapping) else {}
     old_days: Counter[str] = Counter()
     new_days: Counter[str] = Counter()
     demands: Counter[str] = Counter()
+    recommendation_states: Counter[str] = Counter()
+    training_statuses: Counter[str] = Counter()
     transitions: Counter[str] = Counter()
     violations: list[str] = []
     history: list[dict[str, Any]] = []
     final_calibration: dict[str, Any] | None = None
+    versions: dict[str, Any] = {}
+    phase: dict[str, Any] | None = None
 
     for date_key in sorted(records):
         record = records[date_key]
@@ -89,17 +61,55 @@ def replay_fixture(path: Path = DEFAULT_INPUT) -> dict[str, Any]:
             "goal": "减脂",
             "activity_habit": profile_data.get("activity_habit"),
         }
-        normalized_training = normalize_training(record)
+        if phase is None:
+            phase = create_phase_baseline(profile, date_key)
+        profile.update({
+            "phase_id": phase["phase_id"],
+            "phase_baseline_weight_kg": phase["baseline_weight_kg"],
+            "phase_maintenance_kcal": phase["maintenance_kcal"],
+            "phase_protein_g": phase["protein_g"],
+            "phase_fat_anchor_g": phase["fat_anchor_g"],
+        })
+        raw_training = record.get("training") if isinstance(record.get("training"), Mapping) else {}
+        normalized_training = normalize_training(raw_training)
         result = calculate_daily_target(profile, normalized_training, effective_date=date_key)
+        versions = {
+            "algorithm_version": result["algorithm_version"],
+            "parameter_set_version": result["parameter_set_version"],
+            "evidence_version": result["evidence_version"],
+            "model_document_sha256": result["model_document_sha256"],
+            "schema_version": result["schema_version"],
+        }
         old_day = str(profile_data.get("day_type") or "")
         new_day = str(result["recommended_day"])
         old_days[old_day] += 1
         new_days[new_day] += 1
-        demands[str(result["recommended_demand"]["demand_key"])] += 1
+        demand = result["recommended_demand"]
+        demand_key = str(demand["demand_key"])
+        demands[demand_key] += 1
+        training_statuses[str(normalized_training["status"])] += 1
+        if demand_key == "provisional_low":
+            recommendation_states["provisional_low"] += 1
+        elif new_day == "低碳日":
+            recommendation_states["formal_low"] += 1
+        elif new_day == "中碳日":
+            recommendation_states["formal_medium"] += 1
+        else:
+            recommendation_states["formal_high"] += 1
         transitions[f"{old_day}->{new_day}"] += 1
         macro = result["recommended_macros"]
         if macro["status"] != "ok" or abs(float(macro.get("energy_closure_error") or 0)) > 1e-6:
             violations.append(f"{date_key}:macro")
+        elif not 0.20 - 1e-9 <= float(macro["fat_energy_share"]) <= 0.30 + 1e-9:
+            violations.append(f"{date_key}:fat_share_outside_automatic_range")
+        else:
+            displayed = macro["display"]
+            displayed_kcal = 4 * displayed["carb_g"] + 4 * displayed["protein_g"] + 9 * displayed["fat_g"]
+            if abs(displayed_kcal - float(macro["energy_from_display_macros_exact"])) > 1e-9:
+                violations.append(f"{date_key}:display_macro_recompute")
+            rounded = float(Decimal(str(displayed_kcal)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            if rounded != float(macro["energy_display_kcal"]):
+                violations.append(f"{date_key}:display_energy_rounding")
 
         daily_total = record.get("daily_total") if isinstance(record.get("daily_total"), Mapping) else {}
         history.append({
@@ -111,20 +121,33 @@ def replay_fixture(path: Path = DEFAULT_INPUT) -> dict[str, Any]:
             "goal": "减脂",
         })
         current = date.fromisoformat(date_key)
-        prior = float(calculate_body_energy(profile)["maintenance_kcal"])
+        prior = float(phase["maintenance_kcal"])
         final_calibration = estimate_long_term_maintenance(history, current + timedelta(days=1), prior)
 
     return {
         "schema": "dynamic_carb_100_day_reference_replay",
-        "input": path.name,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": {
+            "file_name": path.name,
+            "byte_size": len(raw_bytes),
+            "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        },
+        "engine": versions,
+        "code_sha256": hashlib.sha256(
+            (SRC / "dynamic_carb_engine.py").read_bytes()
+            + (SRC / "dynamic_carb_adapter.py").read_bytes()
+        ).hexdigest(),
         "record_days": len(records),
         "old_day_types": dict(old_days),
         "new_day_types": dict(new_days),
         "demand_types": dict(demands),
+        "recommendation_states": dict(recommendation_states),
+        "training_statuses": dict(training_statuses),
         "transitions": dict(transitions),
         "violations": violations,
         "calibration": final_calibration,
         "calibration_interpretation": "engineering_fixture_only_not_physiological_validation",
+        "data_semantics": "missing_training_is_unknown_and_missing_cardio_intensity_is_not_imputed",
     }
 
 

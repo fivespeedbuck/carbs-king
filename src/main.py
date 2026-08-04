@@ -339,6 +339,7 @@ def main(page: ft.Page):
         if latest_body.get("bodyfat") is not None:
             state["bodyfat"] = f"{latest_body['bodyfat']:g}"
     state["height"] = str(saved_profile.get("height", state["height"]))
+    state["bodyfat_measured_at"] = str(saved_profile.get("bodyfat_measured_at", ""))
     state["age"] = str(saved_profile.get("age", state["age"]))
     state["age_reference_year"] = int(saved_profile.get("age_reference_year", datetime.date.today().year) or datetime.date.today().year)
     state["theme_color"] = normalize_theme(saved_profile.get("theme_color", "green"))
@@ -354,6 +355,8 @@ def main(page: ft.Page):
     state["macro_mode"] = saved_profile.get("macro_mode", "auto")
     saved_macro_goal = saved_profile.get("macro_goal", "减脂")
     state["macro_goal"] = saved_macro_goal if saved_macro_goal in {"减脂", "保持", "增肌"} else "减脂"
+    state["carb_phase"] = json.loads(json.dumps(saved_profile.get("carb_phase", {}))) \
+        if isinstance(saved_profile.get("carb_phase"), dict) else {}
     state["macro_multipliers"] = json.loads(json.dumps(
         saved_profile.get("custom_macro_multipliers", saved_profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))
     ))

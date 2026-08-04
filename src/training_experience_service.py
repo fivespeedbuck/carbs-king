@@ -277,6 +277,7 @@ def copy_whole_session(
     result.update({
         "status": "planned", "started_at": "", "ended_at": "",
         "total_duration_min": None, "summary_note": "", "fatigue_status": "",
+        "session_rating": None,
         "rest_until": "", "rest_cycle": None, "incomplete": False,
     })
     if new_date is not None:

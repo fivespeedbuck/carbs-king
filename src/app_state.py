@@ -15,6 +15,7 @@ class TrainingData(TypedDict, total=False):
     total_duration_min: str | float
     total_calories_kcal: str | float
     fatigue_status: str
+    session_rating: int | None
     summary_note: str
     targets: list[dict[str, Any]]
     carb_reminder_dismissed_signature: str
@@ -48,6 +49,7 @@ class DataPageData(TypedDict, total=False):
 class ProfileState:
     weight: str = ""
     bodyfat: str = ""
+    bodyfat_measured_at: str = ""
     height: str = ""
     age: str = ""
     age_reference_year: int = 0
@@ -62,6 +64,7 @@ class ProfileState:
     calf_cm: str = ""
     macro_mode: str = "auto"
     macro_goal: str = "减脂"
+    carb_phase: dict[str, Any] = field(default_factory=dict)
     macro_multipliers: dict[str, dict[str, float]] = field(
         default_factory=lambda: copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS)
     )
@@ -83,6 +86,7 @@ class DailyState:
         total_duration_min="",
         total_calories_kcal="",
         fatigue_status="状态一般",
+        session_rating=None,
         summary_note="",
         targets=[],
         carb_reminder_dismissed_signature="",
@@ -149,6 +153,7 @@ class AppState(MutableMapping[str, Any]):
             "date": (self.daily, "selected_date"),
             "weight": (self.profile, "weight"),
             "bodyfat": (self.profile, "bodyfat"),
+            "bodyfat_measured_at": (self.profile, "bodyfat_measured_at"),
             "measurement": (self.daily, "measurement"),
             "circumference": (self.daily, "circumference"),
             "height": (self.profile, "height"),
@@ -165,6 +170,7 @@ class AppState(MutableMapping[str, Any]):
             "calf_cm": (self.profile, "calf_cm"),
             "macro_mode": (self.profile, "macro_mode"),
             "macro_goal": (self.profile, "macro_goal"),
+            "carb_phase": (self.profile, "carb_phase"),
             "macro_multipliers": (self.profile, "macro_multipliers"),
             "auto_macro_multipliers": (self.profile, "auto_macro_multipliers"),
             "profile_inited": (self.profile, "initialized"),

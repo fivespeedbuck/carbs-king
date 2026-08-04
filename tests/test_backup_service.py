@@ -331,6 +331,12 @@ class BackupServiceTests(unittest.TestCase):
                 "theme_color": "purple",
                 "macro_mode": "auto",
                 "macro_goal": "增肌",
+                "carb_phase": {
+                    "phase_id": "phase-backup-test",
+                    "goal": "gain_controlled",
+                    "effective_from": "2026-07-22",
+                    "baseline_weight_kg": 80,
+                },
             })
             save_json(root / "training_data.json", {
                 "custom_exercises": [{"id": "custom-1", "name": "自定义雪橇推"}],
@@ -366,6 +372,7 @@ class BackupServiceTests(unittest.TestCase):
             self.assertEqual(state["theme_color"], "purple")
             self.assertEqual(state["age_reference_year"], 2026)
             self.assertEqual(state["macro_goal"], "增肌")
+            self.assertEqual(state["carb_phase"]["phase_id"], "phase-backup-test")
 
 
 class BackupUiContractTests(unittest.TestCase):

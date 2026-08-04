@@ -1,20 +1,42 @@
 import asyncio
 import hashlib
+import os
 import sys
+import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rest_notification import (  # noqa: E402
     DEFAULT_BELL_ASSET,
+    AndroidAlarmScheduler,
     REST_ALARM_ACTION,
     REST_ALARM_RECEIVER_CLASS,
     REST_NOTIFICATION_CAPABILITY,
     RestNotifier,
     _stable_notification_id,
 )
+
+
+class AndroidAlarmSchedulerSetupTests(unittest.TestCase):
+    def test_android_scheduler_initializes_every_bridge_used_by_scheduling(self):
+        class ActivityHost:
+            mActivity = object()
+
+        def autoclass(name):
+            return ActivityHost if name == "example.MainActivity" else object()
+
+        with patch.dict(os.environ, {"MAIN_ACTIVITY_HOST_CLASS_NAME": "example.MainActivity"}), patch.dict(
+            sys.modules, {"jnius": types.SimpleNamespace(autoclass=autoclass)}
+        ):
+            scheduler = AndroidAlarmScheduler()
+
+        self.assertIsNotNone(scheduler.JavaString)
+        self.assertIsNotNone(scheduler.Settings)
+        self.assertIsNotNone(scheduler.Uri)
 
 
 class FakePage:
@@ -643,7 +665,8 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         overlay_start = adapter[
             overlay_start_at:adapter.index("    def set_app_visible", overlay_start_at)
         ]
-        self.assertLess(overlay_start.index("self._start(intent)"), overlay_start.index("self.request_permission()"))
+        self.assertIn("self._start(intent)", overlay_start)
+        self.assertNotIn("self.request_permission()", overlay_start)
         self.assertIn('intent.putExtra("rest_theme_color"', overlay_start)
         self.assertIn('const val EXTRA_THEME_COLOR = "rest_theme_color"', overlay_service)
         self.assertIn("orientation = LinearLayout.VERTICAL", overlay_service)

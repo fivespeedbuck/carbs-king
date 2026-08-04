@@ -64,7 +64,8 @@ class MacroModeTests(unittest.TestCase):
         auto_after = self.service.multipliers("auto")
         custom_after = self.service.multipliers("custom")
 
-        self.assertNotEqual(auto_before["高碳日"]["carb"], auto_after["高碳日"]["carb"])
+        self.assertNotEqual(auto_before, auto_after)
+        self.assertNotEqual(auto_before["高碳日"]["protein"], auto_after["高碳日"]["protein"])
         self.assertEqual(custom_before, custom_after)
 
     def test_empty_profile_does_not_create_nutrition_targets(self):
@@ -97,12 +98,14 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         return values
 
     @staticmethod
-    def _profile_details(*, circumference_values, circumference_expanded):
+    def _profile_details(*, circumference_values, circumference_expanded, circumference_status=None, stale_profile_fields=None):
         return build_profile_details(
             [ft.Container(), ft.Container(), ft.Container(), ft.Container()],
             sex="男",
             activity_habit="规律训练",
             circumference_values=circumference_values,
+            circumference_status=circumference_status,
+            stale_profile_fields=stale_profile_fields,
             circumference_expanded=circumference_expanded,
             on_toggle_circumference=lambda event=None: None,
             on_sex_change=lambda value: None,
@@ -144,6 +147,17 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertEqual(empty_text.count("未记录"), 6)
         self.assertIn("80.5 cm", historical_text)
         self.assertIn("101 cm", historical_text)
+
+    def test_expanded_profile_circumference_marks_stale_latest_value(self):
+        view = self._profile_details(
+            circumference_values={"waist_cm": 80.5},
+            circumference_expanded=True,
+            circumference_status={"waist_cm": {"stale": True, "date": "2026-06-01"}},
+        )
+        text = self._all_text_values(view)
+
+        self.assertIn("80.5 cm", text)
+        self.assertIn("建议更新", text)
 
     def test_incomplete_profile_hides_metrics_prompt_so_macro_panel_is_single_notice(self):
         metrics = build_profile_metrics({
@@ -195,8 +209,11 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         self.assertIn("BMR（基础代谢率）", details)
         self.assertIn("TDEE（每日总能量消耗）", details)
         self.assertIn("if not auto_selected", macro)
-        self.assertIn("蛋白按去脂体重", macro)
-        self.assertIn("碳水补足剩余热量", macro)
+        self.assertIn("自动目标会根据个人资料与已确认训练生成", macro)
+        self.assertIn("自定义模式不会被自动调整", macro)
+        self.assertIn('preview_macro_goal if selected_mode == "auto" else None', controller)
+        self.assertNotIn("蛋白按去脂体重", macro)
+        self.assertNotIn("碳水补足剩余热量", macro)
 
     def test_profile_fields_use_shared_compact_aligned_grids(self):
         controller = (ROOT / "src" / "profile_controller.py").read_text(encoding="utf-8-sig")
@@ -301,8 +318,10 @@ class ProfileMeasurementContractTests(unittest.TestCase):
 
         self.assertIn("def set_macro_goal(goal):", controller)
         self.assertIn('state.get("macro_mode", "auto") != "auto"', controller)
-        self.assertIn('current_goal=state.get("macro_goal", "减脂")', controller)
+        self.assertIn("macro_goal_preview", controller)
         self.assertIn("on_goal_change=set_macro_goal", controller)
+        self.assertIn("on_goal_apply=apply_macro_goal", controller)
+        self.assertIn('state["carb_phase"] = {}', controller)
         self.assertIn("goal_holder.content = build_carb_cycle_goal_section(", controller)
         self.assertLess(
             controller.index('small_text("运动习惯")'),

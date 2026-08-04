@@ -2,6 +2,8 @@
 
 本索引用于接管、定位回归和发布，不替代源码。默认从 `src/main.py` 的路由和控制器装配开始，再沿功能表查找控制器、视图和服务。
 
+Build 101 为全模块冻结基线。定位 BUG 时先查本索引和 `FROZEN_BASELINE.md`，只有用户明确授权的对应模块允许最小修改。数据页选择器位于 `src/analytics_page.py`、`src/analytics_ui.py`、`src/analytics_trend_views.py`；训练追加与评分位于 `src/training_controller.py`；后台提醒位于 `src/rest_notification.py` 和 Android 原生插件。
+
 ## 运行与基础层
 
 | 领域 | 入口 | 关键职责 |
@@ -44,6 +46,7 @@
 - 现行营养入口：`src/nutrition_service.py`。自动宏量模式调用动态碳循环，自定义宏量模式只读取用户倍率，不调用动态引擎。
 - 动态碳循环：`src/dynamic_carb_engine.py` 负责确定性计算，`src/dynamic_carb_adapter.py` 负责 App 数据语义、快照持久化和 UI 投影，`src/carb_cycle_views.py` 负责首页与饮食页共用的简化详情。旧 `src/carb_cycle_service.py` 已删除。
 - 动态碳循环回放：`tools/replay_dynamic_carb_fixture.py`（100 天 golden）、`tools/simulate_dynamic_carb_personas.py`（长期画像与 shadow 校准）、`tools/replay_dynamic_carb_edge_cases.py`（不可协商边界）；输出位于 `release_candidates/dynamic-carb-*.json`。
+- V3.3 实现差分与封闭 P0 审计：`tools/verify_dynamic_carb_v33_implementation.py`、`tools/audit_dynamic_carb_v33_closed.py`；输出位于 `release_candidates/dynamic-carb-v33-*.json`。
 - Release 版本检查：`src/app_version.py`、`src/update_service.py`、`src/profile_update_views.py`；GitHub API 不可用时读取根目录 `update_manifest.json`。
 - 版本配置：`pyproject.toml`；构建后由 `build_apk_update.ps1` 同步预备下一 Build。
 

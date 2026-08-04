@@ -267,6 +267,9 @@ class AndroidAlarmScheduler:
         self.AlarmManager = autoclass("android.app.AlarmManager")
         self.PendingIntent = autoclass("android.app.PendingIntent")
         self.Intent = autoclass("android.content.Intent")
+        self.JavaString = autoclass("java.lang.String")
+        self.Settings = autoclass("android.provider.Settings")
+        self.Uri = autoclass("android.net.Uri")
 
     def _alarm_service(self) -> Any:
         return self.activity.getSystemService(self.Context.ALARM_SERVICE)
@@ -470,7 +473,6 @@ class AndroidRestOverlayController:
         if not normalized:
             return False
         self._active_cycle_id = normalized
-        needs_permission = not self.has_permission()
         intent = self._service_intent(REST_OVERLAY_UPDATE_ACTION)
         intent.putExtra("rest_cycle_id", self.JavaString(normalized))
         intent.putExtra(
@@ -481,11 +483,6 @@ class AndroidRestOverlayController:
         intent.putExtra("rest_theme_color", self.JavaString(str(theme_color or "")))
         intent.putExtra("rest_app_visible", bool(self._app_visible))
         self._start(intent)
-        # Start the foreground service before opening Android settings. The
-        # settings launch pauses the app immediately and can otherwise send a
-        # visibility event before the service has called startForeground().
-        if needs_permission:
-            self.request_permission()
         return True
 
     def set_app_visible(self, visible: bool) -> None:

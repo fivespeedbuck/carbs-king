@@ -258,6 +258,8 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
         state["macro_mode"] = profile.get("macro_mode", state.get("macro_mode", "auto"))
         macro_goal = profile.get("macro_goal", "减脂")
         state["macro_goal"] = macro_goal if macro_goal in {"减脂", "保持", "增肌"} else "减脂"
+        state["carb_phase"] = copy.deepcopy(profile.get("carb_phase", {})) \
+            if isinstance(profile.get("carb_phase"), dict) else {}
         state["macro_multipliers"] = copy.deepcopy(
             profile.get("custom_macro_multipliers", profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))
         )
@@ -363,6 +365,7 @@ def create_backup_service(deps: BackupServiceDependencies) -> BackupService:
             "calf_cm": "",
             "macro_mode": "auto",
             "macro_goal": "减脂",
+            "carb_phase": {},
             "custom_macro_multipliers": copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS),
             "auto_macro_multipliers": copy.deepcopy(DEFAULT_MACRO_MULTIPLIERS),
             "profile_inited": False,

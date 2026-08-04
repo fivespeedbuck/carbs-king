@@ -26,6 +26,7 @@ from app_state import AppState
 from app_version import BUILD_NUMBER, VERSION_NAME
 from app_utils import to_float
 from analytics_service import merge_body_measurement
+from analytics_service import latest_explicit_measurements, measurement_age_days
 from apk_update_download import (
     ApkUpdateError,
     default_apk_destination,
@@ -376,11 +377,18 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         return build_dialog(title, content, actions=actions, on_close=on_close)
 
     def save_profile_from_state():
-        auto_multipliers = get_multipliers("auto")
+        if state.get("macro_mode", "auto") == "auto" and not state.get("carb_phase"):
+            deps.nutrition.dynamic_snapshot()
+        auto_multipliers = (
+            get_multipliers("auto")
+            if state.get("macro_mode", "auto") == "auto"
+            else state.get("auto_macro_multipliers", DEFAULT_MACRO_MULTIPLIERS)
+        )
         state["auto_macro_multipliers"] = json.loads(json.dumps(auto_multipliers))
         profile_data = {
             "weight": state.get("weight", ""),
             "bodyfat": state.get("bodyfat", ""),
+            "bodyfat_measured_at": state.get("bodyfat_measured_at", ""),
             "height": state.get("height", ""),
             "age": state.get("age", ""),
             "age_reference_year": int(state.get("age_reference_year") or datetime.date.today().year),
@@ -395,6 +403,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             "calf_cm": state.get("calf_cm", ""),
             "macro_mode": state.get("macro_mode", "auto"),
             "macro_goal": state.get("macro_goal", "减脂"),
+            "carb_phase": json.loads(json.dumps(state.get("carb_phase", {}))),
             "macro_multipliers": json.loads(json.dumps(state.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))),
             "custom_macro_multipliers": json.loads(json.dumps(state.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))),
             "auto_macro_multipliers": json.loads(json.dumps(auto_multipliers)),
@@ -415,6 +424,8 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         )
         if measurement:
             state["measurement"] = measurement
+        if bodyfat_changed:
+            state["bodyfat_measured_at"] = str(measurement.get("measured_at") or iso_now())
 
     def load_challenges():
         repository = repositories.goal_challenges
@@ -1348,8 +1359,17 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             failed=visible_failed,
         )
 
+    macro_goal_preview = {"value": None}
+
     def render_me():
         targets = get_targets()
+
+        latest_measurements = latest_explicit_measurements(records, as_of_date=datetime.date.today())
+        stale_profile_fields = {
+            field: measurement_age_days(latest_measurements.get(field), as_of_date=datetime.date.today()) is not None
+            and measurement_age_days(latest_measurements.get(field), as_of_date=datetime.date.today()) > max_age
+            for field, max_age in (("weight", 7), ("bodyfat", 28))
+        }
 
         weight_box, weight_field = labeled_plain_field("体重 kg", state.get("weight", ""), keyboard_type=_KEYBOARD_NUMBER, expand=True)
         bodyfat_box, bodyfat_field = labeled_plain_field("体脂 %", state.get("bodyfat", ""), keyboard_type=_KEYBOARD_NUMBER, expand=True)
@@ -1421,16 +1441,46 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             refresh()
             snack("已切换为自动计算" if mode == "auto" else "已切换为自定义倍数")
 
+        applied_macro_goal = state.get("macro_goal", "减脂")
+        if applied_macro_goal not in {"减脂", "保持", "增肌"}:
+            applied_macro_goal = "减脂"
+        preview_macro_goal = macro_goal_preview.get("value") or applied_macro_goal
+
         def set_macro_goal(goal):
             if state.get("macro_mode", "auto") != "auto":
                 return
             if goal not in {"减脂", "保持", "增肌"}:
                 return
-            state["macro_goal"] = goal
-            save_profile_from_state()
-            save_current()
+            macro_goal_preview["value"] = goal
             refresh()
-            snack(f"碳循环目标已切换为{goal}")
+
+        def apply_macro_goal(goal):
+            if goal not in {"减脂", "保持", "增肌"} or goal == applied_macro_goal:
+                macro_goal_preview["value"] = None
+                refresh()
+                return
+            confirm_dlg = None
+
+            def confirm_apply(event=None):
+                state["macro_goal"] = goal
+                state["carb_phase"] = {}
+                macro_goal_preview["value"] = None
+                save_profile_from_state()
+                save_current()
+                close_control(confirm_dlg)
+                refresh()
+                snack(f"已应用{goal}目标，新的阶段只影响之后的自动目标")
+
+            confirm_dlg = dialog_base(
+                f"应用{goal}为当前目标？",
+                small_text("这会结束当前目标阶段并从现在起创建新阶段；历史日期不会改变。"),
+                [
+                    make_button("取消", on_click=lambda e: close_control(confirm_dlg), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                    make_button("确认应用", on_click=confirm_apply, expand=True),
+                ],
+                on_close=lambda e: close_control(confirm_dlg),
+            )
+            open_control(confirm_dlg)
 
         def open_macro_settings_dialog(e=None):
             dialog_width = responsive_width()
@@ -1488,34 +1538,74 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             open_control(dlg)
 
         selected_mode = state.get("macro_mode", "auto")
-        displayed_multipliers = get_multipliers(selected_mode)
         multiplier_rows = []
+        displayed_multipliers = get_multipliers(
+            selected_mode,
+            preview_macro_goal if selected_mode == "auto" else None,
+        )
         for day_type in ["高碳日", "中碳日", "低碳日"]:
             values = displayed_multipliers.get(day_type)
             if not isinstance(values, dict):
                 break
-            multiplier_rows.append(ft.Row([
-                small_text(day_type),
-                ft.Text(
-                    f"碳 {to_float(values.get('carb')):g}｜蛋 {to_float(values.get('protein')):g}｜脂 {to_float(values.get('fat')):g}",
-                    size=12,
-                    weight="bold",
-                    color=TEXT,
-                ),
-            ], alignment="spaceBetween"))
+            if selected_mode == "auto" and values.get("kcal") is not None:
+                multiplier_rows.append(ft.Column([
+                    ft.Row([
+                        small_text(day_type),
+                        ft.Text(f"{to_float(values.get('kcal')):g} kcal", size=12, weight="bold", color=TEXT),
+                    ], alignment="spaceBetween"),
+                    ft.Text(
+                        f"碳 {to_float(values.get('carb_g')):g}g｜蛋 {to_float(values.get('protein_g')):g}g｜脂 {to_float(values.get('fat_g')):g}g",
+                        size=12,
+                        weight="bold",
+                        color=TEXT,
+                    ),
+                    small_text(
+                        f"倍率：碳 {to_float(values.get('carb')):g}｜蛋 {to_float(values.get('protein')):g}｜脂 {to_float(values.get('fat')):g}"
+                    ),
+                ], spacing=2))
+            else:
+                multiplier_rows.append(ft.Row([
+                    small_text(day_type),
+                    ft.Text(
+                        f"碳 {to_float(values.get('carb')):g}｜蛋 {to_float(values.get('protein')):g}｜脂 {to_float(values.get('fat')):g}",
+                        size=12,
+                        weight="bold",
+                        color=TEXT,
+                    ),
+                ], alignment="spaceBetween"))
 
         macro_box = build_macro_panel(
             multiplier_rows,
             auto_selected=selected_mode == "auto",
             on_edit=open_macro_settings_dialog,
             on_mode_change=set_macro_mode,
-            current_goal=state.get("macro_goal", "减脂"),
+            current_goal=preview_macro_goal,
             on_goal_change=set_macro_goal,
+            applied_goal=applied_macro_goal,
+            on_goal_apply=apply_macro_goal,
             profile_ready=bool(targets["is_ready"]),
             profile_message=str(targets.get("profile_message", "")),
         )
-        circumference = state.get("circumference")
-        circumference = dict(circumference) if isinstance(circumference, dict) else {}
+        stored_circumference = state.get("circumference")
+        stored_circumference = dict(stored_circumference) if isinstance(stored_circumference, dict) else {}
+        latest_circumference = latest_measurements.get("circumference", {})
+        circumference = {
+            key: latest_circumference.get(key, {}).get("value", stored_circumference.get(key))
+            if isinstance(latest_circumference.get(key), dict)
+            else stored_circumference.get(key)
+            for key, _ in CIRCUMFERENCE_FIELDS
+        }
+        circumference_status = {
+            key: {
+                "date": item.get("date"),
+                "stale": (
+                    measurement_age_days(item, as_of_date=datetime.date.today()) is not None
+                    and measurement_age_days(item, as_of_date=datetime.date.today()) > 28
+                ),
+            }
+            for key, item in latest_circumference.items()
+            if isinstance(item, dict)
+        }
         expanded = bool(state.get("profile_circumference_expanded", False))
 
         def toggle_circumference(e=None):
@@ -1530,6 +1620,8 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             sex=state.get("sex", ""),
             activity_habit=state.get("activity_habit", ""),
             circumference_values=circumference,
+            circumference_status=circumference_status,
+            stale_profile_fields=stale_profile_fields,
             circumference_expanded=expanded,
             on_toggle_circumference=toggle_circumference,
             on_sex_change=set_sex,
@@ -1680,6 +1772,8 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         state.profile.macro_mode = str(current_profile.get("macro_mode", state.profile.macro_mode))
         saved_macro_goal = current_profile.get("macro_goal", state.profile.macro_goal)
         state.profile.macro_goal = saved_macro_goal if saved_macro_goal in {"减脂", "保持", "增肌"} else "减脂"
+        state.profile.carb_phase = json.loads(json.dumps(current_profile.get("carb_phase", {}))) \
+            if isinstance(current_profile.get("carb_phase"), dict) else {}
         state.profile.macro_multipliers = json.loads(json.dumps(
             current_profile.get("custom_macro_multipliers", current_profile.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))
         ))
