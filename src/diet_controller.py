@@ -16,21 +16,24 @@ from app_defaults import DAY_TYPES
 from app_state import AppState
 from app_utils import calc_item, to_float
 from controller_runtime import ControllerRuntime
+from dynamic_carb_engine import build_manual_switch_prompt
+from dynamic_carb_adapter import calculate_app_snapshot, engine_from_snapshot
 from diet_service import PersistedSupplementList, DietViewState, diet_route_for_view, normalize_diet_view
 from diet_views import DietShellRenderers, build_diet_shell, diet_shortcut_panel
-from food_library import FOOD_CATEGORIES, food_catalog, search_foods
-from form_views import FormViewContext, build_full_form_sheet
+from food_library import FOOD_CATEGORIES, food_catalog, search_foods, serialize_user_foods
+from form_views import FormViewContext, build_dialog, build_full_form_sheet
 from repositories import AppRepositories
 from ui_components import (
     BORDER, GREEN, INPUT_FIELD_HEIGHT,
     PRIMARY, PRIMARY_SOFT, RED, SUB, TEXT, card, page_card, macro_progress_bar,
     make_button, mobile_dropdown, mobile_text_field, quantity_unit_grid, section_title,
-    set_input_focused, small_text, thin_border, two_field_grid,
+    set_input_focused, small_text, thin_border, three_field_grid, two_field_grid,
 )
 
 
 FOOD_UNIT_PRESETS = ("g", "ml", "个", "份")
 CUSTOM_UNIT_OPTION = "自定义"
+ENERGY_UNIT_PRESETS = ("大卡 kcal", "千焦 kJ")
 
 
 def compact_daily_summary(total: Mapping[str, Any]) -> str:
@@ -50,6 +53,15 @@ def resolve_food_unit(selected_unit: Any, custom_unit: Any = "") -> str:
     if selected == CUSTOM_UNIT_OPTION:
         return str(custom_unit or "").strip()
     return selected
+
+
+def normalize_food_energy(value: Any, unit: Any = "大卡 kcal") -> float:
+    """Normalize user-entered food energy to the catalog's kcal storage unit."""
+    energy = max(0.0, to_float(value))
+    normalized_unit = str(unit or "").strip().casefold()
+    if normalized_unit in {"千焦", "kj", "千焦 kj"}:
+        energy /= 4.184
+    return round(energy, 2)
 
 
 def update_food_selector(selector: Any, matches: list[Mapping[str, Any]]) -> None:
@@ -88,8 +100,117 @@ def bind_custom_unit_visibility(
         request_update()
 
     dropdown = getattr(unit_input, "field", unit_input)
-    dropdown.on_select = handle_select
+    if callable(getattr(unit_input, "set_choices", None)):
+        unit_input.on_change = handle_select
+    else:
+        dropdown.on_select = handle_select
     return handle_select
+
+
+def build_upward_choice_input(
+    label: str,
+    value: Any,
+    choices: list[Any] | tuple[Any, ...],
+    *,
+    page: Any,
+    open_control: Callable[[Any], None],
+    close_control: Callable[[Any], None],
+    scroll_mode: Any,
+) -> Any:
+    """Opaque, aligned bottom-sheet selector shared by mobile forms."""
+    control = mobile_text_field(label, value or "", expand=True)
+    field = control.field
+    field.read_only = True
+    field.show_cursor = False
+    field.can_request_focus = False
+    field.suffix_icon = ft.Icons.ARROW_DROP_DOWN
+    control.choice_values = []
+
+    def set_choices(values):
+        clean = [str(item).strip() for item in values if str(item).strip()]
+        control.choice_values = clean
+        field.hint_text = "无可选项" if not clean else "请选择"
+        if len(clean) == 1:
+            control.value = clean[0]
+        elif str(control.value or "") not in clean:
+            control.value = ""
+
+    def open_choices(e=None):
+        values = list(control.choice_values)
+        if not values:
+            return
+        set_input_focused(False)
+        choice_sheet = None
+
+        def choose(selected_value):
+            control.value = selected_value
+            close_control(choice_sheet)
+            handler = control.on_change
+            if callable(handler):
+                handler(None)
+            else:
+                page.update()
+
+        rows = [ft.Container(
+            content=ft.Text(
+                item,
+                size=16,
+                color=TEXT,
+                weight="bold" if item == control.value else None,
+                max_lines=1,
+                overflow="ellipsis",
+            ),
+            height=50,
+            padding=ft.Padding(left=18, top=0, right=18, bottom=0),
+            alignment=ft.Alignment.CENTER_LEFT,
+            bgcolor=PRIMARY_SOFT if item == control.value else "#FFFFFF",
+            border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
+            ink=True,
+            on_click=lambda event, selected=item: choose(selected),
+        ) for item in values]
+        safe_bottom_spacer = ft.Container(height=28, bgcolor="#FFFFFF", data="upward-choice-safe-bottom")
+        list_height = min(330, max(78, len(rows) * 50 + 28))
+        choice_sheet = ft.BottomSheet(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text(label, size=18, weight="bold", color=TEXT),
+                            ft.IconButton(
+                                icon=ft.Icons.CLOSE,
+                                tooltip="关闭",
+                                on_click=lambda event: close_control(choice_sheet),
+                            ),
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        padding=ft.Padding(left=18, top=4, right=8, bottom=4),
+                        bgcolor="#FFFFFF",
+                    ),
+                    ft.Column(
+                        [*rows, safe_bottom_spacer],
+                        height=list_height,
+                        spacing=0,
+                        scroll=scroll_mode,
+                    ),
+                ], spacing=0, tight=True),
+                bgcolor="#FFFFFF",
+                border_radius=ft.BorderRadius(top_left=16, top_right=16, bottom_left=0, bottom_right=0),
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            ),
+            bgcolor="#FFFFFF",
+            barrier_color="#66000000",
+            dismissible=True,
+            draggable=True,
+            show_drag_handle=True,
+            use_safe_area=True,
+            data="upward-choice-sheet",
+        )
+        open_control(choice_sheet)
+
+    control.set_choices = set_choices
+    control.open_choice_panel = open_choices
+    field.on_click = open_choices
+    set_choices(choices)
+    return control
 
 
 @dataclass(frozen=True)
@@ -217,108 +338,15 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         dialog_width = responsive_width()
 
         def upward_choice_input(label, value, choices):
-            """Opaque bottom choice sheet used instead of Android's transparent popup."""
-            control = mobile_text_field(label, value or "", expand=True)
-            field = control.field
-            field.read_only = True
-            field.show_cursor = False
-            field.can_request_focus = False
-            field.suffix_icon = ft.Icons.ARROW_DROP_DOWN
-            control.choice_values = []
-
-            def set_choices(values):
-                clean = [str(item).strip() for item in values if str(item).strip()]
-                control.choice_values = clean
-                field.hint_text = "无匹配食物" if not clean else "请选择"
-                if len(clean) == 1:
-                    control.value = clean[0]
-                elif str(control.value or "") not in clean:
-                    control.value = ""
-
-            def open_choices(e=None):
-                values = list(control.choice_values)
-                if not values:
-                    return
-                set_input_focused(False)
-                choice_sheet = None
-
-                def choose(selected_value):
-                    control.value = selected_value
-                    close_control(choice_sheet)
-                    handler = control.on_change
-                    if callable(handler):
-                        handler(None)
-                    else:
-                        page.update()
-
-                rows = [ft.Container(
-                    content=ft.Text(
-                        item,
-                        size=16,
-                        color=TEXT,
-                        weight="bold" if item == control.value else None,
-                        max_lines=1,
-                        overflow="ellipsis",
-                    ),
-                    height=50,
-                    padding=ft.Padding(left=18, top=0, right=18, bottom=0),
-                    alignment=ft.Alignment.CENTER_LEFT,
-                    bgcolor=PRIMARY_SOFT if item == control.value else "#FFFFFF",
-                    border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
-                    ink=True,
-                    on_click=lambda event, selected=item: choose(selected),
-                ) for item in values]
-                # Keep the final option above Android's gesture/navigation
-                # area. The spacer scrolls into view after the last row.
-                safe_bottom_spacer = ft.Container(
-                    height=28,
-                    bgcolor="#FFFFFF",
-                    data="upward-choice-safe-bottom",
-                )
-                list_height = min(330, max(78, len(rows) * 50 + 28))
-                choice_sheet = ft.BottomSheet(
-                    content=ft.Container(
-                        content=ft.Column([
-                            ft.Container(
-                                content=ft.Row([
-                                    ft.Text(label, size=18, weight="bold", color=TEXT),
-                                    ft.IconButton(
-                                        icon=ft.Icons.CLOSE,
-                                        tooltip="关闭",
-                                        on_click=lambda event: close_control(choice_sheet),
-                                    ),
-                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                                padding=ft.Padding(left=18, top=4, right=8, bottom=4),
-                                bgcolor="#FFFFFF",
-                            ),
-                            ft.Column(
-                                [*rows, safe_bottom_spacer],
-                                height=list_height,
-                                spacing=0,
-                                scroll=_SCROLL_HIDDEN,
-                            ),
-                        ], spacing=0, tight=True),
-                        bgcolor="#FFFFFF",
-                        border_radius=ft.BorderRadius(
-                            top_left=16, top_right=16, bottom_left=0, bottom_right=0
-                        ),
-                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                    ),
-                    bgcolor="#FFFFFF",
-                    barrier_color="#66000000",
-                    dismissible=True,
-                    draggable=True,
-                    show_drag_handle=True,
-                    use_safe_area=True,
-                    data="upward-choice-sheet",
-                )
-                open_control(choice_sheet)
-
-            control.set_choices = set_choices
-            control.open_choice_panel = open_choices
-            field.on_click = open_choices
-            set_choices(choices)
-            return control
+            return build_upward_choice_input(
+                label,
+                value,
+                choices,
+                page=page,
+                open_control=open_control,
+                close_control=close_control,
+                scroll_mode=_SCROLL_HIDDEN,
+            )
 
         meal_dd = upward_choice_input("餐次", default_meal, MEALS)
         search = mobile_text_field("搜索食物", expand=True)
@@ -522,7 +550,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             "unit": "单位",
             "method": "计量口径",
             "base_qty": "基准数量",
-            "kcal": "热量 kcal",
+            "kcal": "热量",
             "carb": "碳水 g",
             "protein": "蛋白 g",
             "fat": "脂肪 g",
@@ -540,11 +568,23 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         unit_values = FOOD_UNIT_PRESETS
         current_unit = str(item.get("unit", "g") or "g")
         custom_unit_selected = current_unit not in unit_values
-        fields["unit"] = mobile_dropdown(
+        fields["unit"] = build_upward_choice_input(
             "单位",
             CUSTOM_UNIT_OPTION if custom_unit_selected else current_unit,
-            [ft.dropdown.Option(value) for value in (*unit_values, CUSTOM_UNIT_OPTION)],
-            expand=True,
+            (*unit_values, CUSTOM_UNIT_OPTION),
+            page=page,
+            open_control=open_control,
+            close_control=close_control,
+            scroll_mode=_SCROLL_HIDDEN,
+        )
+        fields["energy_unit"] = build_upward_choice_input(
+            "热量单位",
+            ENERGY_UNIT_PRESETS[0],
+            ENERGY_UNIT_PRESETS,
+            page=page,
+            open_control=open_control,
+            close_control=close_control,
+            scroll_mode=_SCROLL_HIDDEN,
         )
         fields["custom_unit"] = mobile_text_field(
             "自定义单位",
@@ -573,18 +613,19 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
 
             data = {k: (fields[k].value or "").strip() for k in ["name", "category", "method"]}
             data["unit"] = selected_unit
-            for k in ["base_qty", "kcal", "carb", "protein", "fat"]:
+            data["kcal"] = normalize_food_energy(fields["kcal"].value, fields["energy_unit"].value)
+            for k in ["base_qty", "carb", "protein", "fat"]:
                 data[k] = to_float(fields[k].value)
 
             if editing:
-                foods[edit_index] = data
+                foods[edit_index] = {**item, **data}
             else:
                 if any(f.get("name") == name for f in foods):
                     snack("食物已存在")
                     return
                 foods.append(data)
 
-            repositories.foods.save(foods)
+            repositories.foods.save(serialize_user_foods(foods))
             close_control(dlg)
             refresh()
             snack("食物库已保存")
@@ -598,8 +639,8 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                 quantity_unit_grid(fields["base_qty"], fields["unit"], viewport_width=dialog_width),
                 custom_unit_holder, fields["method"],
                 section_title("营养数据"),
-                two_field_grid(fields["kcal"], fields["carb"], viewport_width=dialog_width),
-                two_field_grid(fields["protein"], fields["fat"], viewport_width=dialog_width),
+                quantity_unit_grid(fields["kcal"], fields["energy_unit"], viewport_width=dialog_width),
+                three_field_grid(fields["carb"], fields["protein"], fields["fat"], viewport_width=dialog_width),
             ],
             confirm,
         )
@@ -616,7 +657,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
     def delete_food(idx):
         if 0 <= idx < len(foods):
             foods.pop(idx)
-            repositories.foods.save(foods)
+            repositories.foods.save(serialize_user_foods(foods))
             refresh()
 
     def render_diet_page():
@@ -624,9 +665,42 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         targets = get_targets()
 
         def set_day(day_name):
-            state["day_type"] = day_name
-            save_current()
-            refresh()
+            if str(state.get("date") or "") < date.today().isoformat():
+                snack("历史日期的已展示目标已锁定，不能直接改档")
+                return
+            snapshot = state.get("training", {}).get("carb_snapshot", {})
+            engine = engine_from_snapshot(snapshot) if isinstance(snapshot, Mapping) else {}
+
+            def apply_day(_=None):
+                state["day_type"] = day_name
+                state["training"]["carb_mode"] = "manual"
+                existing_snapshot = state["training"].get("carb_snapshot")
+                state["training"]["carb_snapshot"] = calculate_app_snapshot(
+                    state,
+                    effective_date=str(state.get("date") or "") or None,
+                    existing=existing_snapshot if isinstance(existing_snapshot, Mapping) else None,
+                    freeze_shown=False,
+                )
+                save_current()
+                refresh()
+
+            if not isinstance(engine, Mapping):
+                apply_day()
+                return
+            prompt = build_manual_switch_prompt(engine, day_name)
+            if not prompt["requires_confirmation"]:
+                apply_day()
+                return
+            confirm = build_dialog(
+                "切换今日目标？",
+                ft.Text(str(prompt["message"])),
+                [
+                    make_button("取消", on_click=lambda e: close_control(confirm), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                    make_button("确认切换", on_click=lambda e: (close_control(confirm), apply_day()), expand=True),
+                ],
+                on_close=lambda e: close_control(confirm),
+            )
+            open_control(confirm)
 
         day_buttons = []
         for day_name in DAY_TYPES:
@@ -636,6 +710,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             [small_text(str(targets.get("profile_message", "请完善个人资料后计算营养目标。")))]
             if not targets.get("is_ready", True)
             else [
+                macro_progress_bar("热量", total["kcal"], target_value=targets["calorie_target"], kind="calorie", width=responsive_bar_width()),
                 macro_progress_bar("碳水", total["carb"], target_min=targets["carb_min"], target_max=targets["carb_max"], kind="carb", width=responsive_bar_width()),
                 macro_progress_bar("蛋白", total["protein"], target_min=targets["protein_min"], target_max=targets["protein_max"], kind="protein", width=responsive_bar_width()),
                 macro_progress_bar("脂肪", total["fat"], target_min=targets["fat_min"], target_max=targets["fat_max"], kind="fat", width=responsive_bar_width()),
@@ -644,7 +719,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         summary = page_card(ft.Column([
             section_title("饮食总览"),
             ft.Row(day_buttons, spacing=7),
-            *target_controls,
+            ft.Column(target_controls, spacing=8),
         ], spacing=8), padding=14)
         active = DietViewState(normalize_diet_view(state.get("current_view")))
 

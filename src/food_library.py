@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from app_defaults import DEFAULT_FOODS
+
 
 _DISH_REMARK = "常见外卖估算（每100g）；餐馆油、糖、酱汁和实际份量会有差异，可编辑。"
 _SEARCH_ALIASES = {
@@ -327,27 +329,127 @@ def _load_offline_catalog() -> list[dict[str, Any]]:
 
 
 FOOD_LIBRARY = [*_curated_dishes(), *_load_offline_catalog()]
-FOOD_CATEGORIES = tuple(dict.fromkeys(str(item.get("category") or "其他") for item in FOOD_LIBRARY))
+DELETED_SYSTEM_FOOD_KEY = "_deleted_system_food"
+
+
+def _food_name(item: Mapping[str, Any]) -> str:
+    return str(item.get("name") or "").strip().casefold()
+
+
+def _food_key(item: Mapping[str, Any]) -> str:
+    for field in ("id", "food_code"):
+        value = str(item.get(field) or "").strip()
+        if value:
+            return f"{field}:{value.casefold()}"
+    return f"name:{_food_name(item)}"
+
+
+def _find_food_index(items: list[dict[str, Any]], change: Mapping[str, Any]) -> int | None:
+    change_key = _food_key(change)
+    if not change_key.startswith("name:"):
+        exact = next((index for index, item in enumerate(items) if _food_key(item) == change_key), None)
+        if exact is not None:
+            return exact
+    name = _food_name(change)
+    return next((index for index, item in enumerate(items) if _food_name(item) == name), None)
+
+
+def apply_food_changes(
+    base_foods: Iterable[Mapping[str, Any]],
+    changes: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Apply user food upserts and system-food tombstones to a visible catalog."""
+    visible = [dict(item) for item in base_foods if isinstance(item, Mapping)]
+    for raw in changes:
+        if not isinstance(raw, Mapping):
+            continue
+        deleted_key = str(raw.get(DELETED_SYSTEM_FOOD_KEY) or "").strip()
+        if deleted_key:
+            visible = [item for item in visible if _food_key(item) != deleted_key]
+            continue
+        item = dict(raw)
+        if not _food_name(item):
+            continue
+        index = _find_food_index(visible, item)
+        if index is None:
+            visible.insert(0, item)
+        else:
+            visible[index] = item
+    return visible
+
+
+BUNDLED_FOOD_LIBRARY = apply_food_changes(FOOD_LIBRARY, DEFAULT_FOODS)
+FOOD_CATEGORIES = tuple(dict.fromkeys(str(item.get("category") or "其他") for item in BUNDLED_FOOD_LIBRARY))
 
 
 def food_catalog(user_foods: Iterable[Mapping[str, Any]] = ()) -> list[dict[str, Any]]:
-    """Merge persisted user foods over the bundled offline library by name."""
-    merged = {str(item.get("name") or "").strip().casefold(): dict(item) for item in FOOD_LIBRARY}
-    ordered = [dict(item) for item in FOOD_LIBRARY]
-    for raw in user_foods:
-        item = dict(raw)
-        name = str(item.get("name") or "").strip()
-        if not name:
+    """Merge persisted user changes over the bundled offline library."""
+    return apply_food_changes(BUNDLED_FOOD_LIBRARY, user_foods)
+
+
+def split_user_food_changes(
+    current_foods: Iterable[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Return user upserts and deleted bundled-food keys from a visible catalog."""
+    baseline = [dict(item) for item in BUNDLED_FOOD_LIBRARY]
+    baseline_by_key = {_food_key(item): item for item in baseline}
+    keys_by_name: dict[str, list[str]] = {}
+    for item in baseline:
+        keys_by_name.setdefault(_food_name(item), []).append(_food_key(item))
+
+    matched: set[str] = set()
+    upserts: list[dict[str, Any]] = []
+    for raw in current_foods:
+        if not isinstance(raw, Mapping) or raw.get(DELETED_SYSTEM_FOOD_KEY):
             continue
-        key = name.casefold()
-        if key in merged:
-            index = next((i for i, candidate in enumerate(ordered) if str(candidate.get("name") or "").strip().casefold() == key), None)
-            if index is not None:
-                ordered[index] = item
-        else:
-            ordered.insert(0, item)
-        merged[key] = item
-    return ordered
+        item = dict(raw)
+        if not _food_name(item):
+            continue
+        item_key = _food_key(item)
+        baseline_key = item_key if item_key in baseline_by_key and item_key not in matched else None
+        if baseline_key is None:
+            candidates = [key for key in keys_by_name.get(_food_name(item), ()) if key not in matched]
+            if candidates:
+                baseline_key = next((key for key in candidates if key.startswith("name:")), candidates[0])
+        if baseline_key is None:
+            upserts.append(item)
+            continue
+        matched.add(baseline_key)
+        if item != baseline_by_key[baseline_key]:
+            upserts.append(item)
+
+    deleted = [_food_key(item) for item in baseline if _food_key(item) not in matched]
+    return upserts, deleted
+
+
+def serialize_user_foods(current_foods: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Persist only user-created/edited foods plus deletion tombstones."""
+    upserts, deleted = split_user_food_changes(current_foods)
+    return [*upserts, *({DELETED_SYSTEM_FOOD_KEY: key} for key in deleted)]
+
+
+def legacy_user_food_changes(imported_foods: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Extract likely user changes from an old backup that contained the full catalog."""
+    baseline_by_key = {_food_key(item): item for item in BUNDLED_FOOD_LIBRARY}
+    changes: list[dict[str, Any]] = []
+    for raw in imported_foods:
+        if not isinstance(raw, Mapping):
+            continue
+        item = dict(raw)
+        if item.get(DELETED_SYSTEM_FOOD_KEY):
+            changes.append(item)
+            continue
+        key = _food_key(item)
+        baseline = baseline_by_key.get(key)
+        if baseline is not None:
+            # Old editors removed bundled IDs when a food was edited. An item
+            # that still carries a known bundled ID is therefore catalog data,
+            # not a user override, even if the bundled catalog has since changed.
+            if not key.startswith("name:") or item == baseline:
+                continue
+        if _food_name(item):
+            changes.append(item)
+    return changes
 
 
 def search_foods(query: str = "", category: str | None = None, foods: Iterable[Mapping[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -381,4 +483,8 @@ def search_foods(query: str = "", category: str | None = None, foods: Iterable[M
     return [item for _score, _index, item in ranked]
 
 
-__all__ = ["FOOD_CATEGORIES", "FOOD_LIBRARY", "food_catalog", "search_foods"]
+__all__ = [
+    "BUNDLED_FOOD_LIBRARY", "DELETED_SYSTEM_FOOD_KEY", "FOOD_CATEGORIES", "FOOD_LIBRARY", "apply_food_changes",
+    "food_catalog", "legacy_user_food_changes", "search_foods", "serialize_user_foods",
+    "split_user_food_changes",
+]

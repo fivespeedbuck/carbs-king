@@ -33,10 +33,12 @@ from analytics_model import (  # noqa: E402
 )
 from analytics_trend_views import (  # noqa: E402
     _InitiallyLatestRow,
+    _SelectedChoiceRow,
     _render_readable_chart,
     _smooth_path_elements,
     _trend_statistics,
 )
+from ui_components import PRIMARY  # noqa: E402
 
 
 def completed_set(weight=50, reps=10):
@@ -676,6 +678,33 @@ class AnalyticsViewModelTests(unittest.TestCase):
         self.assertFalse(_InitiallyLatestRow.should_auto_scroll(key))
         self.assertTrue(_InitiallyLatestRow.should_auto_scroll("bodyfat:90:2026-04-25:2026-07-23"))
 
+    def test_rebuilt_horizontal_selector_scrolls_selected_option_into_view(self):
+        scroller = _SelectedChoiceRow([], selected_control_key="analytics-exercise:哑铃站姿二头弯举")
+        scroll_calls = []
+
+        async def capture_scroll(**kwargs):
+            scroll_calls.append(kwargs)
+
+        scroller.scroll_to = capture_scroll
+        asyncio.run(scroller._show_selected())
+        self.assertEqual(scroll_calls, [{"scroll_key": "analytics-exercise:哑铃站姿二头弯举", "duration": 0}])
+
+    def test_rebuilt_horizontal_selector_restores_saved_user_offset(self):
+        scroller = _SelectedChoiceRow(
+            [],
+            selected_control_key="analytics-exercise:哑铃站姿二头弯举",
+            scroll_state_key="exercise",
+            scroll_offset=240,
+        )
+        scroll_calls = []
+
+        async def capture_scroll(**kwargs):
+            scroll_calls.append(kwargs)
+
+        scroller.scroll_to = capture_scroll
+        asyncio.run(scroller._restore_scroll())
+        self.assertEqual(scroll_calls, [{"offset": 240.0, "duration": 0}])
+
     def test_selected_long_period_point_gets_an_explicit_scroll_target(self):
         records = {
             "2026-04-25": {"profile": {"measurement": {"weight_kg": 75, "measured_at": "2026-04-25T08:00:00"}}},
@@ -1002,6 +1031,76 @@ class AnalyticsFletViewTests(unittest.TestCase):
 
         self.assertEqual(selected, [30, 90])
 
+    def test_fixed_selector_rows_stay_mounted_while_body_changes(self):
+        view = build_data_page_view({}, end_date="2026-07-23")
+        switch_card = view.controls[1]
+        period_row, tab_row, chart_row = switch_card.content.controls[1:4]
+        weekly_holder, body_holder, raw_holder = view.controls[0], view.controls[2], view.controls[3]
+        identities = tuple(map(id, (period_row, tab_row, chart_row, weekly_holder, body_holder, raw_holder)))
+
+        period_row.controls[1].on_click(None)
+        tab_row.controls[1].on_click(None)
+
+        self.assertEqual(
+            tuple(map(id, (period_row, tab_row, chart_row, weekly_holder, body_holder, raw_holder))),
+            identities,
+        )
+        self.assertFalse(chart_row.visible)
+
+    def test_metric_switch_updates_metric_holder_without_rebuilding_training_extra(self):
+        records = {
+            "2026-07-21": {
+                "training": {
+                    "session": named_session("胸", "卧推", sets=[completed_set(80, 5)]),
+                },
+            },
+        }
+
+        def find(control, data):
+            stack = [control]
+            while stack:
+                current = stack.pop()
+                if getattr(current, "data", None) == data:
+                    return current
+                content = getattr(current, "content", None)
+                if content is not None:
+                    stack.append(content)
+                stack.extend(getattr(current, "controls", []) or [])
+            return None
+
+        def change_metric(value):
+            return build_data_page_model(
+                records,
+                end_date="2026-07-23",
+                config=DataPageConfig(chart_kind="training", metric_key=value),
+            )
+
+        view = build_data_page_view(
+            records,
+            end_date="2026-07-23",
+            config=DataPageConfig(chart_kind="training"),
+            on_metric_change=change_metric,
+        )
+        metric_row = find(view, "analytics-metric-selector")
+        metric_holder = find(view, "analytics-metric-content-holder")
+        extra_holder = find(view, "analytics-training-extra-holder")
+        identities = (id(metric_row), id(metric_holder), id(extra_holder))
+
+        metric_row.controls[1].on_click(None)
+
+        self.assertEqual((id(metric_row), id(metric_holder), id(extra_holder)), identities)
+        self.assertEqual(metric_row.controls[1].bgcolor, PRIMARY)
+        self.assertTrue(metric_holder.controls[0].controls)
+
+    def test_fixed_data_switches_fill_rows_without_async_scroll_restore(self):
+        view = build_data_page_view({}, end_date="2026-07-23")
+        period_row, tab_row, chart_row = view.controls[1].content.controls[1:4]
+
+        for row in (period_row, tab_row, chart_row):
+            self.assertIs(type(row), ft.Row)
+            self.assertNotIsInstance(row, _SelectedChoiceRow)
+            self.assertTrue(all(control.expand for control in row.controls))
+
     def test_calendar_view_accepts_selected_date_callback(self):
         clicked = []
         view = build_data_page_view(
@@ -1022,7 +1121,7 @@ class AnalyticsFletViewTests(unittest.TestCase):
             config=DataPageConfig(active_tab="月历", calendar_month="2026-07"),
             on_calendar_month_change=selected.append,
         )
-        calendar_card = view.controls[2]
+        calendar_card = view.controls[2].controls[0]
         month_row = calendar_card.content.controls[1]
 
         month_row.controls[0].on_click(None)
@@ -1041,6 +1140,64 @@ class AnalyticsFletViewTests(unittest.TestCase):
 
         self.assertEqual(view.__class__.__name__, "Column")
         self.assertEqual(len(view.controls), 4)
+
+    def test_action_switch_updates_existing_rows_in_place(self):
+        records = {
+            "2026-07-20": {"training": {"session": named_session("二头", "绳索弯举", sets=[completed_set(20, 12)])}},
+            "2026-07-21": {"training": {"session": named_session("三头", "绳索反握下压", sets=[completed_set(35, 12)])}},
+        }
+        selected = {"value": "绳索反握下压"}
+
+        def change_action(value):
+            selected["value"] = value
+            return build_data_page_model(
+                records,
+                end_date="2026-07-23",
+                config=DataPageConfig(
+                    chart_kind="training",
+                    action_trend_open=True,
+                    selected_exercise=value,
+                ),
+            )
+
+        view = build_data_page_view(
+            records,
+            end_date="2026-07-23",
+            config=DataPageConfig(
+                chart_kind="training",
+                action_trend_open=True,
+                selected_exercise=selected["value"],
+            ),
+            on_selected_exercise_change=change_action,
+        )
+
+        def find(data):
+            stack = [view]
+            while stack:
+                control = stack.pop()
+                if getattr(control, "data", None) == data:
+                    return control
+                content = getattr(control, "content", None)
+                if content is not None:
+                    stack.append(content)
+                stack.extend(getattr(control, "controls", []) or [])
+            return None
+
+        upper_metric_row = find("analytics-metric-selector")
+        action_row = find("analytics-exercise-selector")
+        metrics_holder = find("analytics-exercise-metrics-holder")
+        identities = (id(upper_metric_row), id(action_row), id(metrics_holder))
+        target = next(control for control in action_row.controls if control.key == "analytics-exercise:绳索弯举")
+
+        target.on_click(None)
+
+        self.assertEqual(selected["value"], "绳索弯举")
+        self.assertEqual((id(upper_metric_row), id(action_row), id(metrics_holder)), identities)
+        self.assertEqual(target.bgcolor, PRIMARY)
+        self.assertIn("20kg", self._text_values(metrics_holder))
+
+        target.on_click(None)
+        self.assertEqual(selected["value"], "绳索弯举")
 
     def test_main_hook_snippet_uses_single_reusable_component(self):
         hook = build_main_data_page_hook()

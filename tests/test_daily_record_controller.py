@@ -1,6 +1,7 @@
 import ast
 import sys
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 
@@ -27,11 +28,12 @@ class MemoryRepository:
         self.value = value
 
 
-def build_controller(records=None, *, on_records_changed=None):
+def build_controller(records=None, *, on_records_changed=None, profile=None, today=None):
     state = AppState.default(MEALS)
     records = records or {}
     repository = MemoryRepository(records)
-    repositories = AppRepositories(repository, MemoryRepository([]), MemoryRepository([]), MemoryRepository({}), MemoryRepository({}))
+    profile_repository = MemoryRepository(profile or {})
+    repositories = AppRepositories(repository, MemoryRepository([]), MemoryRepository([]), profile_repository, MemoryRepository({}))
     events = []
     controller = DailyRecordController(DailyRecordDependencies(
         state=state,
@@ -39,13 +41,14 @@ def build_controller(records=None, *, on_records_changed=None):
         records=records,
         nutrition=create_nutrition_service(state),
         meals=MEALS,
-        load_profile=lambda: {},
+        load_profile=profile_repository.load,
         sleep_total_minutes=lambda: 450,
         format_minutes=lambda value: f"{value // 60}小时{value % 60}分",
         restore_training_cursor=lambda: events.append("cursor"),
         refresh=lambda: events.append("refresh"),
         snack=lambda message: events.append(message),
         on_records_changed=on_records_changed or (lambda: None),
+        today=today or date.today,
     ))
     return controller, state, repository, events
 
@@ -85,6 +88,49 @@ class DailyRecordControllerTests(unittest.TestCase):
         self.assertEqual(len(state["meals"]["早餐"]), 1)
         self.assertEqual(state["training"]["sessions"], [])
         self.assertEqual(events[-2:], ["cursor", "refresh"])
+
+    def test_today_save_persists_phase_and_stages_eligible_refresh_for_tomorrow(self):
+        as_of = date.today()
+        records = {}
+        for index in range(12):
+            record_date = as_of - timedelta(days=22 - index * 2)
+            records[record_date.isoformat()] = {"profile": {"measurement": {
+                "measured_at": f"{record_date.isoformat()}T07:30:00",
+                "weight_kg": 78 - index * 0.05,
+                "weight_measured": True,
+            }}}
+        controller, state, repository, _ = build_controller(records, today=lambda: as_of)
+        state.update({
+            "date": as_of.isoformat(), "weight": "77.45", "bodyfat": "20",
+            "bodyfat_measured_at": f"{as_of.isoformat()}T07:30:00", "height": "175",
+            "age": "31", "sex": "男", "activity_habit": "规律训练",
+            "macro_goal": "保持", "macro_mode": "auto",
+        })
+        state["measurement"] = {
+            "measured_at": f"{as_of.isoformat()}T07:30:00", "weight_kg": 77.45,
+            "bodyfat_percent": 20, "weight_measured": True, "bodyfat_measured": True,
+        }
+
+        controller.save()
+
+        phase = controller.deps.repositories.profile.load()["carb_phase"]
+        self.assertIn("pending_refresh", phase)
+        self.assertEqual(phase["pending_refresh"]["effective_from"], (as_of + timedelta(days=1)).isoformat())
+        self.assertEqual(phase["pending_refresh"]["previous_phase_id"], phase["phase_id"])
+        self.assertNotIn("pending_refresh", repository.value[as_of.isoformat()]["profile"]["carb_phase"])
+        shown_phase = state["training"]["carb_snapshot"]["shown_target_snapshot"]["profile_facts"]["phase_id"]
+        self.assertEqual(shown_phase, phase["phase_id"])
+
+    def test_historical_load_uses_record_phase_without_overwriting_current_profile_phase(self):
+        old_phase = {"phase_id": "phase-old", "goal": "recomp", "effective_from": "2026-07-01"}
+        current_phase = {"phase_id": "phase-current", "goal": "recomp", "effective_from": "2026-08-01"}
+        records = {"2026-07-15": {"profile": {"macro_goal": "保持", "carb_phase": old_phase}}}
+        controller, state, _, _ = build_controller(records, profile={"macro_goal": "保持", "carb_phase": current_phase})
+
+        controller.load("2026-07-15")
+
+        self.assertEqual(state["carb_phase"], old_phase)
+        self.assertEqual(controller.deps.repositories.profile.load()["carb_phase"], current_phase)
 
     def test_calendar_event_survives_followup_diet_save(self):
         controller, state, repository, _ = build_controller()

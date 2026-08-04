@@ -124,11 +124,12 @@ class TrainingPlanViewContractsTests(unittest.TestCase):
         self.assertIn('f"{len(sets)}组"', helper)
         self.assertIn('f"{to_float(first.get(\'weight_kg\')):g} kg ×', helper)
 
-    def test_native_reorder_list_has_one_visible_handle_and_full_card_drag_region(self):
+    def test_native_reorder_list_uses_handle_only_so_cards_remain_scrollable(self):
         self.assertIn("ft.ReorderableListView(", SOURCE)
         self.assertIn("show_default_drag_handles=False", SOURCE)
         self.assertIn("ft.ReorderableDragHandle", SOURCE)
-        self.assertIn('data="action-arrangement-drag-region"', SOURCE)
+        self.assertNotIn('data="action-arrangement-drag-region"', SOURCE)
+        self.assertIn("block_controls.append(row_card)", SOURCE)
         self.assertIn("auto_scroll=True", SOURCE)
         self.assertIn("on_reorder=reorder_blocks", SOURCE)
         self.assertIn("reorder_exercise(dragged_id, target_id)", SOURCE)
@@ -328,7 +329,7 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
         )
         self.assertEqual(len(manager.controls), 1)
         self.assertEqual(manager.controls[0].data, "action-arrangement-group-card")
-        self.assertEqual(manager.controls[0].content.controls[0].data, "action-arrangement-group-drag-region")
+        self.assertIsInstance(manager.controls[0].content.controls[0].controls[1], ft.ReorderableDragHandle)
         member_list = manager.controls[0].content.controls[1]
         self.assertEqual(member_list.data, "action-arrangement-group-member-list")
         self.assertFalse(member_list.show_default_drag_handles)
@@ -338,7 +339,7 @@ class TodayCompletedTrainingViewTests(unittest.TestCase):
         self.assertEqual(member_list.height, 218)
         member_list.on_reorder(type("ReorderEvent", (), {"old_index": 0, "new_index": 1})())
         self.assertEqual(member_reorders, [("a", "b")])
-        first_member_row = member_list.controls[0].content.content.content
+        first_member_row = member_list.controls[0].content.content
         first_member_title = first_member_row.controls[1].controls[0]
         self.assertEqual(first_member_title.data, "action-group-member-title")
         self.assertLess(first_member_title.size, 15)

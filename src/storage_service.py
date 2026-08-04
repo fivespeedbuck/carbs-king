@@ -142,6 +142,7 @@ def load_user_profile():
     default = {
         "weight": "",
         "bodyfat": "",
+        "bodyfat_measured_at": "",
         "height": "",
         "age": "",
         "age_reference_year": 0,
@@ -156,6 +157,7 @@ def load_user_profile():
         "calf_cm": "",
         "macro_mode": "auto",
         "macro_goal": "减脂",
+        "carb_phase": {},
         "macro_multipliers": DEFAULT_MACRO_MULTIPLIERS,
         "custom_macro_multipliers": DEFAULT_MACRO_MULTIPLIERS,
         "auto_macro_multipliers": DEFAULT_MACRO_MULTIPLIERS,
@@ -198,6 +200,8 @@ def load_user_profile():
         data["macro_mode"] = "auto"
     if data.get("macro_goal") not in ["减脂", "保持", "增肌"]:
         data["macro_goal"] = "减脂"
+    if not isinstance(data.get("carb_phase"), dict):
+        data["carb_phase"] = {}
     # 年龄不保存生日，按每年元旦递增。旧版本没有参考年份时从首次读取年份开始计算，
     # 避免在升级当天凭空补算多年年龄；之后每次跨年只会递增一次并写回。
     if normalize_profile_age(data):

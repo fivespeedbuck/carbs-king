@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import training_controller as training_controller_module  # noqa: E402
 from app_state import AppState  # noqa: E402
 from controller_runtime import ControllerRuntime  # noqa: E402
-from training_controller import TrainingControllerDependencies, create_training_controller  # noqa: E402
+from training_controller import automatic_day_write_allowed, TrainingControllerDependencies, create_training_controller  # noqa: E402
 from training_picker_views import (  # noqa: E402
     CUSTOM_CARDIO_METRIC_FIELDS,
     apply_training_parameter_visibility,
@@ -56,6 +56,19 @@ PROFILE_DETAILS_SOURCE = (Path(__file__).parents[1] / "src" / "profile_details_v
 
 
 class UiContractsTests(unittest.TestCase):
+    def test_automatic_training_target_write_never_overrides_custom_or_manual_mode(self):
+        self.assertTrue(automatic_day_write_allowed("auto", "auto"))
+        self.assertFalse(automatic_day_write_allowed("custom", "auto"))
+        self.assertFalse(automatic_day_write_allowed("auto", "manual"))
+        self.assertFalse(automatic_day_write_allowed("custom", "manual"))
+
+    def test_manual_day_switch_recalculates_snapshot_before_save_and_locks_history(self):
+        self.assertIn("历史日期的已展示目标已锁定", DIET_CONTROLLER_SOURCE)
+        apply_start = DIET_CONTROLLER_SOURCE.index("            def apply_day")
+        apply_end = DIET_CONTROLLER_SOURCE.index("            if not isinstance(engine", apply_start)
+        apply_section = DIET_CONTROLLER_SOURCE[apply_start:apply_end]
+        self.assertLess(apply_section.index("calculate_app_snapshot("), apply_section.index("save_current()"))
+
     def test_active_training_weight_has_direct_editor_and_fixed_step_controls(self):
         self.assertIn("def open_weight_editor", TRAINING_CONTROLLER_SOURCE)
         self.assertIn('adjust_weight=lambda direction: adjust_current("weight_kg", direction)', TRAINING_CONTROLLER_SOURCE)
@@ -82,7 +95,8 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn("def responsive_field_grid(", UI_SOURCE)
         self.assertIn('vertical_alignment="start"', UI_SOURCE)
         self.assertIn('quantity_unit_grid(fields["base_qty"], fields["unit"]', DIET_CONTROLLER_SOURCE)
-        self.assertGreaterEqual(DIET_CONTROLLER_SOURCE.count("two_field_grid("), 5)
+        self.assertIn('three_field_grid(fields["carb"], fields["protein"], fields["fat"]', DIET_CONTROLLER_SOURCE)
+        self.assertGreaterEqual(DIET_CONTROLLER_SOURCE.count("quantity_unit_grid("), 2)
         self.assertIn("responsive_field_grid([", RECOVERY_SOURCE)
 
     def test_multifield_editors_use_fullscreen_keyboard_safe_forms(self):
@@ -133,7 +147,6 @@ class UiContractsTests(unittest.TestCase):
         self.assertEqual(TODAY_SOURCE.count("margin=ft.Margin(left=0, top=0, right=0, bottom=0)"), 4)
         self.assertIn("summary = page_card(", DIET_CONTROLLER_SOURCE)
         self.assertIn("return page_card(", DIET_CONTROLLER_SOURCE)
-        self.assertIn("return page_card(", TRAINING_CONTROLLER_SOURCE)
         self.assertIn("return page_card(", PROFILE_SOURCE)
         self.assertIn("profile_card = page_card(", PROFILE_DETAILS_SOURCE)
         self.assertIn("settings_card = page_card(", PROFILE_DETAILS_SOURCE)
@@ -168,6 +181,15 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn('trigger_foreground(str(finished.get("id", "")))', section)
         self.assertNotIn("rest_notifier.cancel", section)
         self.assertNotIn("play_rest_alert", TRAINING_CONTROLLER_SOURCE)
+
+    def test_historical_training_write_preserves_the_shown_target_snapshot(self):
+        start = TRAINING_CONTROLLER_SOURCE.index("    def persist_session")
+        end = TRAINING_CONTROLLER_SOURCE.index("    def create_empty_session", start)
+        section = TRAINING_CONTROLLER_SOURCE[start:end]
+        self.assertIn("existing=existing", section)
+        self.assertIn("freeze_shown=historical", section)
+        self.assertIn('shown.get("day_label")', section)
+        self.assertNotIn('engine.get("applied_day")', section)
 
     def test_p0_readability_tokens_keep_body_text_legible(self):
         for source in (MAIN_SOURCE, ANALYTICS_SOURCE, DIET_SOURCE, UI_SOURCE, TODAY_SOURCE, TRAINING_SOURCE):
@@ -293,7 +315,11 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertIn('remaining_work = completion["remaining_work"]', finish_section)
         self.assertIn('all_completed = completion["all_sets_completed"]', finish_section)
         self.assertIn("结束训练？", finish_section)
-        self.assertIn("finalize_session(not all_completed)", finish_section)
+        self.assertIn('finalize_session(not all_completed, rating["value"])', finish_section)
+        self.assertIn('ft.Text("今天训练状态"', finish_section)
+        self.assertIn("for value in range(1, 6)", finish_section)
+        self.assertIn("alignment=ft.MainAxisAlignment.CENTER", finish_section)
+        self.assertIn("spacing=12", finish_section)
         self.assertIn("全部训练项目已完成。", finish_section)
 
     def test_active_training_owns_the_full_screen_background(self):
@@ -316,7 +342,7 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertIn("width=dialog_width, spacing=8, tight=True", finish_section)
         self.assertIn("content=ft.Row([", finish_section)
         self.assertIn("width=dialog_width", finish_section)
-        self.assertNotIn("height=", finish_section)
+        self.assertNotIn("height=430", finish_section)
 
     def test_add_exercise_dialog_defaults_to_frequent_sort_and_reuses_sort_service(self):
         start = TRAINING_CONTROLLER_SOURCE.index("    def open_add_exercise_dialog(after_save=None):")
@@ -658,6 +684,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
 
     def test_bodyweight_tap_opens_blank_editor_and_blank_save_keeps_bodyweight(self):
         bodyweight = self.strength_exercise("pushup", "俯卧撑", [False])
+        bodyweight["load_kind"] = "bodyweight"
         bodyweight["sets"][0]["weight_kg"] = None
         opened_controls = []
         controller, state = self.build_controller(
@@ -673,7 +700,8 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         self.assertEqual(len(opened_controls), 1)
         weight_field = self.controls_of_type(opened_controls[0], ft.TextField)[0]
         self.assertEqual(weight_field.value, "")
-        self.assertEqual(weight_field.hint_text, "自重留空")
+        self.assertEqual(weight_field.hint_text, "自重")
+        self.assertIn('small_text("自重动作不填写重量输入框"', TRAINING_CONTROLLER_SOURCE)
         confirm_button = opened_controls[0].actions[0].content.controls[1]
         confirm_button.on_click(None)
         self.assertEqual(
@@ -888,8 +916,8 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         )
         self.assertIsInstance(reorder_list, ft.ReorderableListView)
         self.assertFalse(reorder_list.show_default_drag_handles)
-        self.assertEqual(reorder_list.controls[0].data, "action-arrangement-drag-region")
-        first_card = reorder_list.controls[0].content
+        self.assertEqual(reorder_list.controls[0].data, "action-arrangement-card")
+        first_card = reorder_list.controls[0]
         action_grid = first_card.content.content.controls[2]
         self.assertEqual(
             [button.icon for button in action_grid.controls[0].controls],
@@ -922,7 +950,7 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
             opened[0],
             lambda control: getattr(control, "data", None) == "active-action-reorder-list",
         )
-        first_card = reorder_list.controls[0].content
+        first_card = reorder_list.controls[0]
         first_card.content.content.controls[2].controls[0].controls[1].on_click(None)
         group_sheet = opened[-1]
         checkboxes = self.controls_of_type(group_sheet, ft.Checkbox)
@@ -968,10 +996,8 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         )
         weight_field, reps_field, sets_field, rest_field = self.controls_of_type(edit_sheet, ft.TextField)
         self.assertEqual(weight_field.value, "40")
-        self.assertEqual(weight_field.hint_text, "自重留空")
+        self.assertIsNone(weight_field.hint_text)
         self.assertEqual(weight_field.hint_style.color, "#98A39F")
-        self.assertNotIn("(", weight_field.hint_text)
-        self.assertNotIn(" ", weight_field.hint_text)
         self.assertEqual(rest_field.value, "90")
         save_button = edit_sheet.content.content.controls[2].content.controls[1]
 

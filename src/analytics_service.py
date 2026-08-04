@@ -17,6 +17,7 @@ from training_models import normalize_recording_mode
 
 BODY_PART_ORDER = ("胸", "背", "肩", "腿", "二头", "三头", "腹", "有氧")
 DAY_TYPES = {"高碳日", "中碳日", "低碳日"}
+CIRCUMFERENCE_METRIC_KEYS = ("chest_cm", "waist_cm", "hip_cm", "arm_cm", "thigh_cm", "calf_cm")
 
 _BODY_PART_ALIASES = {
     "胸": "胸", "胸部": "胸", "胸大肌": "胸",
@@ -359,6 +360,88 @@ def normalize_body_measurement(record: Any, record_date: str = "") -> dict[str, 
         "is_bodyfat_measured": is_bodyfat_measured,
         "is_measured": is_weight_measured or is_bodyfat_measured,
     }
+
+
+def latest_explicit_measurements(
+    records: Any,
+    *,
+    as_of_date: str | date | None = None,
+) -> dict[str, Any]:
+    """Return the latest explicit body and circumference measurements by metric.
+
+    Profile fields are carried values, not new measurements.  Only timestamped
+    daily records participate, so this projection cannot invent a measurement
+    or turn an old profile value into a current one.
+    """
+    cutoff = as_of_date if isinstance(as_of_date, date) else None
+    if isinstance(as_of_date, str):
+        try:
+            cutoff = date.fromisoformat(as_of_date)
+        except ValueError:
+            cutoff = None
+    latest: dict[str, Any] = {"weight": None, "bodyfat": None, "circumference": {}}
+    source = records if isinstance(records, Mapping) else {}
+    for raw_date, raw_record in source.items():
+        try:
+            record_day = date.fromisoformat(str(raw_date))
+        except ValueError:
+            continue
+        if cutoff is not None and record_day > cutoff:
+            continue
+        record_date = record_day.isoformat()
+        measurement = normalize_body_measurement(raw_record, record_date)
+        measured_at = str(measurement.get("measured_at") or record_date)
+        order = (record_date, measured_at)
+        for result_key, value_key in (("weight", "weight_kg"), ("bodyfat", "bodyfat_percent")):
+            value = _number(measurement.get(value_key))
+            if value is None:
+                continue
+            previous = latest[result_key]
+            if previous is None or order > (str(previous.get("date")), str(previous.get("measured_at"))):
+                latest[result_key] = {
+                    "value": value,
+                    "date": record_date,
+                    "measured_at": measured_at,
+                }
+
+        profile = _mapping(_mapping(raw_record).get("profile"))
+        circumference = _mapping(profile.get("circumference"))
+        circumference_at = str(circumference.get("measured_at") or "").strip()
+        if not circumference_at:
+            continue
+        for key in CIRCUMFERENCE_METRIC_KEYS:
+            value = _number(circumference.get(key))
+            if value is None:
+                continue
+            previous = latest["circumference"].get(key)
+            if previous is None or order > (str(previous.get("date")), str(previous.get("measured_at"))):
+                latest["circumference"][key] = {
+                    "value": value,
+                    "date": record_date,
+                    "measured_at": circumference_at,
+                }
+    return latest
+
+
+def measurement_age_days(measurement: Mapping[str, Any] | None, *, as_of_date: str | date | None = None) -> int | None:
+    """Return whole days since an explicit measurement, or ``None`` if absent."""
+    if not isinstance(measurement, Mapping):
+        return None
+    raw_date = str(measurement.get("date") or "").strip()
+    try:
+        measured_date = date.fromisoformat(raw_date)
+    except ValueError:
+        return None
+    if isinstance(as_of_date, date):
+        current = as_of_date
+    elif isinstance(as_of_date, str):
+        try:
+            current = date.fromisoformat(as_of_date)
+        except ValueError:
+            current = date.today()
+    else:
+        current = date.today()
+    return (current - measured_date).days
 
 
 def make_body_measurement(

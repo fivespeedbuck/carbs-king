@@ -11,15 +11,18 @@ from ui_components import GREEN, PRIMARY, PRIMARY_SOFT, make_button, section_tit
 
 
 GOAL_OPTIONS = ("减脂", "保持", "增肌")
-GOAL_CALORIE_FACTOR_TEXT = {
-    "减脂": "0.90 / 0.80 / 0.70",
-    "保持": "1.10 / 1.00 / 0.90",
-    "增肌": "1.15 / 1.05 / 0.95",
-}
 
 
-def build_carb_cycle_goal_section(current_goal: str, on_change: Callable[[str], None]) -> ft.Control:
-    return ft.Column([
+def build_carb_cycle_goal_section(
+    current_goal: str,
+    on_change: Callable[[str], None],
+    *,
+    applied_goal: str | None = None,
+    on_apply: Callable[[str], None] | None = None,
+) -> ft.Control:
+    applied = applied_goal or current_goal
+    previewing = current_goal != applied
+    controls: list[ft.Control] = [
         section_title("碳循环目标"),
         ft.Row([
             make_button(
@@ -44,7 +47,19 @@ def build_carb_cycle_goal_section(current_goal: str, on_change: Callable[[str], 
                 expand=True,
             ),
         ], spacing=8),
-    ], spacing=6)
+    ]
+    if previewing:
+        controls.extend([
+            small_text(f"正在预览{current_goal}；当前实际目标仍是{applied}"),
+            make_button(
+                f"应用为当前{current_goal}目标",
+                on_click=lambda e: on_apply(current_goal) if on_apply is not None else None,
+                bgcolor=PRIMARY_SOFT,
+                color=GREEN,
+                expand=True,
+            ),
+        ])
+    return ft.Column(controls, spacing=6)
 
 
 def build_macro_panel(
@@ -57,9 +72,16 @@ def build_macro_panel(
     profile_message: str = "",
     current_goal: str = "减脂",
     on_goal_change: Callable[[str], None] | None = None,
+    applied_goal: str | None = None,
+    on_goal_apply: Callable[[str], None] | None = None,
 ) -> ft.Control:
     goal_section = (
-        build_carb_cycle_goal_section(current_goal, on_goal_change)
+        build_carb_cycle_goal_section(
+            current_goal,
+            on_goal_change,
+            applied_goal=applied_goal,
+            on_apply=on_goal_apply,
+        )
         if auto_selected and on_goal_change is not None
         else ft.Container(height=0)
     )
@@ -78,12 +100,11 @@ def build_macro_panel(
             small_text(profile_message) if not profile_ready else ft.Container(height=0),
             *rows,
             small_text(
-                (
-                    f"高/中/低碳热量系数：{GOAL_CALORIE_FACTOR_TEXT.get(current_goal, GOAL_CALORIE_FACTOR_TEXT['减脂'])}。"
-                    "蛋白按去脂体重，脂肪分别占目标热量 25% / 30% / 35%，碳水补足剩余热量。"
-                ) if auto_selected
+                "自动目标会根据个人资料与已确认训练生成；自定义模式不会被自动调整。" if auto_selected
                 else "当前显示自定义倍率，可点击右上角编辑。"
             ) if profile_ready else ft.Container(height=0),
+            small_text("自动目标仅适用于一般健康成人；孕哺期、糖尿病用药、肾病或进食障碍请使用专业医疗方案。")
+            if profile_ready and auto_selected else ft.Container(height=0),
         ], spacing=7),
         bgcolor="#F8FAFC",
         border_radius=8,

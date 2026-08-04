@@ -141,9 +141,9 @@ def build_exercise_card(
     on_delete: Callable[[Any], None] | None = None,
     title_width: float = 140.0,
 ) -> ft.Control:
-    weight = exercise.get("default_weight_kg")
-    reps = exercise.get("default_reps")
-    sets = exercise.get("default_sets")
+    weight = exercise.get("weight_kg") if "weight_kg" in exercise else exercise.get("default_weight_kg")
+    reps = exercise.get("reps") if "reps" in exercise else exercise.get("default_reps")
+    sets = exercise.get("sets") if "sets" in exercise and not isinstance(exercise.get("sets"), list) else exercise.get("default_sets")
     mode = str(exercise.get("recording_mode") or "strength")
     if mode == "cardio":
         default_text = "有氧 · 时长" + (" / 距离" if exercise.get("distance_enabled") else "")

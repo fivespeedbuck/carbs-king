@@ -24,6 +24,7 @@ class EmptyTrainingActions:
     reuse_history: Callable[[Any], None]
     create_free: Callable[[Any], None]
     add_first: Callable[[Any], None]
+    rest_today: Callable[[Any], None]
 
 
 def build_empty_training(actions: EmptyTrainingActions) -> ft.Control:
@@ -52,6 +53,7 @@ def build_empty_training(actions: EmptyTrainingActions) -> ft.Control:
             section_title("训练准备"),
             small_text("添加动作后即可开始，重量与次数会完整保存。"),
             make_button("添加第一个动作", on_click=actions.add_first, icon=ft.Icons.ADD, expand=True, height=54),
+            make_button("今日休息", on_click=actions.rest_today, icon=ft.Icons.SELF_IMPROVEMENT, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
         ], spacing=10), padding=14),
     ], spacing=0)
 
@@ -59,6 +61,7 @@ def build_empty_training(actions: EmptyTrainingActions) -> ft.Control:
 @dataclass(frozen=True)
 class PlannedTrainingActions:
     start: Callable[[Any], None]
+    confirm_all_parameters: Callable[[Any], None]
     add_exercise: Callable[[Any], None]
     delete_exercise: Callable[[str], None]
     reuse_history: Callable[[Any], None]
@@ -70,6 +73,8 @@ class PlannedTrainingActions:
     reorder_exercise: Callable[[str, str], None]
     reorder_group_member: Callable[[str, str], None] | None = None
     remove_group_member: Callable[[str], None] | None = None
+    rest_today: Callable[[Any], None] | None = None
+    target_text: str = ""
 
 
 def _exercise_detail(exercise: Mapping[str, Any]) -> str:
@@ -274,17 +279,10 @@ def build_action_arrangement_list(
     member_card_height = 104 if completed_counts is not None else 88
     member_gap = 10
 
-    def register_block(block_id: str, row_card: ft.Control, height: int, *, full_card_drag: bool = True) -> None:
+    def register_block(block_id: str, row_card: ft.Control, height: int) -> None:
         nonlocal estimated_height
         baseline_order.append(block_id)
-        block_controls.append(
-            ft.ReorderableDragHandle(
-                content=row_card,
-                key=f"reorder-{block_id}",
-                data="action-arrangement-drag-region",
-            )
-            if full_card_drag else row_card
-        )
+        block_controls.append(row_card)
         estimated_height += height
 
     def member_reorder_list(group_id: str, member_ids: list[str], member_rows: list[ft.Control]) -> ft.ReorderableListView:
@@ -304,14 +302,7 @@ def build_action_arrangement_list(
                 reorder_group_member(dragged_id, target_id)
 
         return ft.ReorderableListView(
-            controls=[
-                ft.ReorderableDragHandle(
-                    content=row,
-                    key=f"group-member-{group_id}-{member_id}",
-                    data="action-arrangement-group-member-drag-region",
-                )
-                for member_id, row in zip(member_ids, member_rows)
-            ],
+            controls=member_rows,
             spacing=0,
             item_extent=member_item_extent,
             show_default_drag_handles=False,
@@ -416,8 +407,7 @@ def build_action_arrangement_list(
                     padding=ft.Padding(left=0, top=0, right=0, bottom=member_gap),
                 ))
             member_list = member_reorder_list(str(group.get("id") or ""), member_ids, member_rows)
-            group_header = ft.ReorderableDragHandle(
-                content=ft.Row([
+            group_header = ft.Row([
                     ft.Column([
                         ft.Text(
                             f"{title} · {len(member_ids)} 个动作",
@@ -430,10 +420,7 @@ def build_action_arrangement_list(
                     _drag_handle(size=40),
                     _fixed_icon_button(ft.Icons.ADD, "编辑组合", GREEN, lambda e, value=exercise_id: group_exercise(value)),
                     _fixed_icon_button(ft.Icons.LINK_OFF, "解除组合", RED, lambda e, value=exercise_id: delete_group(value)),
-                ], spacing=8),
-                key=f"group-drag-{exercise_id}",
-                data="action-arrangement-group-drag-region",
-            )
+                ], spacing=8)
             row_card = ft.Container(
                 content=ft.Column([
                     group_header,
@@ -453,7 +440,6 @@ def build_action_arrangement_list(
                 exercise_id,
                 row_card,
                 92 + member_list.height,
-                full_card_drag=False,
             )
             continue
 
@@ -468,17 +454,8 @@ def build_action_arrangement_list(
         )
         register_block(exercise_id, row_card, 112 if completed_counts is not None else 104)
 
-    # ``ft.Container`` is not a stable runtime class in every supported Flet
-    # environment, so do not use it in ``isinstance``.  These controls are
-    # constructed above and are either a drag handle containing a card or a
-    # group card itself; both support the margin property.
     for block_control in block_controls[:-1]:
-        block_card = (
-            block_control.content
-            if getattr(block_control, "data", None) == "action-arrangement-drag-region"
-            else block_control
-        )
-        block_card.margin = ft.Margin(left=0, top=0, right=0, bottom=8)
+        block_control.margin = ft.Margin(left=0, top=0, right=0, bottom=8)
 
     exercise_list = ft.ReorderableListView(
         controls=block_controls,
@@ -496,6 +473,7 @@ def build_action_arrangement_list(
 
 def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingActions) -> ft.Control:
     exercises = session.get("exercises", []) if isinstance(session.get("exercises", []), list) else []
+    pending_count = sum(1 for item in exercises if not bool(item.get("parameters_confirmed")))
     exercise_list = build_action_arrangement_list(
         session,
         edit_exercise=actions.edit_exercise,
@@ -511,18 +489,33 @@ def build_planned_training(session: Mapping[str, Any], actions: PlannedTrainingA
         ft.Container(content=ft.Column([
             ft.Row([ft.Column([small_text("训练计划", color=ON_PRIMARY), ft.Text("当前的训练", size=25, weight="bold", color=ON_PRIMARY)], spacing=2), ft.Icon(ft.Icons.FITNESS_CENTER, size=42, color=ON_PRIMARY)], alignment="spaceBetween"),
             ft.Text(f"{len(exercises)} 个动作 · {sum(len(item.get('sets', [])) for item in exercises if item.get('recording_mode', 'strength') == 'strength')} 个力量组", size=14, color=ON_PRIMARY, weight="bold"),
+            ft.Text(
+                "确认动作参数后更新今日目标" if pending_count else actions.target_text or "今日目标已更新",
+                size=13,
+                color=ON_PRIMARY,
+                weight="bold",
+            ),
+            *([make_button(
+                f"一键确认全部参数（{pending_count}）",
+                on_click=actions.confirm_all_parameters,
+                icon=ft.Icons.CHECK_CIRCLE_OUTLINE,
+                bgcolor=PRIMARY_SOFT,
+                color=GREEN,
+                expand=True,
+            )] if pending_count else []),
             make_button("开始训练", on_click=actions.start, icon=ft.Icons.PLAY_ARROW, bgcolor=CARD, color=GREEN, expand=True, height=58),
         ], spacing=12), bgcolor=PRIMARY, border_radius=12, padding=20,
             margin=ft.Margin(left=0, top=8, right=0, bottom=8)),
         page_card(ft.Column([
             ft.Row([section_title("动作安排"), make_button("添加动作", on_click=actions.add_exercise, icon=ft.Icons.ADD, bgcolor=PRIMARY_SOFT, color=GREEN)], alignment="spaceBetween"),
-            small_text("长按卡片或移动手柄排序；经过其他动作时会显示平滑换位。"),
+            small_text("按住移动手柄排序；上下滑动卡片不会触发拖动。"),
             exercise_list if exercises else ft.Container(content=small_text("还没有动作，先添加一个动作"), bgcolor=SURFACE, border_radius=12, padding=14),
         ], spacing=8), padding=14),
         page_card(ft.Row([
             make_button("复用历史训练", on_click=actions.reuse_history, icon=ft.Icons.HISTORY, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
             make_button("清空", on_click=actions.clear, icon=ft.Icons.DELETE_OUTLINE, bgcolor="#FCECEC", color=RED, expand=True),
         ], spacing=8), padding=12),
+        page_card(make_button("今日休息", on_click=actions.rest_today, icon=ft.Icons.SELF_IMPROVEMENT, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True), padding=12),
     ], spacing=0)
 
 

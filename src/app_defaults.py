@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 DAY_TYPES = {
-    # 碳水按当前体重 g/kg 计算，再按体脂、年龄做轻微修正。
-    # interval 为上下容差，避免区间过宽。
-    "高碳日": {"calorie_factor": 0.80, "carb_gkg": 2.90, "carb_interval": 15, "fat_gkg_min": 0.70, "fat_gkg_max": 0.85},
-    "中碳日": {"calorie_factor": 0.72, "carb_gkg": 2.30, "carb_interval": 12, "fat_gkg_min": 0.80, "fat_gkg_max": 0.95},
-    "低碳日": {"calorie_factor": 0.65, "carb_gkg": 1.40, "carb_interval": 10, "fat_gkg_min": 0.95, "fat_gkg_max": 1.10},
+    # Only custom macro mode uses these display intervals. Automatic targets
+    # come exclusively from dynamic_carb_engine.
+    "高碳日": {"carb_interval": 15},
+    "中碳日": {"carb_interval": 12},
+    "低碳日": {"carb_interval": 10},
 }
 
 # 自定义模式使用一个中心倍数，仍沿用自动模式的合理上下浮动范围：
@@ -26,11 +26,6 @@ CIRCUMFERENCE_FIELDS = (
     ("thigh_cm", "大腿围"),
     ("calf_cm", "小腿围"),
 )
-
-TRAINING_TARGETS = ["胸", "背", "肩", "腿", "手臂", "腹", "爬坡", "跑步", "徒步", "游泳", "骑行", "打球", "休息", "其他"]
-ABS_ACTIONS = ["仰卧抬腿", "悬垂举腿", "卷腹", "平板支撑", "其他"]
-FATIGUE_OPTIONS = ["状态好", "状态一般", "状态差"]
-INTENSITY_OPTIONS = ["恢复", "中等", "高强度"]
 
 DEFAULT_FOODS = [
     {"name": "燕麦", "category": "主食", "unit": "g", "method": "干重", "base_qty": 100, "kcal": 380, "carb": 67, "protein": 13, "fat": 7},
@@ -74,6 +69,5 @@ DEFAULT_SUPPLEMENTS = [
 ]
 
 __all__ = [
-    "DAY_TYPES", "DEFAULT_MACRO_MULTIPLIERS", "CIRCUMFERENCE_FIELDS", "TRAINING_TARGETS", "ABS_ACTIONS",
-    "FATIGUE_OPTIONS", "INTENSITY_OPTIONS", "DEFAULT_FOODS", "DEFAULT_SUPPLEMENTS",
+    "DAY_TYPES", "DEFAULT_MACRO_MULTIPLIERS", "CIRCUMFERENCE_FIELDS", "DEFAULT_FOODS", "DEFAULT_SUPPLEMENTS",
 ]

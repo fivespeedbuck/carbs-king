@@ -5,7 +5,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from food_library import FOOD_CATEGORIES, FOOD_LIBRARY, food_catalog, search_foods  # noqa: E402
+from food_library import (  # noqa: E402
+    BUNDLED_FOOD_LIBRARY,
+    FOOD_CATEGORIES,
+    FOOD_LIBRARY,
+    food_catalog,
+    search_foods,
+    serialize_user_foods,
+)
 
 
 class FoodLibraryTests(unittest.TestCase):
@@ -45,7 +52,23 @@ class FoodLibraryTests(unittest.TestCase):
         catalog = food_catalog([customized, {"name": "自定义食物", "category": "我的食物"}])
         resolved = next(item for item in catalog if item["name"] == first["name"])
         self.assertEqual(resolved["kcal"], 999)
-        self.assertEqual(len(catalog), len(FOOD_LIBRARY) + 1)
+        self.assertEqual(len(catalog), len(BUNDLED_FOOD_LIBRARY) + 1)
+
+    def test_persisted_food_data_contains_only_user_changes(self):
+        catalog = food_catalog()
+        edited = next(item for item in catalog if item.get("id"))
+        deleted = next(item for item in reversed(catalog) if item.get("id") != edited.get("id"))
+        visible = [item for item in catalog if item.get("id") != deleted.get("id")]
+        visible[visible.index(edited)] = {**edited, "kcal": 999}
+        visible.append({"name": "自定义食物", "category": "我的食物"})
+
+        stored = serialize_user_foods(visible)
+        restored = food_catalog(stored)
+
+        self.assertEqual(len(stored), 3)
+        self.assertEqual(next(item for item in restored if item["name"] == edited["name"])["kcal"], 999)
+        self.assertTrue(any(item["name"] == "自定义食物" for item in restored))
+        self.assertFalse(any(item.get("id") == deleted.get("id") for item in restored))
 
 
 if __name__ == "__main__":

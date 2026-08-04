@@ -27,6 +27,8 @@ from diet_controller import (
     DietControllerDependencies,
     FOOD_UNIT_PRESETS,
     bind_custom_unit_visibility,
+    ENERGY_UNIT_PRESETS,
+    normalize_food_energy,
     compact_daily_summary,
     create_diet_controller,
     resolve_food_unit,
@@ -363,13 +365,14 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
     def test_food_form_uses_required_full_width_and_compact_pair_structure(self):
         self.assertEqual(FOOD_UNIT_PRESETS, ("g", "ml", "个", "份"))
         self.assertEqual(CUSTOM_UNIT_OPTION, "自定义")
-        self.assertIn("ft.dropdown.Option(value) for value in (*unit_values, CUSTOM_UNIT_OPTION)", DIET_CONTROLLER_SOURCE)
+        self.assertEqual(ENERGY_UNIT_PRESETS, ("大卡 kcal", "千焦 kJ"))
+        self.assertIn("fields[\"unit\"] = build_upward_choice_input", DIET_CONTROLLER_SOURCE)
         self.assertIn('quantity_unit_grid(fields["base_qty"], fields["unit"], viewport_width=dialog_width)', DIET_CONTROLLER_SOURCE)
+        self.assertIn('quantity_unit_grid(fields["kcal"], fields["energy_unit"], viewport_width=dialog_width)', DIET_CONTROLLER_SOURCE)
         self.assertNotIn('unit_first=True', DIET_CONTROLLER_SOURCE)
         self.assertIn('selected_unit = resolve_food_unit(fields["unit"].value, fields["custom_unit"].value)', DIET_CONTROLLER_SOURCE)
         self.assertIn('two_field_grid(fields["name"], fields["category"]', DIET_CONTROLLER_SOURCE)
-        self.assertIn('two_field_grid(fields["kcal"], fields["carb"]', DIET_CONTROLLER_SOURCE)
-        self.assertIn('two_field_grid(fields["protein"], fields["fat"]', DIET_CONTROLLER_SOURCE)
+        self.assertIn('three_field_grid(fields["carb"], fields["protein"], fields["fat"]', DIET_CONTROLLER_SOURCE)
         self.assertIn('width=dialog_width if key == "method" else None', DIET_CONTROLLER_SOURCE)
         self.assertIn('expand=key != "method"', DIET_CONTROLLER_SOURCE)
 
@@ -377,6 +380,11 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertEqual(resolve_food_unit("g", "杯"), "g")
         self.assertEqual(resolve_food_unit(CUSTOM_UNIT_OPTION, " 杯 "), "杯")
         self.assertEqual(resolve_food_unit(CUSTOM_UNIT_OPTION, "  "), "")
+
+    def test_food_energy_accepts_kilojoules_and_stores_kilocalories(self):
+        self.assertEqual(normalize_food_energy(418.4, "千焦 kJ"), 100.0)
+        self.assertEqual(normalize_food_energy(100, "大卡 kcal"), 100.0)
+        self.assertEqual(normalize_food_energy(-20, "kJ"), 0.0)
 
     def test_empty_food_search_disables_blank_android_dropdown_menu(self):
         selector = mobile_dropdown("食物", None, [])
@@ -399,11 +407,11 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         section = DIET_CONTROLLER_SOURCE[start:end]
 
         self.assertIn("def upward_choice_input", section)
-        self.assertIn('data="upward-choice-sheet"', section)
-        self.assertIn('data="upward-choice-safe-bottom"', section)
-        self.assertIn("list_height = min(330", section)
-        self.assertIn('bgcolor="#FFFFFF"', section)
-        self.assertIn("ft.BottomSheet(", section)
+        self.assertIn("return build_upward_choice_input(", section)
+        self.assertIn('data="upward-choice-sheet"', DIET_CONTROLLER_SOURCE)
+        self.assertIn('data="upward-choice-safe-bottom"', DIET_CONTROLLER_SOURCE)
+        self.assertIn("list_height = min(330", DIET_CONTROLLER_SOURCE)
+        self.assertIn("ft.BottomSheet(", DIET_CONTROLLER_SOURCE)
         self.assertNotIn('meal_dd = mobile_dropdown(', section)
         self.assertNotIn('food_dd = mobile_dropdown(', section)
 
@@ -496,6 +504,7 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         page_content = ft.Column([*dashboard.control.controls, toolbar], spacing=TODAY_SECTION_SPACING, width=430, height=860)
 
         meals_card = dashboard.control.controls[2]
+        intake_card = dashboard.control.controls[0]
         self.assertEqual(page_content.spacing, 8)
         self.assertEqual(page_content.width, 430)
         self.assertEqual(page_content.height, 860)
@@ -504,6 +513,23 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertTrue(all(tile.height == 66 for row in meals_card.content.controls[1:3] for tile in row.controls))
         self.assertEqual(dashboard.control.controls[2].margin.bottom, 0)
         self.assertEqual(dashboard.control.controls[3].margin.bottom, 0)
+        self.assertIsNone(intake_card.on_click)
+        self.assertEqual(len(intake_card.content.controls), 5)
+        self.assertEqual(
+            [bar.controls[0].content.controls[0].value for bar in intake_card.content.controls[1:]],
+            ["热量", "碳水", "蛋白", "脂肪"],
+        )
+        self.assertIn("kcal", intake_card.content.controls[1].controls[0].content.controls[1].value)
+        self.assertFalse(any(
+            isinstance(item, ft.Text) and item.value == "1800"
+            for item in intake_card.content.controls[0].controls
+        ))
+
+    def test_intake_detail_popup_and_dead_view_are_removed(self):
+        today_source = (ROOT / "src" / "today_controller.py").read_text(encoding="utf-8-sig")
+        self.assertNotIn("今日摄入详情", today_source)
+        self.assertNotIn("今日摄入详情", DIET_CONTROLLER_SOURCE)
+        self.assertFalse((ROOT / "src" / "carb_cycle_views.py").exists())
 
 
 if __name__ == "__main__":

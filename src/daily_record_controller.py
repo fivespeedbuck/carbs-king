@@ -16,6 +16,7 @@ from typing import Any
 from analytics_service import normalize_body_measurement
 from app_defaults import CIRCUMFERENCE_FIELDS, DAY_TYPES, DEFAULT_MACRO_MULTIPLIERS
 from app_utils import to_float
+from dynamic_carb_engine import create_refreshed_phase, evaluate_baseline_refresh
 from repositories import AppRepositories
 from training_clock_service import active_session_with_start
 from training_service import append_session_once, migrate_legacy_training, normalize_session_payload
@@ -65,6 +66,20 @@ class DailyRecordController:
         record_date, weight, bodyfat = sorted(candidates, key=lambda item: item[0])[-1]
         return {"date": record_date, "weight": weight, "bodyfat": bodyfat}
 
+    def latest_bodyfat_measurement(self, target_date: str | None = None) -> dict[str, Any] | None:
+        candidates = []
+        for record_date, record in self.deps.records.items():
+            if target_date and record_date > target_date:
+                continue
+            measurement = normalize_body_measurement(record, record_date)
+            bodyfat = measurement.get("bodyfat_percent")
+            if bodyfat is not None:
+                candidates.append((record_date, str(measurement.get("measured_at") or record_date), bodyfat))
+        if not candidates:
+            return None
+        record_date, measured_at, bodyfat = sorted(candidates, key=lambda item: (item[0], item[1]))[-1]
+        return {"date": record_date, "measured_at": measured_at, "bodyfat": bodyfat}
+
     def payload(self) -> dict[str, Any]:
         state = self.deps.state
         total = self.deps.nutrition.daily_total()
@@ -82,12 +97,20 @@ class DailyRecordController:
 
         sleep_minutes = self.deps.sleep_total_minutes()
         training = state["training"]
+        carb_snapshot = training.get("carb_snapshot", {})
+        carb_snapshot = copy.deepcopy(carb_snapshot) if isinstance(carb_snapshot, Mapping) else {}
+        phase_snapshot = copy.deepcopy(state.get("carb_phase", {}))
+        if isinstance(phase_snapshot, dict):
+            phase_snapshot.pop("pending_refresh", None)
+        else:
+            phase_snapshot = {}
         water = list(state["water"])
         return {
             "date": state["date"],
             "profile": {
                 "weight_kg": state["weight"],
                 "bodyfat_percent": state["bodyfat"],
+                "bodyfat_measured_at": state.get("bodyfat_measured_at", ""),
                 "height_cm": state.get("height", ""),
                 "age": state.get("age", ""),
                 "sex": state.get("sex", ""),
@@ -99,6 +122,8 @@ class DailyRecordController:
                 "thigh_cm": state.get("thigh_cm", ""),
                 "calf_cm": state.get("calf_cm", ""),
                 "macro_mode": state.get("macro_mode", "auto"),
+                "macro_goal": state.get("macro_goal", "减脂"),
+                "carb_phase": phase_snapshot,
                 "macro_multipliers": json.loads(json.dumps(state.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))),
                 "custom_macro_multipliers": json.loads(json.dumps(state.get("macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))),
                 "auto_macro_multipliers": json.loads(json.dumps(state.get("auto_macro_multipliers", DEFAULT_MACRO_MULTIPLIERS))),
@@ -115,9 +140,12 @@ class DailyRecordController:
                 "total_duration_min": training.get("total_duration_min", ""),
                 "total_calories_kcal": training.get("total_calories_kcal", ""),
                 "fatigue_status": training.get("fatigue_status", "状态一般"),
+                "session_rating": training.get("session_rating"),
                 "summary_note": training.get("summary_note", ""),
                 "targets": list(training.get("targets", [])),
                 "carb_reminder_dismissed_signature": training.get("carb_reminder_dismissed_signature", ""),
+                "carb_mode": training.get("carb_mode", "auto"),
+                "carb_snapshot": copy.deepcopy(carb_snapshot),
                 "session": training.get("session"),
                 "sessions": list(training.get("sessions", [])),
             },
@@ -157,6 +185,68 @@ class DailyRecordController:
         self.deps.repositories.records.save(self.deps.records)
         self.deps.on_records_changed()
 
+    def _stage_baseline_refresh(self, target_date: str) -> None:
+        """Persist today's phase and stage any eligible refresh for tomorrow."""
+
+        state = self.deps.state
+        phase = state.get("carb_phase")
+        if (
+            target_date != self.deps.today().isoformat()
+            or state.get("macro_mode", "auto") != "auto"
+            or not isinstance(phase, Mapping)
+            or not phase.get("phase_id")
+        ):
+            return
+
+        weights: list[dict[str, Any]] = []
+        bodyfat_records: list[dict[str, Any]] = []
+        for record_date, record in sorted(self.deps.records.items()):
+            measurement = normalize_body_measurement(record, record_date)
+            if measurement.get("is_weight_measured"):
+                weights.append({
+                    "record_id": f"daily-weight-{record_date}",
+                    "date": record_date,
+                    "weight_kg": measurement["weight_kg"],
+                })
+            if measurement.get("is_bodyfat_measured"):
+                bodyfat_records.append({
+                    "record_id": f"daily-bodyfat-{record_date}",
+                    "date": record_date,
+                    "bodyfat_percent": measurement["bodyfat_percent"],
+                    "source": "daily_measurement",
+                })
+
+        try:
+            refresh = evaluate_baseline_refresh(
+                weights,
+                bodyfat_records,
+                float(phase["baseline_weight_kg"]),
+                str(phase.get("goal") or state.get("macro_goal") or ""),
+                sex=str(state.get("sex") or ""),
+                height_cm=to_float(state.get("height")),
+                age_years=int(to_float(state.get("age"))),
+                as_of_date=self.deps.today(),
+            )
+        except (KeyError, TypeError, ValueError):
+            return
+
+        next_phase = copy.deepcopy(dict(phase))
+        next_phase["baseline_refresh_last_check"] = {
+            "as_of_date": target_date,
+            "refresh": bool(refresh.get("refresh")),
+            "valid_points": refresh.get("valid_points", 0),
+            "excluded_point_count": len(refresh.get("excluded_points", [])),
+            "reason_codes": list(refresh.get("reason_codes", [])),
+        }
+        if refresh.get("refresh"):
+            next_phase["pending_refresh"] = create_refreshed_phase(phase, refresh)
+
+        state["carb_phase"] = next_phase
+        profile = self.deps.repositories.profile.load()
+        profile = dict(profile) if isinstance(profile, Mapping) else {}
+        profile["carb_phase"] = copy.deepcopy(next_phase)
+        self.deps.repositories.profile.save(profile)
+
     def save(self, show: bool = False) -> None:
         state = self.deps.state
         target_date = state["date"]
@@ -165,6 +255,7 @@ class DailyRecordController:
             self.payload(),
         )
         self.persist_records()
+        self._stage_baseline_refresh(target_date)
         if show:
             self.deps.snack("已保存")
 
@@ -421,9 +512,12 @@ class DailyRecordController:
             "total_duration_min": "",
             "total_calories_kcal": "",
             "fatigue_status": "状态一般",
+            "session_rating": None,
             "summary_note": "",
             "targets": [],
             "carb_reminder_dismissed_signature": "",
+            "carb_mode": "auto",
+            "carb_snapshot": {},
             "session": None,
             "sessions": [],
         }
@@ -456,9 +550,12 @@ class DailyRecordController:
                 "total_duration_min": str(raw.get("total_duration_min", "")),
                 "total_calories_kcal": str(raw.get("total_calories_kcal", "")),
                 "fatigue_status": raw.get("fatigue_status", "状态一般"),
+                "session_rating": raw.get("session_rating"),
                 "summary_note": str(raw.get("summary_note", "")),
                 "targets": [dict(item, intensity=item.get("intensity", "中等")) for item in targets if isinstance(item, dict)],
                 "carb_reminder_dismissed_signature": str(raw.get("carb_reminder_dismissed_signature", "")),
+                "carb_mode": str(raw.get("carb_mode") or "auto"),
+                "carb_snapshot": copy.deepcopy(raw.get("carb_snapshot", {})) if isinstance(raw.get("carb_snapshot"), Mapping) else {},
                 "session": session,
                 "sessions": archived,
             }, clock_migrated
@@ -479,7 +576,8 @@ class DailyRecordController:
         if record:
             profile = record.get("profile", {}) if isinstance(record.get("profile", {}), dict) else {}
             current_profile = self.deps.load_profile()
-            if target_date == self.deps.today().isoformat() and current_profile.get("body_updated_at"):
+            is_today = target_date == self.deps.today().isoformat()
+            if is_today and current_profile.get("body_updated_at"):
                 state["weight"] = str(current_profile.get("weight", profile.get("weight_kg", state["weight"])))
                 state["bodyfat"] = str(current_profile.get("bodyfat", profile.get("bodyfat_percent", state["bodyfat"])))
             else:
@@ -487,17 +585,28 @@ class DailyRecordController:
                 state["bodyfat"] = str(profile.get("bodyfat_percent", state["bodyfat"]))
             measurement = normalize_body_measurement(record, target_date)
             state["measurement"] = profile.get("measurement") if measurement["is_measured"] else None
+            bodyfat_point = self.latest_bodyfat_measurement(target_date)
+            state["bodyfat_measured_at"] = str(
+                bodyfat_point.get("measured_at") if bodyfat_point else profile.get("bodyfat_measured_at", "")
+            )
             state["circumference"] = profile.get("circumference") if isinstance(profile.get("circumference"), dict) else None
-            if not state.get("profile_inited"):
-                for state_key, record_key, fallback in (
-                    ("height", "height_cm", ""), ("age", "age", ""), ("sex", "sex", ""),
-                    ("activity_habit", "activity_habit", ""), ("waist_cm", "waist_cm", ""), ("arm_cm", "arm_cm", ""),
-                    ("chest_cm", "chest_cm", ""), ("hip_cm", "hip_cm", ""),
-                    ("thigh_cm", "thigh_cm", ""), ("calf_cm", "calf_cm", ""),
-                ):
-                    state[state_key] = str(profile.get(record_key, state.get(state_key, fallback)))
+            for state_key, current_key, record_key, fallback in (
+                ("height", "height", "height_cm", ""), ("age", "age", "age", ""), ("sex", "sex", "sex", ""),
+                ("activity_habit", "activity_habit", "activity_habit", ""), ("waist_cm", "waist_cm", "waist_cm", ""),
+                ("arm_cm", "arm_cm", "arm_cm", ""), ("chest_cm", "chest_cm", "chest_cm", ""),
+                ("hip_cm", "hip_cm", "hip_cm", ""), ("thigh_cm", "thigh_cm", "thigh_cm", ""),
+                ("calf_cm", "calf_cm", "calf_cm", ""),
+            ):
+                source = current_profile if is_today else profile
+                source_key = current_key if is_today else record_key
+                state[state_key] = str(source.get(source_key, state.get(state_key, fallback)))
+            state["macro_mode"] = str((current_profile if is_today else profile).get("macro_mode") or "auto")
+            state["macro_goal"] = str((current_profile if is_today else profile).get("macro_goal") or "减脂")
+            phase_source = current_profile if is_today else profile
+            state["carb_phase"] = copy.deepcopy(phase_source.get("carb_phase", {})) \
+                if isinstance(phase_source.get("carb_phase"), Mapping) else {}
             day_type = profile.get("day_type")
-            state["day_type"] = day_type if day_type in DAY_TYPES else "高碳日"
+            state["day_type"] = day_type if day_type in DAY_TYPES else "低碳日"
             saved_meals = record.get("meals", {}) if isinstance(record.get("meals", {}), dict) else {}
             state["meals"] = {
                 meal: [item for item in saved_meals.get(meal, []) if isinstance(item, dict)]
@@ -519,6 +628,8 @@ class DailyRecordController:
         else:
             previous_body = self.latest_body(target_date)
             current_profile = self.deps.load_profile()
+            state["carb_phase"] = copy.deepcopy(current_profile.get("carb_phase", {})) \
+                if isinstance(current_profile.get("carb_phase"), Mapping) else {}
             if current_profile.get("body_updated_at"):
                 state["weight"] = str(current_profile.get("weight", state["weight"]))
                 state["bodyfat"] = str(current_profile.get("bodyfat", state["bodyfat"]))
@@ -527,8 +638,10 @@ class DailyRecordController:
                     state["weight"] = f"{previous_body['weight']:g}"
                 if previous_body.get("bodyfat") is not None:
                     state["bodyfat"] = f"{previous_body['bodyfat']:g}"
-            state["day_type"] = "高碳日"
+            state["day_type"] = "低碳日"
             state["measurement"] = None
+            bodyfat_point = self.latest_bodyfat_measurement(target_date)
+            state["bodyfat_measured_at"] = str(bodyfat_point.get("measured_at") if bodyfat_point else "")
             state["circumference"] = None
             state["meals"] = {meal: [] for meal in self.deps.meals}
             state["training"] = self._blank_training()

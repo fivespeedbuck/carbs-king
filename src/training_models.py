@@ -7,9 +7,10 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 
-TRAINING_SCHEMA_VERSION = 2
+TRAINING_SCHEMA_VERSION = 4
 RECORDING_MODES = ("strength", "timed", "cardio")
 EXERCISE_GROUP_TYPES = ("superset", "compound")
+LOAD_KINDS = ("external", "bodyweight", "added_weight", "assisted", "unknown")
 
 
 def normalize_recording_mode(value: Any) -> str:
@@ -21,6 +22,11 @@ def normalize_recording_mode(value: Any) -> str:
 def normalize_group_type(value: Any) -> str:
     group_type = str(value or "").strip().lower()
     return group_type if group_type in EXERCISE_GROUP_TYPES else ""
+
+
+def normalize_load_kind(value: Any) -> str:
+    load_kind = str(value or "unknown").strip().lower()
+    return load_kind if load_kind in LOAD_KINDS else "unknown"
 
 
 def new_id(prefix: str) -> str:
@@ -216,6 +222,7 @@ class TrainingSet:
     order: int
     id: str = field(default_factory=lambda: new_id("set"))
     weight_kg: float | None = None
+    assistance_kg: float | None = None
     reps: int | None = None
     completed: bool = False
     warmup: bool = False
@@ -233,6 +240,7 @@ class TrainingSet:
             id=_text(data.get("id")) or new_id("set"),
             order=_int(data.get("order")) or order,
             weight_kg=_float(data.get("weight_kg", data.get("weight"))),
+            assistance_kg=_float(data.get("assistance_kg")),
             reps=_int(data.get("reps")),
             completed=_bool(data.get("completed")),
             warmup=_bool(data.get("warmup", data.get("is_warmup"))),
@@ -252,6 +260,8 @@ class SessionExercise:
     exercise_id: str = ""
     sets: list[TrainingSet] = field(default_factory=list)
     recording_mode: str = "strength"
+    load_kind: str = "unknown"
+    parameters_confirmed: bool = False
     duration_seconds: int | None = None
     distance_km: float | None = None
     rest_seconds: int = 90
@@ -282,6 +292,8 @@ class SessionExercise:
             order=_int(data.get("order")) or order,
             sets=[TrainingSet.from_dict(item, index) for index, item in enumerate(raw_sets, 1) if isinstance(item, Mapping)] if recording_mode == "strength" else [],
             recording_mode=recording_mode,
+            load_kind=normalize_load_kind(data.get("load_kind")),
+            parameters_confirmed=_bool(data.get("parameters_confirmed")),
             duration_seconds=_int(data.get("duration_seconds")),
             distance_km=_float(data.get("distance_km")),
             rest_seconds=max(
@@ -343,6 +355,7 @@ class TrainingSession:
     exercise_groups: list[ExerciseGroup] = field(default_factory=list)
     summary_note: str = ""
     fatigue_status: str = ""
+    session_rating: int | None = None
     legacy_calories_kcal: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -378,6 +391,11 @@ class TrainingSession:
             exercise_groups=groups,
             summary_note=_text(data.get("summary_note")),
             fatigue_status=_text(data.get("fatigue_status")),
+            session_rating=(
+                _int(data.get("session_rating"))
+                if _int(data.get("session_rating")) in {1, 2, 3, 4, 5}
+                else None
+            ),
             legacy_calories_kcal=_float(data.get("legacy_calories_kcal", data.get("total_calories_kcal"))),
         )
 

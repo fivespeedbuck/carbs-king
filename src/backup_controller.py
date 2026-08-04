@@ -64,7 +64,7 @@ def create_backup_controller(deps: BackupControllerDependencies) -> BackupContro
             small_text(summary),
             ft.Container(
                 content=small_text(
-                    "导入会完整替换当前数据。系统会先自动保存安全快照；若导入失败，将恢复导入前的数据。"
+                    "导入会完整替换当前个人数据；内置食物库保持当前版本。系统会先自动保存安全快照，失败时自动恢复。"
                 ),
                 bgcolor="#FFF7ED",
                 border_radius=8,
@@ -129,7 +129,7 @@ def create_backup_controller(deps: BackupControllerDependencies) -> BackupContro
                     if not output_path.exists() or output_path.stat().st_size == 0:
                         output_path.write_bytes(raw)
                 if selected_path:
-                    snack("全量备份已导出")
+                    snack("全量备份已导出；食物仅包含自定义和修改项")
             except Exception as ex:
                 snack(f"导出失败：{str(ex)[:60]}")
 

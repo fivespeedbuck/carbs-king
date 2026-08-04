@@ -24,6 +24,7 @@ if str(SRC) not in sys.path:
 from app_defaults import DEFAULT_FOODS, DEFAULT_MACRO_MULTIPLIERS, DEFAULT_SUPPLEMENTS  # noqa: E402
 from app_state import AppState  # noqa: E402
 from backup_service import BackupServiceDependencies, create_backup_service  # noqa: E402
+from food_library import food_catalog  # noqa: E402
 from repositories import AppRepositories, JsonRepository  # noqa: E402
 from storage_service import load_json, save_json  # noqa: E402
 from training_models import TRAINING_SCHEMA_VERSION, TrainingSession  # noqa: E402
@@ -574,7 +575,7 @@ def verify_with_backup_service(payload: Mapping[str, Any]) -> BackupStats:
         restored = {
             **copy.deepcopy(dict(payload)),
             "daily_records": repositories.records.load(),
-            "food_library": repositories.foods.load(),
+            "food_library": food_catalog(repositories.foods.load()),
             "supplement_library": repositories.supplements.load(),
             "user_profile": repositories.profile.load(),
             "achievement_unlocks": repositories.achievements.load(),
@@ -587,7 +588,7 @@ def verify_with_backup_service(payload: Mapping[str, Any]) -> BackupStats:
             raise AssertionError("restored date range does not match")
         if stats.training_days + stats.rest_days != EXPECTED_DAYS or stats.diet_days != EXPECTED_DAYS:
             raise AssertionError("restored day counts are inconsistent")
-        if restored["food_library"] != DEFAULT_FOODS or restored["supplement_library"] != DEFAULT_SUPPLEMENTS:
+        if restored["food_library"] != food_catalog(DEFAULT_FOODS) or restored["supplement_library"] != DEFAULT_SUPPLEMENTS:
             raise AssertionError("default libraries were not preserved")
         if len(reloads) != 1:
             raise AssertionError("replace import did not reload exactly once")

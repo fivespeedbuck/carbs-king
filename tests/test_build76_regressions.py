@@ -103,8 +103,8 @@ class Build76RegressionTests(unittest.TestCase):
         self.assertIn('组数不能截断第', self.training)
         self.assertIn('if index < locked_set_count:', self.training)
         self.assertIn('summary_controls = build_action_summary_controls(item)', self.training)
-        self.assertIn('summary_controls[0]', self.training)
-        self.assertIn('*summary_controls[1:]', self.training)
+        self.assertIn('summary_controls[:summary_header_count]', self.training)
+        self.assertIn('*summary_controls[summary_header_count:]', self.training)
         self.assertNotIn('section_title("动作摘要")', self.training)
 
         summary_start = self.training.index("    def build_action_summary_controls(exercise):")
@@ -119,7 +119,8 @@ class Build76RegressionTests(unittest.TestCase):
         self.assertIn('show_default_drag_handles=False', self.plan)
         self.assertIn('ft.ReorderableDragHandle', self.plan)
         self.assertNotIn('data="action-arrangement-group-member-wheel-guard"', self.plan)
-        self.assertIn('data="action-arrangement-drag-region"', self.plan)
+        self.assertNotIn('data="action-arrangement-drag-region"', self.plan)
+        self.assertIn('block_controls.append(row_card)', self.plan)
         self.assertIn('data="active-action-reorder-list"', self.training)
         self.assertNotIn('icon=ft.Icons.ARROW_UPWARD', self.training)
         self.assertNotIn('icon=ft.Icons.ARROW_DOWNWARD', self.training)
@@ -139,7 +140,14 @@ class Build76RegressionTests(unittest.TestCase):
             self.assertIn(label, self.training_views)
         self.assertIn("def adjust_current_set_count(direction):", self.training)
         self.assertIn("def open_active_action_manager(event=None):", self.training)
-        self.assertIn("open_add_exercise_dialog(after_save=open_active_action_manager)", self.training)
+        self.assertIn("open_add_exercise_dialog(after_save=refresh_active_manager)", self.training)
+        add_action = self.training[
+            self.training.index("        def add_action(event=None):"):
+            self.training.index("        def finish_manager(event=None):")
+        ]
+        self.assertNotIn("close_control(manager_dlg)", add_action)
+        self.assertIn('return_after_add["pending"] = True', self.training)
+        self.assertIn('elif return_after_add["pending"] and after_save is not None:', self.training)
         self.assertIn('data="active-rest-order-action"', self.training_views)
         self.assertIn("complete_rest_if_elapsed(current_session)", self.training)
         self.assertIn('"移出组合"', self.plan)

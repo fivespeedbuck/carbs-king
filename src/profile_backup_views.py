@@ -32,7 +32,7 @@ def build_backup_panel(
                 color=GREEN,
                 expand=True,
             ),
-            small_text("全量备份包含个人资料、每日记录、食物、补剂、训练数据和成就。"),
+            small_text("全量备份包含个人资料、每日记录、补剂、训练数据和成就；食物仅保存自定义和修改项。"),
             make_button(
                 "清除个人数据",
                 on_click=clear_personal_data,

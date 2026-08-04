@@ -43,6 +43,15 @@ def _chip(
     )
 
 
+def _set_chip_selected(chip: ft.Container, selected: bool) -> None:
+    """Update one existing chip without rebuilding its surrounding view."""
+    chip.bgcolor = PRIMARY if selected else PRIMARY_SOFT
+    chip.border = _border(PRIMARY if selected else BORDER)
+    content = chip.content
+    if hasattr(content, "color"):
+        content.color = ON_PRIMARY if selected else PRIMARY
+
+
 def _metric(label: str, value: Any, *, color: str = TEXT) -> ft.Container:
     return ft.Container(
         content=ft.Column([_text(label, size=12, color=SUB, weight="bold"), _text(value, size=18, color=color, weight="bold")], spacing=3),

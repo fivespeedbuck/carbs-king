@@ -14,8 +14,88 @@ from analytics_model import (
     BODY_PART_FILTERS, BORDER, CHART_OPTIONS, PRIMARY,
     PURPLE, SUB, SURFACE, _mapping, _number,
 )
-from analytics_ui import _card, _chip, _metric, _text, _value_or_empty
+from analytics_ui import _card, _chip, _metric, _set_chip_selected, _text, _value_or_empty
 from ui_components import SURFACE
+
+
+class _SelectedChoiceRow(ft.Row):
+    """Keep a rebuilt horizontal selector positioned on its selected item."""
+
+    def __init__(
+        self,
+        *args: Any,
+        selected_control_key: str | None,
+        scroll_state_key: str | None = None,
+        scroll_offset: float | None = None,
+        on_scroll_offset_change: Callable[[str, float], None] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._scroll_state_key = scroll_state_key
+        self._scroll_offset = scroll_offset
+        self._on_scroll_offset_change = on_scroll_offset_change
+        super().__init__(*args, **kwargs)
+        self._selected_control_key = selected_control_key
+        if on_scroll_offset_change is not None:
+            self.on_scroll = self._remember_scroll
+
+    def did_mount(self):
+        super().did_mount()
+        if self._scroll_offset is not None:
+            self.page.run_task(self._restore_scroll)
+        elif self._selected_control_key:
+            self.page.run_task(self._show_selected)
+
+    def _remember_scroll(self, event: Any) -> None:
+        if self._on_scroll_offset_change is None or not self._scroll_state_key:
+            return
+        pixels = getattr(event, "pixels", None)
+        if pixels is None:
+            return
+        try:
+            self._on_scroll_offset_change(self._scroll_state_key, max(0.0, float(pixels)))
+        except (TypeError, ValueError):
+            return
+
+    async def _restore_scroll(self):
+        await asyncio.sleep(0.05)
+        await self.scroll_to(offset=max(0.0, float(self._scroll_offset or 0.0)), duration=0)
+
+    async def _show_selected(self):
+        await asyncio.sleep(0.05)
+        await self.scroll_to(scroll_key=self._selected_control_key, duration=0)
+
+
+def _selector_chip(
+    label: str,
+    selected: bool,
+    on_click: Callable[[Any], None] | None,
+    *,
+    control_key: str,
+) -> ft.Container:
+    chip = _chip(label, selected, on_click)
+    chip.key = control_key
+    return chip
+
+
+def _select_existing_chip(row: ft.Row, selected_control_key: str) -> None:
+    for chip in row.controls:
+        _set_chip_selected(chip, str(getattr(chip, "key", "")) == selected_control_key)
+
+
+def _request_local_update(control: ft.Control, event: Any = None) -> None:
+    page = getattr(getattr(event, "control", None), "page", None)
+    if page is None:
+        try:
+            page = control.page
+        except RuntimeError:
+            page = None
+    if page is not None:
+        try:
+            control.update()
+        except (RuntimeError, AssertionError):
+            pass
+        page.update()
+
 
 def _chart_title(chart_kind: str) -> str:
     return dict(CHART_OPTIONS).get(chart_kind, "体重")
@@ -36,11 +116,12 @@ def _empty_entry(label: str, on_click: Callable[[Any], None] | None) -> ft.Conta
 def _render_training_details(
     model: Mapping[str, Any],
     on_action_trend_open: Callable[[Any], None] | None,
-    on_body_part_filter_change: Callable[[str], None] | None,
+    on_body_part_filter_change: Callable[[str], Any] | None,
+    selector_scroll_offsets: Mapping[str, float] | None = None,
+    on_selector_scroll_change: Callable[[str, float], None] | None = None,
 ) -> list[ft.Control]:
     trend = _mapping(model.get("trend"))
     weekly = [item for item in trend.get("weekly_training", []) if isinstance(item, Mapping)]
-    best_lifts = [item for item in trend.get("best_lifts", []) if isinstance(item, Mapping)]
     week_rows = [
         ft.Row([
             _text(item["label"], size=12, color=SUB),
@@ -50,30 +131,65 @@ def _render_training_details(
         for item in weekly
         if item.get("sets") or item.get("volume_kg")
     ]
-    filter_row = ft.Row(
+    selected_part = str(trend["body_part_filter"])
+    selected_state = {"value": selected_part}
+    filter_row = None
+
+    def lift_rows(source: Mapping[str, Any]) -> list[ft.Control]:
+        return [
+            ft.Container(
+                content=ft.Row([
+                    ft.Column([
+                        _text(f"{item['body_part']} · {item['exercise'] or '未命名动作'}", size=13, weight="bold"),
+                        _text(item["date"], size=12, color=SUB),
+                    ], spacing=1, expand=True),
+                    _text(f"{item['weight_kg']:g} x {item['reps']:g}", size=13, weight="bold"),
+                    _text(f"1RM {item['epley_1rm_kg']:g}", size=13, color=PRIMARY, weight="bold"),
+                ], spacing=8),
+                bgcolor=SURFACE,
+                border_radius=6,
+                padding=8,
+            )
+            for item in source.get("best_lifts", [])
+            if isinstance(item, Mapping)
+        ]
+
+    lift_holder = ft.Column(
+        lift_rows(trend) or [_empty_entry("+记录训练", None)],
+        spacing=6,
+        data="analytics-body-part-results-holder",
+    )
+
+    def select_part(event: Any, value: str) -> None:
+        if value == selected_state["value"]:
+            return
+        next_model = on_body_part_filter_change(value) if on_body_part_filter_change is not None else None
+        selected_state["value"] = value
+        _select_existing_chip(filter_row, f"analytics-body-part:{value}")
+        if isinstance(next_model, Mapping):
+            next_trend = _mapping(next_model.get("trend"))
+            lift_holder.controls.clear(); lift_holder.controls.extend(lift_rows(next_trend) or [_empty_entry("+记录训练", None)])
+        _request_local_update(filter_row, event)
+        _request_local_update(lift_holder, event)
+
+    filter_row = _SelectedChoiceRow(
         [
-            _chip(part, trend["body_part_filter"] == part, None if on_body_part_filter_change is None else lambda e, value=part: on_body_part_filter_change(value))
+            _selector_chip(
+                part,
+                selected_part == part,
+                lambda e, value=part: select_part(e, value),
+                control_key=f"analytics-body-part:{part}",
+            )
             for part in BODY_PART_FILTERS
         ],
+        selected_control_key=f"analytics-body-part:{selected_part}",
+        scroll_state_key="body_part",
+        scroll_offset=(selector_scroll_offsets or {}).get("body_part"),
+        on_scroll_offset_change=on_selector_scroll_change,
         spacing=5,
         scroll=getattr(getattr(ft, "ScrollMode", object()), "HIDDEN", "hidden"),
+        data="analytics-body-part-selector",
     )
-    lift_rows = [
-        ft.Container(
-            content=ft.Row([
-                ft.Column([
-                    _text(f"{item['body_part']} · {item['exercise'] or '未命名动作'}", size=13, weight="bold"),
-                    _text(item["date"], size=12, color=SUB),
-                ], spacing=1, expand=True),
-                _text(f"{item['weight_kg']:g} x {item['reps']:g}", size=13, weight="bold"),
-                _text(f"1RM {item['epley_1rm_kg']:g}", size=13, color=PRIMARY, weight="bold"),
-            ], spacing=8),
-            bgcolor=SURFACE,
-            border_radius=6,
-            padding=8,
-        )
-        for item in best_lifts
-    ]
     return [
         ft.Row([_metric("周总组数", sum(item.get("sets", 0) for item in weekly)), _metric("周总容量", f"{sum(item.get('volume_kg', 0) for item in weekly):g} kg")], spacing=8),
         ft.Container(content=ft.Column(week_rows or [_text("暂无真实完成组", size=13, color=SUB)], spacing=4), bgcolor=SURFACE, border_radius=8, padding=10),
@@ -83,15 +199,17 @@ def _render_training_details(
         ], spacing=8),
         _text("按部位筛选个人最佳成绩", size=15, weight="bold"),
         filter_row,
-        ft.Column(lift_rows or [_empty_entry("+记录训练", None)], spacing=6),
+        lift_holder,
     ]
 
 
 def _render_action_trend(
     model: Mapping[str, Any],
     on_action_trend_close: Callable[[Any], None] | None,
-    on_selected_exercise_change: Callable[[str], None] | None,
+    on_selected_exercise_change: Callable[[str], Any] | None,
     on_add_record: Callable[[str], None] | None,
+    selector_scroll_offsets: Mapping[str, float] | None = None,
+    on_selector_scroll_change: Callable[[str, float], None] | None = None,
 ) -> list[ft.Control]:
     trend = _mapping(_mapping(model.get("trend")).get("exercise_trend"))
     options = [item for item in trend.get("options", []) if isinstance(item, Mapping)]
@@ -106,35 +224,52 @@ def _render_action_trend(
             _empty_entry(str(trend.get("empty_action_label") or "+记录训练"), add_click),
         ]
 
-    points = [item for item in trend.get("points", []) if isinstance(item, Mapping)]
-    values = [_number(item.get("epley_1rm_kg")) for item in points]
-    recorded = [item for item in values if item is not None]
-    min_value = min(recorded) if recorded else 0
-    max_value = max(recorded) if recorded else 1
-    span = max(max_value - min_value, 1)
-    bars = []
-    for point, value in zip(points, values):
-        height = 18 if value is None else 28 + int((value - min_value) / span * 78)
-        bars.append(
-            ft.Container(
-                content=ft.Container(width=10, height=height, bgcolor=BORDER if value is None else PURPLE, border_radius=5),
-                height=118,
-                alignment=ft.Alignment.BOTTOM_CENTER,
-                tooltip=f"{point['date']} · {point['label']}",
-                expand=True,
-            )
-        )
-    option_row = ft.Row(
+    recorded = [
+        _number(item.get("epley_1rm_kg"))
+        for item in trend.get("points", [])
+        if isinstance(item, Mapping) and _number(item.get("epley_1rm_kg")) is not None
+    ]
+
+    def metrics_row(source: Mapping[str, Any]) -> ft.Row:
+        return ft.Row([
+            _metric("最佳重量", _value_or_empty(source.get("best_weight_kg"), "kg")),
+            _metric("最高次数", _value_or_empty(source.get("best_reps"))),
+            _metric("最佳 1RM", _value_or_empty(source.get("best_epley_1rm_kg"), "kg")),
+        ], spacing=8)
+
+    selected_state = {"value": selected}
+    option_row = None
+    metrics_holder = ft.Column([metrics_row(trend)], data="analytics-exercise-metrics-holder")
+
+    def select_exercise(event: Any, value: str) -> None:
+        if value == selected_state["value"]:
+            return
+        next_model = on_selected_exercise_change(value) if on_selected_exercise_change is not None else None
+        selected_state["value"] = value
+        _select_existing_chip(option_row, f"analytics-exercise:{value}")
+        if isinstance(next_model, Mapping):
+            next_trend = _mapping(_mapping(next_model.get("trend")).get("exercise_trend"))
+            metrics_holder.controls.clear(); metrics_holder.controls.append(metrics_row(next_trend))
+        _request_local_update(option_row, event)
+        _request_local_update(metrics_holder, event)
+
+    option_row = _SelectedChoiceRow(
         [
-            _chip(
+            _selector_chip(
                 str(item["exercise"]),
                 selected == item["exercise"],
-                None if on_selected_exercise_change is None else lambda e, value=str(item["exercise"]): on_selected_exercise_change(value),
+                lambda e, value=str(item["exercise"]): select_exercise(e, value),
+                control_key=f"analytics-exercise:{item['exercise']}",
             )
             for item in options
         ],
+        selected_control_key=f"analytics-exercise:{selected}",
+        scroll_state_key="exercise",
+        scroll_offset=(selector_scroll_offsets or {}).get("exercise"),
+        on_scroll_offset_change=on_selector_scroll_change,
         spacing=5,
         scroll=getattr(getattr(ft, "ScrollMode", object()), "HIDDEN", "hidden"),
+        data="analytics-exercise-selector",
     )
     return [
         ft.Row([
@@ -142,11 +277,7 @@ def _render_action_trend(
             _chip("返回训练汇总", False, on_action_trend_close),
         ], spacing=8),
         option_row,
-        ft.Row([
-            _metric("最佳重量", _value_or_empty(trend.get("best_weight_kg"), "kg")),
-            _metric("最高次数", _value_or_empty(trend.get("best_reps"))),
-            _metric("最佳 1RM", _value_or_empty(trend.get("best_epley_1rm_kg"), "kg")),
-        ], spacing=8),
+        metrics_holder,
         _empty_entry(str(trend.get("empty_action_label") or "+记录训练"), add_click) if not recorded else ft.Container(height=0),
     ]
 
@@ -759,86 +890,150 @@ def _render_trend_chart(
     on_add_record: Callable[[str], None] | None,
     on_action_trend_open: Callable[[Any], None] | None,
     on_action_trend_close: Callable[[Any], None] | None,
-    on_selected_exercise_change: Callable[[str], None] | None,
+    on_selected_exercise_change: Callable[[str], Any] | None,
     on_body_part_filter_change: Callable[[str], None] | None,
     on_metric_change: Callable[[str], None] | None,
     on_trend_point_select: Callable[[str], None] | None,
+    selector_scroll_offsets: Mapping[str, float] | None = None,
+    on_selector_scroll_change: Callable[[str, float], None] | None = None,
 ) -> ft.Container:
     trend = _mapping(model.get("trend"))
-    points = [item for item in trend.get("points", []) if isinstance(item, Mapping)]
-    values = [_number(point.get("value")) for point in points]
-    recorded = [item for item in values if item is not None]
     chart_kind = str(trend["chart_kind"])
     add_click = None if on_add_record is None else lambda e, value=chart_kind: on_add_record(value)
-    extra: list[ft.Control] = []
-    if chart_kind == "training":
-        exercise_trend = _mapping(trend.get("exercise_trend"))
+
+    def build_extra(source_model: Mapping[str, Any]) -> list[ft.Control]:
+        source_trend = _mapping(source_model.get("trend"))
+        if chart_kind != "training":
+            return []
+        exercise_trend = _mapping(source_trend.get("exercise_trend"))
         if exercise_trend.get("open"):
-            extra = _render_action_trend(model, on_action_trend_close, on_selected_exercise_change, on_add_record)
-        else:
-            extra.extend(_render_training_details(model, on_action_trend_open, on_body_part_filter_change))
+            return _render_action_trend(
+                source_model,
+                on_action_trend_close,
+                on_selected_exercise_change,
+                on_add_record,
+                selector_scroll_offsets,
+                on_selector_scroll_change,
+            )
+        return _render_training_details(
+            source_model,
+            on_action_trend_open,
+            on_body_part_filter_change,
+            selector_scroll_offsets,
+            on_selector_scroll_change,
+        )
+
+    # Keep the training/PR section mounted while metric content changes. This
+    # is the same local-update contract used by the action selector above.
+    extra_holder = ft.Column(
+        build_extra(model),
+        spacing=10,
+        data="analytics-training-extra-holder",
+    )
 
     metric_options = [item for item in trend.get("metric_options", []) if isinstance(item, Mapping)]
-    metric_row = ft.Row(
+    metric_key = str(trend.get("metric_key"))
+    metric_state = {"value": metric_key}
+    metric_row = None
+    metric_content_holder = ft.Column(data="analytics-metric-content-holder")
+
+    def select_point(value: str, event: Any = None) -> None:
+        next_model = on_trend_point_select(value) if on_trend_point_select is not None else None
+        if isinstance(next_model, Mapping):
+            metric_content_holder.controls.clear(); metric_content_holder.controls.append(build_metric_content(next_model))
+        _request_local_update(metric_content_holder, event)
+
+    def build_metric_content(source_model: Mapping[str, Any]) -> ft.Control:
+        source_trend = _mapping(source_model.get("trend"))
+        points = [item for item in source_trend.get("points", []) if isinstance(item, Mapping)]
+        values = [_number(point.get("value")) for point in points]
+        recorded = [item for item in values if item is not None]
+        latest = _mapping(source_trend.get("latest"))
+        change = _number(source_trend.get("change"))
+        earliest_change = _number(source_trend.get("change_from_earliest"))
+        latest_text = str(latest.get("label") or "暂无数据")
+
+        def comparison_text(label: str, value: float | None) -> str:
+            if value is None:
+                return f"{label} --"
+            sign = "+" if value > 0 else "±" if value == 0 else ""
+            return f"{label} {sign}{value:g} {source_trend['unit']}".rstrip()
+
+        change_text = comparison_text("较上次", change)
+        earliest_change_text = comparison_text("较最早", earliest_change)
+        point_handler = None if on_trend_point_select is None else (
+            lambda value: select_point(value)
+        )
+        chart_control = (
+            _render_readable_chart(source_trend, point_handler)
+            if recorded and not _mapping(source_trend.get("exercise_trend")).get("open")
+            else ft.Container(height=0)
+        )
+        return ft.Column([
+            ft.Row([
+                ft.Column([_text("最新", size=12, color=SUB), _text(latest_text, size=20, weight="bold")], spacing=1),
+                ft.Column([
+                    _text(change_text, size=12, color=SUB, weight="bold"),
+                    _text(earliest_change_text, size=12, color=SUB, weight="bold"),
+                ], spacing=2, horizontal_alignment="end"),
+            ], alignment="spaceBetween"),
+            chart_control,
+            _trend_statistics(
+                [(index, point, value) for index, (point, value) in enumerate(zip(points, values)) if value is not None],
+                str(source_trend.get("unit") or ""),
+            ) if recorded else ft.Container(height=0),
+            ft.Container(
+                content=_text(str(source_trend["empty_message"]), size=13, color=SUB),
+                bgcolor=SURFACE,
+                border_radius=8,
+                padding=10,
+            ) if not recorded else ft.Container(height=0),
+        ], spacing=10)
+
+    def select_metric(event: Any, value: str) -> None:
+        if value == metric_state["value"]:
+            return
+        next_model = on_metric_change(value) if on_metric_change is not None else None
+        metric_state["value"] = value
+        _select_existing_chip(metric_row, f"analytics-metric:{value}")
+        if isinstance(next_model, Mapping):
+            metric_content_holder.controls.clear(); metric_content_holder.controls.append(build_metric_content(next_model))
+        _request_local_update(metric_row, event)
+        _request_local_update(metric_content_holder, event)
+
+    metric_row = _SelectedChoiceRow(
         [
-            _chip(
+            _selector_chip(
                 str(item.get("label")),
-                str(item.get("key")) == str(trend.get("metric_key")),
-                None if on_metric_change is None else lambda e, value=str(item.get("key")): on_metric_change(value),
+                str(item.get("key")) == metric_key,
+                None if on_metric_change is None else lambda e, value=str(item.get("key")): select_metric(e, value),
+                control_key=f"analytics-metric:{item.get('key')}",
             )
             for item in metric_options
         ],
+        selected_control_key=f"analytics-metric:{metric_key}",
+        scroll_state_key="metric",
+        scroll_offset=(selector_scroll_offsets or {}).get("metric"),
+        on_scroll_offset_change=on_selector_scroll_change,
         spacing=5,
         scroll=getattr(getattr(ft, "ScrollMode", object()), "HIDDEN", "hidden"),
+        data="analytics-metric-selector",
     )
-    latest = _mapping(trend.get("latest"))
-    change = _number(trend.get("change"))
-    earliest_change = _number(trend.get("change_from_earliest"))
-    latest_text = str(latest.get("label") or "暂无数据")
-
-    def comparison_text(label: str, value: float | None) -> str:
-        if value is None:
-            return f"{label} --"
-        sign = "+" if value > 0 else "±" if value == 0 else ""
-        return f"{label} {sign}{value:g} {trend['unit']}".rstrip()
-
-    change_text = comparison_text("较上次", change)
-    earliest_change_text = comparison_text("较最早", earliest_change)
-    chart_control = _render_readable_chart(trend, on_trend_point_select) if recorded and not _mapping(trend.get("exercise_trend")).get("open") else ft.Container(height=0)
-
-    return _card(
-        ft.Column(
-            [
-                ft.Row([
-                    ft.Column([
-                        _text(str(trend["title"]), size=16, weight="bold"),
-                        _text(str(trend["description"]), size=12, color=SUB),
-                    ], spacing=2, expand=True),
-                    ft.Row([
-                        _chip(str(trend["empty_action_label"]), False, add_click),
-                    ], spacing=6),
-                ], alignment="spaceBetween"),
-                metric_row,
-                ft.Row([
-                    ft.Column([_text("最新", size=12, color=SUB), _text(latest_text, size=20, weight="bold")], spacing=1),
-                    ft.Column([
-                        _text(change_text, size=12, color=SUB, weight="bold"),
-                        _text(earliest_change_text, size=12, color=SUB, weight="bold"),
-                    ], spacing=2, horizontal_alignment="end"),
-                ], alignment="spaceBetween"),
-                chart_control,
-                _trend_statistics(
-                    [(index, point, value) for index, (point, value) in enumerate(zip(points, values)) if value is not None],
-                    str(trend.get("unit") or ""),
-                ) if recorded else ft.Container(height=0),
-                ft.Container(
-                    content=_text(str(trend["empty_message"]), size=13, color=SUB),
-                    bgcolor=SURFACE,
-                    border_radius=8,
-                    padding=10,
-                ) if not recorded else ft.Container(height=0),
-                *extra,
-            ],
-            spacing=10,
-        )
+    metric_content_holder.controls.clear(); metric_content_holder.controls.append(build_metric_content(model))
+    header_holder = ft.Container(
+        content=ft.Row([
+            ft.Column([
+                _text(str(trend["title"]), size=16, weight="bold"),
+                _text(str(trend["description"]), size=12, color=SUB),
+            ], spacing=2, expand=True),
+            ft.Row([_chip(str(trend["empty_action_label"]), False, add_click)], spacing=6),
+        ], alignment="spaceBetween"),
+        data="analytics-trend-header-holder",
     )
+
+    return _card(ft.Column([
+        header_holder,
+        metric_row,
+        metric_content_holder,
+        extra_holder,
+    ], spacing=10))

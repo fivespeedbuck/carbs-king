@@ -9,7 +9,9 @@ from analytics_service import (  # noqa: E402
     assess_low_carb_training,
     build_period_series,
     calendar_day_summary,
+    latest_explicit_measurements,
     make_body_measurement,
+    measurement_age_days,
     merge_body_measurement,
     normalize_body_measurement,
     summarize_daily_training,
@@ -272,6 +274,34 @@ class PeriodSeriesTests(unittest.TestCase):
         }
         point = build_period_series(record, end_date="2026-07-21", days=7)[-1]
         self.assertIsNone(point["recovery"])
+
+
+class LatestMeasurementTests(unittest.TestCase):
+    def test_latest_explicit_measurement_is_selected_per_metric(self):
+        records = {
+            "2026-07-01": {
+                "profile": {
+                    "measurement": {"weight_kg": 63, "measured_at": "2026-07-01T08:00:00"},
+                    "circumference": {"waist_cm": 80, "measured_at": "2026-07-01T20:00:00"},
+                }
+            },
+            "2026-07-20": {
+                "profile": {
+                    "measurement": {"bodyfat_percent": 13, "measured_at": "2026-07-20T08:00:00"},
+                    "circumference": {"chest_cm": 101, "measured_at": "2026-07-20T20:00:00"},
+                }
+            },
+        }
+        latest = latest_explicit_measurements(records, as_of_date="2026-07-21")
+
+        self.assertEqual(latest["weight"]["value"], 63)
+        self.assertEqual(latest["bodyfat"]["value"], 13)
+        self.assertEqual(latest["circumference"]["waist_cm"]["value"], 80)
+        self.assertEqual(latest["circumference"]["chest_cm"]["date"], "2026-07-20")
+
+    def test_measurement_age_is_none_for_missing_and_exact_for_recorded_date(self):
+        self.assertIsNone(measurement_age_days(None, as_of_date="2026-07-21"))
+        self.assertEqual(measurement_age_days({"date": "2026-07-01"}, as_of_date="2026-07-21"), 20)
 
 
 class CalendarTests(unittest.TestCase):

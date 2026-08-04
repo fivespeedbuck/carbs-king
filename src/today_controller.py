@@ -12,8 +12,11 @@ import flet as ft
 
 from app_state import AppState
 from controller_runtime import ControllerRuntime
+from dynamic_carb_adapter import normalize_training
+from form_views import build_dialog
 from today_views import TODAY_SECTION_SPACING, TodayDashboardActions, TodayDashboardModel, build_date_toolbar, build_today_dashboard
 from training_service import completed_set_count, find_active_daily_session, planned_set_count, session_volume
+from ui_components import GREEN, PRIMARY_SOFT, make_button
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,8 @@ class TodayController:
         status = session.status if session else "planned"
         completed = completed_set_count(session) if session else 0
         planned = planned_set_count(session) if session else 0
+        training_facts = normalize_training(state.get("training", {}))
+        training_state = str(training_facts.get("status") or "unknown")
 
         if active_date and active_date != state.get("date"):
             _, active_session = find_active_daily_session(self.deps.records)
@@ -118,16 +123,51 @@ class TodayController:
             title = "今日训练已完成"
             subtitle = f"{completed} 组 · 容量 {session_volume(session):g} kg"
             icon = ft.Icons.EMOJI_EVENTS
+        elif training_state == "unknown":
+            title = "今天准备训练吗？"
+            subtitle = "点击选择今天训练或休息"
+            icon = ft.Icons.HELP_OUTLINE
+        elif training_state == "explicit_rest":
+            title = "今日休息"
+            subtitle = "当前按低碳日执行，仍可改为训练"
+            icon = ft.Icons.SELF_IMPROVEMENT
         else:
             title = "开始今天的训练"
-            subtitle = "动作、组数和计时都在训练页完成"
+            subtitle = (
+                "确认动作、组数和负重后更新今日目标"
+                if training_state == "planned_pending"
+                else "训练计划已确认"
+            )
             icon = ft.Icons.FITNESS_CENTER
+
+        def open_today_decision(_=None):
+            if training_state not in {"unknown", "explicit_rest"}:
+                self.deps.runtime.navigate("training")
+                return
+            decision = build_dialog(
+                "今天准备训练吗？",
+                ft.Text("选择训练后进入训练页添加动作；确认动作参数后，今日目标会自动更新。"),
+                [
+                    make_button(
+                        "今天休息", on_click=lambda e: (
+                            self.deps.runtime.close_control(decision), self.deps.training.mark_today_rest()
+                        ), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True,
+                    ),
+                    make_button(
+                        "今天训练", on_click=lambda e: (
+                            self.deps.runtime.close_control(decision), self.deps.training.prepare_today_training()
+                        ), expand=True,
+                    ),
+                ],
+                on_close=lambda e: self.deps.runtime.close_control(decision),
+            )
+            self.deps.runtime.open_control(decision)
 
         result = build_today_dashboard(
             TodayDashboardModel(
                 kcal=total["kcal"],
                 kcal_target=evaluation["kcal_target"],
-                day_type=state["day_type"],
+                day_type=str(targets.get("day_label") or state["day_type"]),
                 macros=total,
                 targets=targets,
                 training_title=title,
@@ -143,7 +183,7 @@ class TodayController:
             TodayDashboardActions(
                 open_training=lambda e: self.deps.training.resume_session_date(active_date)
                 if active_date and active_date != state.get("date")
-                else self.deps.runtime.navigate("training"),
+                else open_today_decision(e),
                 open_meal=lambda meal: (state.update({"selected_meal": meal}), self.deps.runtime.navigate("diet")),
                 open_recovery=lambda e: self.deps.runtime.navigate("daily_details"),
             ),

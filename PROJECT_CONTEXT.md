@@ -1,7 +1,9 @@
-# Build 89 发布状态（2026-08-01）
+# Build 101 发布状态（2026-08-04）
 
-- 当前正式发布线为 `1.2.3 / Build 89`，APK SHA-256 为 `CE2CB6F28778F2A3D3F68BB4DA88E414B89C7EB3EDC1CC0214260F12E89E3AF8`。
-- 源码版本已预备下一次 Build 90；详情以 `CURRENT_HANDOFF.md` 和 `docs/BUILD89_FINAL_SUMMARY_2026-08-01.md` 为准。
+- 当前正式发布线为 `1.2.3 / Build 101`，APK SHA-256 为 `8BC9DE0B9489288D2F8B630D7FD3E1289BE272018E6BA2A4C42C1A0167B59DE9`。
+- Build 101 是全模块冻结基线。只有用户提交明确 BUG 并授权对应模块后，才能最小范围修改；禁止顺带重构或修改其他已确认模块。
+
+> 2026-08-04 状态门禁：Build 101 已正式发布并成为全模块冻结基线；历史候选仅作审计留档。
 
 # 碳水大王：项目上下文
 
@@ -18,9 +20,13 @@
 
 ## 当前版本与发布
 
-- 当前发布线：`1.2.3 / Build 89`；完整阶段结果见 `CURRENT_HANDOFF.md`、`CHANGELOG.md` 和 `docs/BUILD89_FINAL_SUMMARY_2026-08-01.md`。
-- `pyproject.toml` 与 `src/app_version.py` 已准备下一次 Build 90；发布前必须读取 APK 内的真实 `versionCode`，不能只信文件名或配置号。
+- 当前发布线：`1.2.3 / Build 101`；完整阶段结果见 `CURRENT_HANDOFF.md`、`CHANGELOG.md` 和 `docs/BUILD101_FINAL_SUMMARY_2026-08-04.md`。
+- `pyproject.toml` 与 `src/app_version.py` 固定为 Build 101，与正式 APK 和冻结源码一致。
+- Build 96 候选：`release_candidates/carbs-king-v1.2.3-build96-candidate.apk`，SHA-256 `967609BF409D8E0ECFA8CF5BD3626376E9FACE87B55B5D87E2FCE4D94960793B`；修复数据页固定栏布局/闪动、自重提示、确认后碳档常驻与安全目标预览；未安装、未发布。
+- Build 95 候选：`release_candidates/carbs-king-v1.2.3-build95-candidate.apk`，SHA-256 `424E75EE172B0325D86C79D1CF18C61553B728F74B6F3539F61FD63A0F1DCA89`；包名、版本、v2 签名连续性、ZIP 对齐、资源与原生运行时门禁通过，未安装、未发布。
 - Build 89：添加饮食使用底部向上展开的不透明白色选择面板；动作选择页收窄左侧部位栏、加宽动作卡并显示 GIF；“我”页体重/体脂编辑写入当天明确趋势测量。APK 和 iQOO 11S 真机验收通过。
+- V3.3-final：动态引擎与 App 适配已接入阶段基线、次日刷新、不可变快照、持久化和自动/手动/自定义旁路；全量回归 `530 passed, 448 subtests passed`，独立差分 `5686` 案例和封闭 P0 代码审计通过。
+- Build 94 候选：`release_candidates/carbs-king-v1.2.3-build94-candidate.apk`，SHA-256 `0AA5F5A5E621EE9E148DEDFA28014BE73647FEC4EE4CCBBA28ACA031B4BC5845`；包名、版本、v2 签名连续性、ZIP 对齐、资源与原生运行时门禁通过，未安装、未发布。
 - GitHub Release `v1.2.3` 使用 Build 89 APK；SHA-256 为 `CE2CB6F28778F2A3D3F68BB4DA88E414B89C7EB3EDC1CC0214260F12E89E3AF8`，文件大小为 `201,779,811` 字节。
 - Build 89 资源基线为 1,326 GIF、1,326 JPG、2 MP3、0 WAV。
 - 应用内更新首选 GitHub Releases API，遇到 403、网络错误、超时或无效 JSON 时自动读取根目录 `update_manifest.json`；发布 APK 时必须同步更新该清单。
