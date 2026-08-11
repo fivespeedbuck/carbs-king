@@ -58,6 +58,24 @@ def build_empty_training(actions: EmptyTrainingActions) -> ft.Control:
     ], spacing=0)
 
 
+def build_rest_training(start_training: Callable[[Any], None]) -> ft.Control:
+    return ft.Column([
+        page_card(ft.Column([
+            ft.Container(
+                content=ft.Icon(ft.Icons.SELF_IMPROVEMENT, size=42, color=GREEN),
+                width=72,
+                height=72,
+                bgcolor=PRIMARY_SOFT,
+                border_radius=20,
+                alignment=ft.Alignment.CENTER,
+            ),
+            ft.Text("今日休息", size=25, weight="bold", color=TEXT),
+            small_text("今天没有安排训练，按低碳日执行。"),
+            make_button("改为训练", on_click=start_training, icon=ft.Icons.FITNESS_CENTER, expand=True, height=54),
+        ], horizontal_alignment="center", spacing=14), padding=24),
+    ], spacing=0)
+
+
 @dataclass(frozen=True)
 class PlannedTrainingActions:
     start: Callable[[Any], None]
@@ -525,5 +543,6 @@ __all__ = [
     "build_action_arrangement_card",
     "build_action_arrangement_list",
     "build_empty_training",
+    "build_rest_training",
     "build_planned_training",
 ]

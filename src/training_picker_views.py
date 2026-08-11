@@ -151,7 +151,7 @@ def build_exercise_card(
         default_text = "计时 · 分钟 / 秒"
     else:
         default_text = "自重" if weight is None else f"{to_float(weight):g} kg"
-        default_text += f" × {reps} 次 / {sets} 组"
+        default_text += f" × {reps} / {sets}"
     usage_text = f"练过 {usage['session_count']} 次" if usage.get("session_count") else ""
     exercise_name = str(exercise.get("name") or "")
     title_size = single_line_font_size(
@@ -303,11 +303,15 @@ def build_category_sidebar(
     categories: Sequence[str],
     selected: str,
     on_select: Callable[[str], None],
+    subgroups: Sequence[str] = (),
+    selected_subgroup: str = "全部",
+    on_subgroup: Callable[[str], None] | None = None,
 ) -> list[ft.Control]:
-    """Left-side category rail for the visual exercise browser."""
+    """Left-side category rail, optionally with the active category's subgroups."""
     display_labels = {"核心稳定": "核心"}
-    return [
-        ft.Container(
+    controls: list[ft.Control] = []
+    for category in categories:
+        category_control = ft.Container(
             content=ft.Text(
                 display_labels.get(category, category),
                 size=14,
@@ -324,8 +328,35 @@ def build_category_sidebar(
             on_click=lambda e, value=category: on_select(value),
             ink=True,
         )
-        for category in categories
-    ]
+        if category == selected and on_subgroup is not None:
+            subgroup_controls = []
+            for subgroup in ("全部", *subgroups):
+                subgroup_controls.append(ft.Container(
+                    content=ft.Text(
+                        subgroup,
+                        size=12,
+                        weight="bold" if selected_subgroup == subgroup else None,
+                        color=PRIMARY if selected_subgroup == subgroup else SUB,
+                        text_align="center",
+                        max_lines=1,
+                        overflow="ellipsis",
+                    ),
+                    border_radius=7,
+                    bgcolor=PRIMARY_SOFT if selected_subgroup == subgroup else None,
+                    padding=ft.Padding(left=2, top=8, right=2, bottom=8),
+                    alignment=ft.Alignment.CENTER,
+                    on_click=lambda e, value=subgroup: on_subgroup(value),
+                    ink=True,
+                ))
+            controls.append(ft.Container(
+                content=ft.Column([category_control, *subgroup_controls], spacing=3, tight=True),
+                bgcolor=PRIMARY_SOFT,
+                border_radius=8,
+                padding=2,
+            ))
+        else:
+            controls.append(category_control)
+    return controls
 
 
 def build_sort_row(on_select: Callable[[str], None], selected: str = "frequent") -> ft.Control:

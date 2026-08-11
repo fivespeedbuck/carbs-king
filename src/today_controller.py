@@ -10,12 +10,15 @@ from typing import Any
 
 import flet as ft
 
+from analytics_calendar_views import _render_calendar
+from analytics_model import DataPageConfig, build_data_page_model
+from analytics_service import summarize_daily_training
 from app_state import AppState
 from controller_runtime import ControllerRuntime
 from dynamic_carb_adapter import normalize_training
-from form_views import build_dialog
+from form_views import FormViewContext, build_dialog, build_full_form_sheet
 from today_views import TODAY_SECTION_SPACING, TodayDashboardActions, TodayDashboardModel, build_date_toolbar, build_today_dashboard
-from training_service import completed_set_count, find_active_daily_session, planned_set_count, session_volume
+from training_service import completed_set_count, find_active_daily_session, planned_set_count
 from ui_components import GREEN, PRIMARY_SOFT, make_button
 
 
@@ -50,42 +53,64 @@ class TodayController:
         selected = datetime.datetime.strptime(str(self.deps.state["date"]), "%Y-%m-%d")
         self.deps.daily_records.load((selected + datetime.timedelta(days=delta)).strftime("%Y-%m-%d"))
 
+    @staticmethod
+    def completed_training_subtitle(training: Mapping[str, Any], record_date: str = "") -> str:
+        summary = summarize_daily_training(training, record_date)
+        parts: list[str] = []
+        formal_sets = int(summary.get("formal_sets") or 0)
+        volume_kg = float(summary.get("volume_kg") or 0)
+        cardio_minutes = float(summary.get("cardio_duration_min") or 0)
+        if formal_sets:
+            parts.extend((f"{formal_sets} 组", f"容量 {volume_kg:g} kg"))
+        if cardio_minutes:
+            parts.append(f"有氧 {cardio_minutes:g} 分钟")
+        return " · ".join(parts) or "训练已完成"
+
     def open_calendar_picker(self) -> None:
-        picker = ft.DatePicker(
-            locale=ft.Locale("zh", "CN"),
-            help_text="选择日期",
-            cancel_text="取消",
-            confirm_text="确定",
+        calendar_state = {"month": str(self.deps.state["date"])[:7]}
+        calendar_holder = ft.Column(spacing=0)
+        calendar_sheet = None
+
+        def redraw() -> None:
+            model = build_data_page_model(
+                self.deps.records,
+                end_date=self.deps.today().isoformat(),
+                config=DataPageConfig(
+                    active_tab="月历",
+                    selected_date=str(self.deps.state["date"]),
+                    calendar_month=calendar_state["month"],
+                ),
+            )
+            calendar_holder.controls = [
+                _render_calendar(
+                    model,
+                    choose_date,
+                    on_calendar_month_change=change_month,
+                    compact=True,
+                    show_legend=False,
+                )
+            ]
+            update = getattr(self.deps.runtime.page, "update", None)
+            if callable(update):
+                update()
+
+        def choose_date(chosen: str) -> None:
+            self.deps.daily_records.load(chosen, show=True)
+            self.deps.runtime.close_control(calendar_sheet)
+
+        def change_month(month: str) -> None:
+            calendar_state["month"] = month
+            redraw()
+
+        calendar_sheet = build_full_form_sheet(
+            FormViewContext(close_control=self.deps.runtime.close_control, scroll_mode=ft.ScrollMode.HIDDEN),
+            "选择日期",
+            [calendar_holder],
+            lambda e: self.deps.runtime.close_control(calendar_sheet),
+            show_footer=False,
         )
-
-        def on_change(e=None):
-            value = getattr(picker, "value", None)
-            chosen = None
-            if value:
-                try:
-                    chosen = value.date().isoformat()
-                except Exception:
-                    try:
-                        chosen = value.isoformat()[:10]
-                    except Exception:
-                        pass
-            if chosen:
-                self.deps.daily_records.load(chosen, show=True)
-            self.deps.runtime.close_control(picker)
-
-        def on_dismiss(e=None):
-            try:
-                self.deps.runtime.close_control(picker)
-            except Exception:
-                pass
-
-        try:
-            picker.value = datetime.datetime.strptime(str(self.deps.state["date"]), "%Y-%m-%d")
-        except Exception:
-            pass
-        picker.on_change = on_change
-        picker.on_dismiss = on_dismiss
-        self.deps.runtime.open_control(picker)
+        redraw()
+        self.deps.runtime.open_control(calendar_sheet)
 
     def render_toolbar(self) -> ft.Control:
         return build_date_toolbar(
@@ -121,7 +146,7 @@ class TodayController:
             icon = ft.Icons.PLAY_CIRCLE_FILLED
         elif status == "completed":
             title = "今日训练已完成"
-            subtitle = f"{completed} 组 · 容量 {session_volume(session):g} kg"
+            subtitle = self.completed_training_subtitle(state.get("training", {}), str(state.get("date") or ""))
             icon = ft.Icons.EMOJI_EVENTS
         elif training_state == "unknown":
             title = "今天准备训练吗？"

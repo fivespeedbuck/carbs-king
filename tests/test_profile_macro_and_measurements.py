@@ -14,6 +14,7 @@ from app_defaults import CIRCUMFERENCE_FIELDS, DEFAULT_MACRO_MULTIPLIERS  # noqa
 from app_state import AppState  # noqa: E402
 from nutrition_service import create_nutrition_service  # noqa: E402
 from profile_details_views import build_profile_details, build_profile_metrics  # noqa: E402
+from profile_macro_views import build_macro_panel  # noqa: E402
 from storage_service import normalize_profile_age  # noqa: E402
 
 
@@ -166,6 +167,22 @@ class ProfileMeasurementContractTests(unittest.TestCase):
         })
 
         self.assertEqual(self._all_text_values(metrics), [])
+
+    def test_macro_details_are_collapsed_until_requested(self):
+        common = {
+            "auto_selected": True,
+            "on_edit": lambda event=None: None,
+            "on_mode_change": lambda mode: None,
+            "detail_metrics": ft.Text("BMR（基础代谢率）"),
+            "on_toggle_details": lambda event=None: None,
+        }
+        collapsed = build_macro_panel([ft.Text("高碳日")], **common)
+        expanded = build_macro_panel([ft.Text("高碳日")], details_expanded=True, **common)
+
+        self.assertIn("显示详细信息", self._all_text_values(collapsed))
+        self.assertNotIn("BMR（基础代谢率）", self._all_text_values(collapsed))
+        self.assertIn("收起详细信息", self._all_text_values(expanded))
+        self.assertIn("BMR（基础代谢率）", self._all_text_values(expanded))
 
     def test_only_normal_circumferences_are_configured(self):
         self.assertEqual(

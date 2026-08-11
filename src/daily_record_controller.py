@@ -19,7 +19,7 @@ from app_utils import to_float
 from dynamic_carb_engine import create_refreshed_phase, evaluate_baseline_refresh
 from repositories import AppRepositories
 from training_clock_service import active_session_with_start
-from training_service import append_session_once, migrate_legacy_training, normalize_session_payload
+from training_service import append_session_once, migrate_legacy_training, normalize_session_payload, session_completion_state
 
 
 @dataclass(frozen=True)
@@ -546,6 +546,16 @@ class DailyRecordController:
             if isinstance(session, dict) and session.get("status") == "active":
                 session, active_clock_migrated = active_session_with_start(session, self.deps.now())
                 clock_migrated = clock_migrated or active_clock_migrated
+            explicit_rest = any(
+                str(item.get("target") or "").strip().casefold() in {"休息", "rest"}
+                for item in targets
+                if isinstance(item, Mapping)
+            )
+            session_candidates = [*archived, *([session] if isinstance(session, dict) else [])]
+            if explicit_rest and not any(session_completion_state(item)["has_completed_work"] for item in session_candidates):
+                clock_migrated = clock_migrated or bool(session_candidates)
+                session = None
+                archived = []
             return {
                 "total_duration_min": str(raw.get("total_duration_min", "")),
                 "total_calories_kcal": str(raw.get("total_calories_kcal", "")),

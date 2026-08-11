@@ -48,6 +48,8 @@ def build_full_form_sheet(
     save_label: str = "保存",
     header_action: Any | None = None,
     footer_controls: Sequence[Any] | None = None,
+    show_footer: bool = True,
+    show_header: bool = True,
 ):
     """Build a keyboard-safe, full-height mobile editing surface."""
     sheet = None
@@ -55,10 +57,27 @@ def build_full_form_sheet(
     def close_sheet(event=None):
         context.close_control(sheet)
 
+    footer = ft.Container(
+        content=ft.Row(
+            list(footer_controls) if footer_controls is not None else [
+                make_button("取消", on_click=close_sheet, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
+                make_button(save_label, on_click=on_save, expand=True),
+            ],
+            spacing=FORM_FOOTER_SPACING,
+        ),
+        padding=ft.Padding(
+            left=FORM_HORIZONTAL_PADDING,
+            top=10,
+            right=FORM_HORIZONTAL_PADDING,
+            bottom=12,
+        ),
+        bgcolor="#FFFFFF",
+        border=ft.Border(top=ft.BorderSide(width=1, color=BORDER)),
+    )
     sheet = ft.BottomSheet(
         content=ft.Container(
             content=ft.Column([
-                ft.Container(
+                *([ft.Container(
                     content=ft.Row([
                         ft.IconButton(ft.Icons.ARROW_BACK, tooltip="返回", width=48, height=48, on_click=close_sheet),
                         ft.Text(title, size=19, weight="bold", color=TEXT, expand=True),
@@ -67,7 +86,7 @@ def build_full_form_sheet(
                     ], spacing=4, vertical_alignment="center"),
                     padding=ft.Padding(left=4, top=4, right=4, bottom=4),
                     border=ft.Border(bottom=ft.BorderSide(width=1, color=BORDER)),
-                ),
+                )] if show_header else []),
                 ft.Container(
                     content=ft.Column(
                         list(controls),
@@ -84,23 +103,7 @@ def build_full_form_sheet(
                     ),
                     expand=True,
                 ),
-                ft.Container(
-                    content=ft.Row(
-                        list(footer_controls) if footer_controls is not None else [
-                            make_button("取消", on_click=close_sheet, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
-                            make_button(save_label, on_click=on_save, expand=True),
-                        ],
-                        spacing=FORM_FOOTER_SPACING,
-                    ),
-                    padding=ft.Padding(
-                        left=FORM_HORIZONTAL_PADDING,
-                        top=10,
-                        right=FORM_HORIZONTAL_PADDING,
-                        bottom=12,
-                    ),
-                    bgcolor="#FFFFFF",
-                    border=ft.Border(top=ft.BorderSide(width=1, color=BORDER)),
-                ),
+                *([footer] if show_footer else []),
             ], spacing=0, expand=True),
             bgcolor="#FFFFFF",
             border_radius=ft.BorderRadius(

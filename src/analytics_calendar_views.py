@@ -163,8 +163,12 @@ def _render_calendar(
     on_selected_date_change: Callable[[str], None] | None,
     on_calendar_event_change: Callable[[str, str], None] | None = None,
     on_calendar_month_change: Callable[[str], None] | None = None,
+    *,
+    compact: bool = False,
+    show_legend: bool = True,
 ) -> ft.Container:
     month_anchor = date.fromisoformat(f"{model.get('calendar_month')}-01")
+    cell_height = 92 if compact else CALENDAR_CELL_HEIGHT
 
     def change_month(target: date):
         if on_calendar_month_change is not None:
@@ -217,23 +221,25 @@ def _render_calendar(
     cells: list[ft.Control] = []
     for item in model.get("calendar", []):
         if not item.get("in_month"):
-            cells.append(ft.Container(height=CALENDAR_CELL_HEIGHT, bgcolor="#FBFCFB", border_radius=5, expand=True))
+            cells.append(ft.Container(height=cell_height, bgcolor="#FBFCFB", border_radius=5, expand=True))
             continue
         state = item.get("record_state")
         selected = bool(item.get("selected"))
+        is_today = item.get("date") == date.today().isoformat()
         state_color = PRIMARY if state == "recorded" else ORANGE if state == "rest" else BORDER
         day = str(item.get("date", ""))[-2:]
         day_type = str(item.get("compact_day_type") or "")
         activity_lines = _calendar_activity_lines(item)
         click = None if on_selected_date_change is None else lambda e, value=item.get("date"): on_selected_date_change(str(value))
+        day_header = [ft.Text(day, size=12, weight="bold", color=TEXT, no_wrap=True)]
+        if is_today:
+            day_header.append(ft.Text("今", size=9, weight="bold", color=THEME_PRIMARY, no_wrap=True, data="calendar-today"))
+        day_header.append(ft.Text(day_type, size=12, weight="bold", color=_CARBON_COLORS.get(day_type, SUB), no_wrap=True))
         cells.append(
             ft.Container(
                 content=ft.Column(
                     [
-                        ft.Row([
-                            ft.Text(day, size=12, weight="bold", color=TEXT, no_wrap=True),
-                            ft.Text(day_type, size=12, weight="bold", color=_CARBON_COLORS.get(day_type, SUB), no_wrap=True),
-                        ], alignment="spaceBetween", spacing=1),
+                        ft.Row(day_header, spacing=1),
                         ft.Column([
                             ft.Text(label, size=12, color=TEXT, weight="bold", max_lines=1, no_wrap=True)
                             for label in activity_lines
@@ -242,7 +248,7 @@ def _render_calendar(
                     ],
                     spacing=2,
                 ),
-                height=CALENDAR_CELL_HEIGHT,
+                height=cell_height,
                 padding=3,
                 bgcolor=PRIMARY_SOFT if selected else WHITE,
                 border=_border(THEME_PRIMARY if selected else state_color if state != "unrecorded" else BORDER, 2 if selected else 1),
@@ -257,25 +263,24 @@ def _render_calendar(
         ft.Container(content=ft.Text(label, size=12, color=SUB, weight="bold", text_align="center"), expand=True, alignment=ft.Alignment.CENTER)
         for label in ("一", "二", "三", "四", "五", "六", "日")
     ]
-    return _card(
-        ft.Column([
-            _render_calendar_summary(model),
-            ft.Row([
-                ft.IconButton(ft.Icons.CHEVRON_LEFT, tooltip="上一月", on_click=lambda e: change_month(_shift_month(month_anchor, -1))),
-                ft.TextButton(f"{month_anchor.year}年{month_anchor.month:02d}月", on_click=open_month_picker, expand=True),
-                ft.IconButton(ft.Icons.CHEVRON_RIGHT, tooltip="下一月", on_click=lambda e: change_month(_shift_month(month_anchor, 1))),
-            ], spacing=2, alignment="center"),
-            ft.Row(
-                [ft.TextButton("回到本月", on_click=lambda e: change_month(date.today().replace(day=1)))],
-                alignment="center",
-            ) if (month_anchor.year, month_anchor.month) != (date.today().year, date.today().month) else ft.Container(height=0),
-            ft.Container(
-                content=ft.Column([
-                    ft.Row(weekdays, spacing=1),
-                    *rows,
-                ], spacing=1),
-            ),
-            _render_selected_day_detail(model, on_calendar_event_change),
-        ], spacing=10),
-        padding=6,
-    )
+    controls: list[ft.Control] = [
+        *([] if compact else [_render_calendar_summary(model)]),
+        ft.Row([
+            ft.IconButton(ft.Icons.CHEVRON_LEFT, tooltip="上一月", on_click=lambda e: change_month(_shift_month(month_anchor, -1))),
+            ft.TextButton(f"{month_anchor.year}年{month_anchor.month:02d}月", on_click=open_month_picker, expand=True),
+            ft.IconButton(ft.Icons.CHEVRON_RIGHT, tooltip="下一月", on_click=lambda e: change_month(_shift_month(month_anchor, 1))),
+        ], spacing=2, alignment="center"),
+        ft.Row(
+            [ft.TextButton("回到本月", on_click=lambda e: change_month(date.today().replace(day=1)))],
+            alignment="center",
+        ) if (month_anchor.year, month_anchor.month) != (date.today().year, date.today().month) else ft.Container(height=0),
+        ft.Container(
+            content=ft.Column([
+                ft.Row(weekdays, spacing=1),
+                *([ft.Text("绿=记录 · 黄=休息 · 紫=选中 · 灰=空白 · 今=今天", size=12, color=SUB, text_align="center")] if show_legend else []),
+                *rows,
+            ], spacing=1),
+        ),
+        *([] if compact else [_render_selected_day_detail(model, on_calendar_event_change)]),
+    ]
+    return _card(ft.Column(controls, spacing=10), padding=6)

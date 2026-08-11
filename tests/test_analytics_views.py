@@ -796,6 +796,8 @@ class AnalyticsViewModelTests(unittest.TestCase):
         self.assertEqual(review["diet"]["recorded_days"], 1)
         self.assertEqual(review["diet"]["completion_percent"], 90)
         self.assertEqual(review["sleep"]["recorded_days"], 1)
+        self.assertEqual(review["sleep"]["target_gap_hours"], -1)
+        self.assertEqual(review["sleep"]["detail"], "较目标 -1 小时")
         self.assertIsNone(review["training"]["change_percent"])
 
     def test_weekly_review_empty_does_not_invent_zeroes(self):

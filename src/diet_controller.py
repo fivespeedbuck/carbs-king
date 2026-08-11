@@ -387,27 +387,50 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
 
         portion_shortcuts = ft.Column([
             ft.Row([
-                make_button("一两口 30g", on_click=lambda e: choose_portion(30), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
-                make_button("几口 60g", on_click=lambda e: choose_portion(60), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
+                make_button("一两口 30g", on_click=lambda e: choose_portion(30), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=48),
+                make_button("几口 60g", on_click=lambda e: choose_portion(60), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=48),
             ], spacing=8),
             ft.Row([
-                make_button("半份 150g", on_click=lambda e: choose_portion(150), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
-                make_button("一份 250g", on_click=lambda e: choose_portion(250), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=56),
+                make_button("半份 150g", on_click=lambda e: choose_portion(150), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=48),
+                make_button("一份 250g", on_click=lambda e: choose_portion(250), bgcolor=PRIMARY_SOFT, color=GREEN, expand=True, height=48),
             ], spacing=8),
         ], spacing=8)
 
+        measurement_text = ft.Text("计量口径：选择食物后显示", size=13, color=SUB, max_lines=1, overflow="ellipsis")
+        measurement_box = ft.Container(
+            content=measurement_text,
+            height=52,
+            bgcolor="#FFFFFF",
+            border=thin_border(),
+            border_radius=8,
+            padding=ft.Padding(left=12, top=0, right=12, bottom=0),
+            alignment=ft.Alignment.CENTER_LEFT,
+        )
+
         def update_qty_label():
             qty.label_text = f"数量（{current_unit()}）"
+
+        def update_measurement():
+            food = next((f for f in foods if f.get("name") == food_dd.value), None)
+            if food is None:
+                measurement_text.value = "计量口径：选择食物后显示"
+                return
+            method = str(food.get("method") or "").strip()
+            if not method:
+                method = f"每 {to_float(food.get('base_qty'), 100):g}{food.get('unit', 'g')}"
+            measurement_text.value = method
 
         def apply_filter(e=None):
             kw = (search.value or "").strip().lower()
             filtered = search_foods(kw, foods=foods)[:24]
             update_food_selector(food_dd, filtered)
             update_qty_label()
+            update_measurement()
             page.update()
 
         def food_changed(e=None):
             update_qty_label()
+            update_measurement()
             page.update()
 
         search.on_change = apply_filter
@@ -469,6 +492,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             search.value = ""
             qty.value = f"{to_float(item.get('qty')):g}"
             update_qty_label()
+            update_measurement()
             page.update()
 
         shortcut_list = ft.Column(spacing=6)
@@ -485,20 +509,52 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             qty_text = f"{to_float(item.get('qty')):g}{item.get('unit', '')}"
             return f"{name} · {qty_text}"
 
+        shortcut_width = max(260, int(to_float(getattr(page, "width", None), 430)) - 32)
+
+        def shortcut_metrics(label):
+            """Keep food shortcut names on one line, shrinking before ellipsizing."""
+            visual_units = sum(
+                0.18 if char.isspace() else 0.55 if ord(char) < 128 else 1
+                for char in label
+            )
+            text_size = 11 if visual_units <= 10 else 10 if visual_units <= 16 else 9
+            width = min(shortcut_width, max(86, int(visual_units * text_size + 24)))
+            return text_size, width
+
         def update_shortcuts(e=None):
-            current = food_shortcuts(meal_dd.value or default_meal)
+            current = food_shortcuts(meal_dd.value or default_meal, limit=9)
             shortcut_list.controls.clear()
             if not current:
                 shortcut_list.controls.append(small_text("记录几次后，这里会出现快捷食物"))
-            for item in current:
-                shortcut_list.controls.append(ft.Container(
-                    content=ft.Text(shortcut_label(item), size=12, weight="bold", color=GREEN, max_lines=1, overflow="ellipsis"),
-                    height=44,
-                    bgcolor=PRIMARY_SOFT, border=thin_border(), border_radius=8,
-                    padding=ft.Padding(left=10, top=0, right=10, bottom=0),
-                    alignment=ft.Alignment.CENTER_LEFT,
-                    on_click=lambda e, x=item: select_shortcut(x),
-                ))
+            else:
+                rows, used_widths = [], []
+                for item in current:
+                    label = shortcut_label(item)
+                    text_size, width = shortcut_metrics(label)
+                    target = next(
+                        (index for index, used in enumerate(used_widths) if used + 6 + width <= shortcut_width),
+                        None,
+                    )
+                    if target is None:
+                        if len(rows) == 3:
+                            break
+                        rows.append([])
+                        used_widths.append(0)
+                        target = len(rows) - 1
+                    rows[target].append(ft.Container(
+                        content=ft.Text(label, size=text_size, weight="bold", color=GREEN, max_lines=1, overflow="ellipsis"),
+                        width=width,
+                        height=48,
+                        bgcolor=PRIMARY_SOFT, border=thin_border(), border_radius=8,
+                        padding=ft.Padding(left=8, top=0, right=8, bottom=0),
+                        alignment=ft.Alignment.CENTER_LEFT,
+                        on_click=lambda e, x=item: select_shortcut(x),
+                    ))
+                    used_widths[target] += width if used_widths[target] == 0 else 6 + width
+
+                shortcut_list.controls.extend(
+                    ft.Row(row, spacing=6, width=shortcut_width) for row in rows
+                )
 
             if e is not None:
                 page.update()
@@ -524,6 +580,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
                 two_field_grid(meal_dd, qty, viewport_width=dialog_width),
                 portion_shortcuts,
                 two_field_grid(search, food_dd, viewport_width=dialog_width),
+                measurement_box,
             ],
             confirm,
         )
@@ -561,7 +618,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
             fields[key] = mobile_text_field(
                 field_labels[key],
                 value=str(item.get(key, "")),
-                width=dialog_width if key == "method" else None,
+                width=max(260, int(to_float(getattr(page, "width", None), 430)) - 32) if key == "method" else None,
                 keyboard_type=_KEYBOARD_NUMBER if key in ["base_qty", "kcal", "carb", "protein", "fat"] else None,
                 expand=key != "method",
             )
@@ -633,14 +690,20 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         dlg = full_form_sheet(
             "修改食物" if editing else "新增食物",
             [
-                section_title("名称与分类"),
-                two_field_grid(fields["name"], fields["category"], viewport_width=dialog_width),
-                section_title("计量口径"),
-                quantity_unit_grid(fields["base_qty"], fields["unit"], viewport_width=dialog_width),
-                custom_unit_holder, fields["method"],
-                section_title("营养数据"),
-                quantity_unit_grid(fields["kcal"], fields["energy_unit"], viewport_width=dialog_width),
-                three_field_grid(fields["carb"], fields["protein"], fields["fat"], viewport_width=dialog_width),
+                ft.Column([
+                    section_title("名称与分类"),
+                    two_field_grid(fields["name"], fields["category"], viewport_width=dialog_width),
+                ], spacing=6, tight=True),
+                ft.Column([
+                    section_title("计量口径"),
+                    quantity_unit_grid(fields["base_qty"], fields["unit"], viewport_width=dialog_width),
+                    custom_unit_holder, fields["method"],
+                ], spacing=6, tight=True),
+                ft.Column([
+                    section_title("营养数据"),
+                    quantity_unit_grid(fields["kcal"], fields["energy_unit"], viewport_width=dialog_width),
+                    three_field_grid(fields["carb"], fields["protein"], fields["fat"], viewport_width=dialog_width),
+                ], spacing=6, tight=True),
             ],
             confirm,
         )
@@ -852,7 +915,7 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
 
     def render_food_library():
         """Fast, no-image food browser for the bundled 1,657-item catalog."""
-        search = mobile_text_field("搜索食物", value="", expand=True)
+        search = mobile_text_field("", value="", expand=True, hint_text="搜索食物").field
         selected = {"category": "全部", "subgroup": "全部", "limit": 24}
         scroll_auto = getattr(getattr(ft, "ScrollMode", object()), "AUTO", "auto")
         filter_row = ft.Row(spacing=6, scroll=scroll_auto)
@@ -959,9 +1022,17 @@ def create_diet_controller(deps: DietControllerDependencies) -> DietController:
         search.on_change = on_search_change
         rebuild_filters()
         rebuild_list()
+        add_food_action = ft.IconButton(
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+            tooltip="新增食物",
+            width=52,
+            height=52,
+            icon_size=32,
+            icon_color=PRIMARY,
+            on_click=lambda e: open_food_library_dialog(),
+        )
         return ft.Column([
-            card(ft.Row([section_title("食物库"), make_button("新增", on_click=lambda e: open_food_library_dialog(), icon=ft.Icons.ADD)], alignment="spaceBetween")),
-            card(search, padding=10),
+            card(ft.Row([search, add_food_action], spacing=8, vertical_alignment="center"), padding=10),
             card(ft.Container(content=filter_row, height=52, clip_behavior=ft.ClipBehavior.HARD_EDGE), padding=10),
             list_box,
             load_more_holder,

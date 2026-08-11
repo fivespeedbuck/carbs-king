@@ -16,8 +16,10 @@ from training_views import (  # noqa: E402
     ActiveTrainingModel,
     build_active_training,
 )
+from training_models import SessionExercise, TrainingSession, TrainingSet  # noqa: E402
 from training_picker_views import build_exercise_card  # noqa: E402
 from training_plan_views import PlannedTrainingActions, build_planned_training  # noqa: E402
+from training_summary_views import TrainingSummaryActions, build_training_summary  # noqa: E402
 from ui_components import PRIMARY  # noqa: E402
 
 
@@ -111,6 +113,54 @@ def _texts(control):
 
 
 class ActiveTrainingViewTests(unittest.TestCase):
+    def test_summary_marks_uncompleted_cardio_as_uncompleted(self):
+        """A planned cardio item must not look complete beside a 20/21 total."""
+        session = TrainingSession(
+            date="2026-08-08",
+            exercises=[
+                SessionExercise(
+                    name="力量训练",
+                    body_part="背",
+                    order=1,
+                    sets=[TrainingSet(order=index, completed=True) for index in range(1, 21)],
+                ),
+                SessionExercise(
+                    name="跑步机爬坡",
+                    body_part="有氧",
+                    order=2,
+                    recording_mode="cardio",
+                    duration_seconds=1200,
+                    completed=False,
+                ),
+            ],
+        )
+
+        result = build_training_summary(
+            session,
+            title="未完整训练",
+            duration_minutes=95.5,
+            completed_sets=20,
+            planned_sets=21,
+            volume_kg=3915,
+            advice="训练成绩已计入今天记录。",
+            actions=TrainingSummaryActions(repeat=_noop, create_new=_noop),
+        )
+
+        texts = _texts(result)
+
+        self.assertIn("20/21", texts)
+        self.assertIn("完成项目", texts)
+        self.assertIn("有氧时间", texts)
+        self.assertIn("20", texts)
+        self.assertIn("未完成", texts)
+        completion_text = next(item for item in _walk(result) if isinstance(item, ft.Text) and item.value == "20/21")
+        self.assertTrue(completion_text.no_wrap)
+
+    def test_completion_actions_follow_the_active_theme_primary_color(self):
+        result = build_active_training(_model(confirm_complete=True), _actions())
+        controls = [item for item in _walk(result.control) if getattr(item, "bgcolor", None) == PRIMARY]
+        self.assertGreaterEqual(len(controls), 2)
+
     def test_confirmed_plan_keeps_current_carb_tier_visible(self):
         session = {
             "exercises": [{
@@ -315,7 +365,7 @@ class ActiveTrainingViewTests(unittest.TestCase):
 
         card = build_exercise_card(exercise, {"session_count": 2}, _noop, _noop)
 
-        self.assertIn("40 kg × 7 次 / 5 组", _texts(card))
+        self.assertIn("40 kg × 7 / 5", _texts(card))
         self.assertIn("练过 2 次", _texts(card))
 
     def test_weight_and_reps_values_both_have_direct_edit_tap_targets(self):
@@ -530,7 +580,7 @@ class ActiveTrainingViewTests(unittest.TestCase):
             item for item in _walk(result.control)
             if getattr(item, "data", None) == "active-progress-current"
         )
-        self.assertEqual(progress.bgcolor, "#21A366")
+        self.assertEqual(progress.bgcolor, PRIMARY)
         self.assertEqual(current.bgcolor, "#FFD166")
 
     def test_superset_shows_current_member_border_and_gold_current_set_together(self):

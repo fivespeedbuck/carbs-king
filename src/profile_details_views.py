@@ -48,7 +48,7 @@ def build_profile_details(
     on_toggle_circumference: Callable[[Any], None],
     on_sex_change: Callable[[str], None],
     on_activity_change: Callable[[str], None],
-    metrics: ft.Control,
+    metrics: ft.Control | None,
     macro_panel: ft.Control,
     backup_panel: ft.Control,
     feature_panels: Sequence[ft.Control] = (),
@@ -105,7 +105,7 @@ def build_profile_details(
         small_text("运动习惯"),
         ft.Row([option_button("久坐少动", activity_habit, on_activity_change), option_button("偶尔运动", activity_habit, on_activity_change)], spacing=8),
         ft.Row([option_button("规律训练", activity_habit, on_activity_change), option_button("高频训练", activity_habit, on_activity_change)], spacing=8),
-        metrics,
+        metrics if metrics is not None else ft.Container(height=0),
         macro_panel,
     ], spacing=10))
     settings_sections = [section_title("功能设置")]

@@ -44,6 +44,14 @@ class TrainingRecycleServiceTests(unittest.TestCase):
                 self.assertEqual(removed["session"]["id"], "session-1")
                 self.assertEqual(recycle.load_json(path, []), [])
 
+    def test_expiry_label_uses_the_entry_deleted_time(self):
+        label = recycle.recycle_expiry_label(
+            "2026-08-01T15:20:00+08:00",
+            now=dt.datetime.fromisoformat("2026-08-11T15:58:00+08:00"),
+        )
+
+        self.assertEqual(label, "4 天后自动清除")
+
 
 if __name__ == "__main__":
     unittest.main()

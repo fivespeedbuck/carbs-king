@@ -1,13 +1,13 @@
 {
   "tag_name": "v1.2.3",
-  "name": "碳水大王 v1.2.3（Build 101）",
+  "name": "碳水大王 v1.2.3（Build 111）",
   "html_url": "https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3",
   "assets": [
     {
       "name": "carbs_king.apk",
       "browser_download_url": "https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk",
-      "size": 201914395,
-      "digest": "sha256:8bc9de0b9489288d2f8b630d7fd3e1289be272018e6ba2a4c42c1a0167b59de9"
+      "size": 201898707,
+      "digest": "sha256:06497f6ab208a49493a368e3057855b6cdb82657fe8b60a72b924cf79b03ed1f"
     }
   ]
 }

@@ -68,13 +68,13 @@ class Build76RegressionTests(unittest.TestCase):
         self.assertIn('compact_row = ft.Row(', self.training)
         self.assertIn('"更多器械"', self.training)
         self.assertIn('scroll=_SCROLL_HIDDEN', self.training)
-        self.assertIn('content=category_rows, width=42', self.training)
+        self.assertIn('content=category_rows, width=category_panel_width', self.training)
         self.assertNotIn('sort_row, selection_status', self.training)
         self.assertIn('"更多器械",', self.training)
         self.assertIn('selected["equipment"] != "全部" and selected["equipment"] not in equipment', self.training)
         self.assertIn("browser_width = max(260, min(398", self.training)
-        self.assertIn("equipment_panel_width = max(238, browser_width - 51)", self.training)
-        self.assertIn('width=browser_width, height=560', self.training)
+        self.assertIn("equipment_panel_width = max(238, browser_width - category_panel_width - 9)", self.training)
+        self.assertIn('width=browser_width, spacing=4, expand=True', self.training)
 
     def test_training_entry_icons_have_visible_white_backplates(self):
         self.assertIn('size=36, color=PRIMARY), width=60, height=60, bgcolor=CARD', self.today)

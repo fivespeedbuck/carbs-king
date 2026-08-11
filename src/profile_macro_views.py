@@ -74,6 +74,9 @@ def build_macro_panel(
     on_goal_change: Callable[[str], None] | None = None,
     applied_goal: str | None = None,
     on_goal_apply: Callable[[str], None] | None = None,
+    detail_metrics: ft.Control | None = None,
+    details_expanded: bool = False,
+    on_toggle_details: Callable[[Any], None] | None = None,
 ) -> ft.Control:
     goal_section = (
         build_carb_cycle_goal_section(
@@ -85,6 +88,16 @@ def build_macro_panel(
         if auto_selected and on_goal_change is not None
         else ft.Container(height=0)
     )
+    details = [
+        detail_metrics if detail_metrics is not None else ft.Container(height=0),
+        *rows,
+        small_text(
+            "自动目标会根据个人资料与已确认训练生成；自定义模式不会被自动调整。" if auto_selected
+            else "当前显示自定义倍率，可点击右上角编辑。"
+        ) if profile_ready else ft.Container(height=0),
+        small_text("自动目标仅适用于一般健康成人；孕哺期、糖尿病用药、肾病或进食障碍请使用专业医疗方案。")
+        if profile_ready and auto_selected else ft.Container(height=0),
+    ] if details_expanded else []
     return ft.Container(
         content=ft.Column([
             ft.Row([
@@ -98,13 +111,14 @@ def build_macro_panel(
             ], spacing=8),
             goal_section,
             small_text(profile_message) if not profile_ready else ft.Container(height=0),
-            *rows,
-            small_text(
-                "自动目标会根据个人资料与已确认训练生成；自定义模式不会被自动调整。" if auto_selected
-                else "当前显示自定义倍率，可点击右上角编辑。"
-            ) if profile_ready else ft.Container(height=0),
-            small_text("自动目标仅适用于一般健康成人；孕哺期、糖尿病用药、肾病或进食障碍请使用专业医疗方案。")
-            if profile_ready and auto_selected else ft.Container(height=0),
+            make_button(
+                "收起详细信息" if details_expanded else "显示详细信息",
+                on_click=on_toggle_details,
+                bgcolor=PRIMARY_SOFT,
+                color=GREEN,
+                expand=True,
+            ) if profile_ready and on_toggle_details is not None else ft.Container(height=0),
+            *details,
         ], spacing=7),
         bgcolor="#F8FAFC",
         border_radius=8,

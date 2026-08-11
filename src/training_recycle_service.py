@@ -21,6 +21,22 @@ def _parse(value: Any) -> dt.datetime | None:
         return None
 
 
+def recycle_expiry_label(deleted_at: Any, *, now: dt.datetime | None = None) -> str:
+    """Return the remaining retention time for one recycle-bin entry."""
+    deleted = _parse(deleted_at)
+    if deleted is None:
+        return "自动清除时间未知"
+    current = now or dt.datetime.now().astimezone()
+    if deleted.tzinfo is None and current.tzinfo is not None:
+        current = current.replace(tzinfo=None)
+    elif deleted.tzinfo is not None and current.tzinfo is None:
+        current = current.replace(tzinfo=deleted.tzinfo)
+    seconds = (deleted + dt.timedelta(days=RETENTION_DAYS) - current).total_seconds()
+    if seconds < 86400:
+        return "不足 1 天后自动清除"
+    return f"{int(seconds // 86400)} 天后自动清除"
+
+
 def load_recycled_training_sessions(
     *, now: dt.datetime | None = None
 ) -> list[dict[str, Any]]:
@@ -77,6 +93,7 @@ def remove_recycled_training_session(entry_id: str) -> dict[str, Any] | None:
 
 __all__ = [
     "RETENTION_DAYS",
+    "recycle_expiry_label",
     "load_recycled_training_sessions",
     "recycle_training_session",
     "remove_recycled_training_session",
