@@ -42,7 +42,7 @@ from training_picker_views import (
 )
 from training_plan_views import (
     EmptyTrainingActions, PlannedTrainingActions,
-    build_action_arrangement_list, build_empty_training, build_planned_training,
+    build_action_arrangement_list, build_empty_training, build_planned_training, build_rest_training,
 )
 from training_summary_views import (
     TrainingSummaryActions,
@@ -230,17 +230,24 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             return True
         return False
 
+    def has_pending_work(session) -> bool:
+        return any(
+            first_pending_set_index(exercise) is not None
+            for exercise in normalized_session_exercises(session)
+        )
+
     def dialog_base(title, content, actions=None, on_close=None):
         return build_dialog(title, content, actions=actions, on_close=on_close)
 
-    def full_form_sheet(title, controls, on_save, save_label="保存", header_action=None):
+    def full_form_sheet(title, controls, on_save, save_label="保存", header_action=None, *, show_header=True, scroll_mode=_SCROLL_HIDDEN):
         return build_full_form_sheet(
-            FormViewContext(close_control=close_control, scroll_mode=_SCROLL_HIDDEN),
+            FormViewContext(close_control=close_control, scroll_mode=scroll_mode),
             title,
             controls,
             on_save,
             save_label,
             header_action,
+            show_header=show_header,
         )
 
     def training_signature():
@@ -292,9 +299,14 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         def apply_rest(_=None):
             training["targets"] = [{"target": "休息", "detail": "今日休息", "note": "", "intensity": "恢复"}]
             training["session"] = None
+            training["sessions"] = []
             training["carb_mode"] = "auto"
             if state.get("macro_mode") != "custom":
                 state["day_type"] = "低碳日"
+            current = records.get(state["date"])
+            current = dict(current) if isinstance(current, dict) else {}
+            current["calendar_event"] = {"type": "rest", "text": "休息"}
+            records[state["date"]] = current
             save_current()
             refresh()
             snack("已设为今日休息，按低碳日执行")
@@ -324,6 +336,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         training["carb_mode"] = "auto"
         if state.get("macro_mode") != "custom":
             state["day_type"] = "低碳日"
+        current = records.get(state["date"])
+        if isinstance(current, dict) and str((current.get("calendar_event") or {}).get("type") or "").strip().lower() == "rest":
+            current = dict(current)
+            current.pop("calendar_event", None)
+            records[state["date"]] = current
+        save_current()
         set_view("training")
         open_add_exercise_dialog()
 
@@ -437,9 +455,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         custom_exercises = load_custom_exercises()
         catalog = exercise_catalog(custom_exercises)
         categories = tuple(dict.fromkeys([*EXERCISE_CATEGORIES, *(item.get("category", "其他") for item in custom_exercises)]))
-        # Leave more of the phone width to the filters and results while
-        # keeping the body-part rail readable.
-        equipment_panel_width = max(238, browser_width - 51)
+        # Four Chinese characters fit the longest body-part name, "核心稳定".
+        category_panel_width = 64
+        equipment_panel_width = max(238, browser_width - category_panel_width - 9)
         # Rendering a whole body-part at once can mean hundreds of cards in
         # the web canvas. Keep the picker responsive and reveal more on demand.
         list_holder = ft.GridView(
@@ -459,8 +477,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             padding=ft.Padding(left=0, top=0, right=2, bottom=0),
         )
         load_more_holder = ft.Column(spacing=6)
-        category_rows = ft.Column(spacing=3, width=42, scroll=_SCROLL_HIDDEN)
-        subgroup_rows = ft.Row(spacing=6, scroll=_SCROLL_HIDDEN)
+        category_rows = ft.ListView(spacing=3, width=category_panel_width, padding=0, scroll=_SCROLL_HIDDEN)
         equipment_rows = ft.Column(spacing=6, width=equipment_panel_width)
         equipment_scroll = {"offset": 0.0}
 
@@ -484,7 +501,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             page.run_task(restore)
         selection_status = ft.Text("已选择 0 个动作", size=13, color=SUB, weight="bold")
         search_notice = ft.Text("", size=12, color=ORANGE, visible=False)
-        search = mobile_text_field("搜索动作名称、器械或目标肌群", "", width=browser_width)
+        search = mobile_text_field("", "", expand=True, hint_text="搜索动作名称、器械或目标肌群").field
         library_dlg = None
         pending_setup = {"dialog": None}
         return_after_add = {"pending": False}
@@ -778,6 +795,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
             def confirm(e):
                 session = ensure_session()
+                was_complete = not has_pending_work(session)
                 action_name = (name.value or "").strip()
                 if not action_name:
                     snack("请填写动作名称")
@@ -858,6 +876,8 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                     "note": "",
                 }
                 session.setdefault("exercises", []).append(exercise_entry)
+                if was_complete:
+                    move_cursor_to_pending(normalized_session_exercises(session))
                 persist_session(session)
                 saved_setup["message"] = f"已添加 {action_name}"
                 close_control(setup_dlg)
@@ -951,6 +971,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 snack("请先选择至少一个动作")
                 return
             session = ensure_session()
+            was_complete = not has_pending_work(session)
             source_by_name = {
                 str(item.get("name") or ""): item
                 for item in catalog
@@ -972,15 +993,17 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             if not added:
                 snack("没有可添加的动作")
                 return
+            if was_complete:
+                move_cursor_to_pending(normalized_session_exercises(session))
             persist_session(session)
             return_after_add["pending"] = True
             close_control(library_dlg)
             refresh()
             snack(f"已添加 {added} 个动作，可在计划卡片中单独编辑")
 
-        def rebuild_categories():
+        def rebuild_categories(subgroups=()):
             category_rows.controls.clear()
-            category_rows.controls.extend(build_category_sidebar(categories, selected["category"], choose_category))
+            category_rows.controls.extend(build_category_sidebar(categories, selected["category"], choose_category, subgroups, selected["subgroup"], choose_subgroup))
 
         def estimate_equipment_width(label):
             # Matches make_button's 14px text and 20px horizontal padding.
@@ -1036,10 +1059,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             if selected["equipment"] != "全部" and selected["equipment"] not in equipment:
                 selected["equipment"] = "全部"
                 selected["show_more_equipment"] = False
-            subgroup_rows.controls = [
-                make_button(label, on_click=lambda e, value=label: choose_subgroup(value), bgcolor=PRIMARY if selected["subgroup"] == label else PRIMARY_SOFT, color="#FFFFFF" if selected["subgroup"] == label else GREEN)
-                for label in ["全部", *subgroups]
-            ]
+            rebuild_categories(subgroups)
             common_equipment = [item for item in equipment if item in common_equipment_names]
             other_equipment = [item for item in equipment if item not in common_equipment]
 
@@ -1079,9 +1099,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
 
         def choose_category(category):
             selected["category"] = category
+            selected["subgroup"] = "全部"
             selected["limit"] = page_size
             selected["show_more_equipment"] = False
-            rebuild_categories()
             rebuild_filters()
             rebuild_list()
             page.update()
@@ -1171,30 +1191,31 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 page.update()
 
         search.on_change = on_search_change
-        rebuild_categories()
         rebuild_filters()
         rebuild_list()
         custom_item = {"name": "", "category": "自定义", "equipment": "其他", "target_muscles": [], "cues": [], "mistakes": [], "default_weight_kg": None, "default_reps": 10, "default_sets": 4, "recording_mode": "strength", "distance_enabled": True}
         browser_panel = ft.Row([
-            ft.Container(content=category_rows, width=42, padding=ft.Padding(left=0, top=0, right=0, bottom=0)),
+            ft.Container(content=category_rows, width=category_panel_width, padding=ft.Padding(left=0, top=0, right=0, bottom=0)),
             ft.VerticalDivider(width=1, color="#D9E6E1"),
-            ft.Column([subgroup_rows, equipment_rows, search_notice, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8),
-        ], width=browser_width, height=560, spacing=4)
+            ft.Column([equipment_rows, search_notice, selection_status, list_holder, load_more_holder], width=equipment_panel_width, spacing=8, expand=True),
+        ], width=browser_width, spacing=4, expand=True)
         add_custom_action = ft.IconButton(
-            icon=ft.Icons.ADD,
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
             tooltip="新建自定义动作",
-            width=48,
-            height=48,
+            width=52,
+            height=52,
+            icon_size=32,
             icon_color=PRIMARY,
             on_click=lambda e: open_setup(custom_item),
         )
         keyboard_focus_target["control"] = add_custom_action
         library_dlg = full_form_sheet(
             f"添加动作 · {len(catalog)} 个",
-            [search, browser_panel],
+            [ft.Row([search, add_custom_action], spacing=8, vertical_alignment="center"), browser_panel],
             add_selected_exercises,
             save_label="添加已选动作",
-            header_action=add_custom_action,
+            show_header=False,
+            scroll_mode=None,
         )
         library_dlg.on_dismiss = after_library_dismiss
         open_control(library_dlg)
@@ -2699,9 +2720,9 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         rating_buttons.extend([
             ft.Container(
                 content=ft.Text(str(value), size=15, weight="bold", color=GREEN, text_align="center"),
-                width=42,
-                height=42,
-                border_radius=21,
+                width=36,
+                height=36,
+                border_radius=18,
                 bgcolor=PRIMARY_SOFT,
                 border=thin_border(),
                 alignment=ft.Alignment.CENTER,
@@ -2724,7 +2745,7 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
                 ft.Row(
                     rating_buttons,
                     alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=12,
+                    spacing=8,
                 ),
                 rating_hint,
             ], width=dialog_width, spacing=8, tight=True),
@@ -3019,6 +3040,18 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
         open_control(confirm_dlg)
 
     def render_training_workspace():
+        training = state.get("training", {})
+        explicit_rest = any(
+            str(item.get("target") or "").strip().casefold() in {"休息", "rest"}
+            for item in training.get("targets", [])
+            if isinstance(item, dict)
+        )
+        has_completed_work = any(
+            session_completion_state(item)["has_completed_work"]
+            for item in raw_training_sessions(training)
+        )
+        if explicit_rest and not has_completed_work:
+            return build_rest_training(lambda e: prepare_today_training())
         raw_session = session_data()
         if isinstance(raw_session, dict) and raw_session.get("status") == "active":
             workspace_tab["value"] = "current"

@@ -573,6 +573,8 @@ def migrate_legacy_training(training: Any, record_date: str) -> TrainingSession 
         if not isinstance(target, Mapping):
             continue
         body_part = str(target.get("target", "")).strip()
+        if body_part.casefold() in {"休息", "rest"}:
+            continue
         detail = str(target.get("detail", "")).strip()
         note = str(target.get("note", "")).strip()
         if not body_part and not detail and not note:

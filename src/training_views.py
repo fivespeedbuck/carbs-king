@@ -104,7 +104,7 @@ def _segmented_progress(
             height=8,
             bgcolor=(
                 "#FFD166" if index == selected
-                else "#21A366" if completion_flags[index]
+                else PRIMARY if completion_flags[index]
                 else "#31413C"
             ),
             border=ft.Border(right=ft.BorderSide(width=1, color="#DCE9E4")) if index < work_items - 1 else None,
@@ -374,7 +374,7 @@ def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingAct
                         max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS,
                     ),
-                    bgcolor="#21A366" if is_current else "#38433F" if done else "#27312E",
+                    bgcolor=PRIMARY if is_current else "#38433F" if done else "#27312E",
                     border=thin_border("#FFD166" if is_current else "#38433F"),
                     border_radius=20,
                     padding=ft.Padding(left=12, top=4, right=12, bottom=4),
@@ -435,14 +435,14 @@ def build_active_training(model: ActiveTrainingModel, actions: ActiveTrainingAct
             (
                 ft.Row([
                     make_button("取消", on_click=actions.cancel_complete, bgcolor="#4A5652", color="#FFFFFF", expand=True, height=primary_button_height),
-                    make_button("确认完成", on_click=actions.complete_or_undo, icon=ft.Icons.CHECK_CIRCLE, bgcolor="#21A366", color="#FFFFFF", expand=True, height=primary_button_height),
+                    make_button("确认完成", on_click=actions.complete_or_undo, icon=ft.Icons.CHECK_CIRCLE, bgcolor=PRIMARY, color="#FFFFFF", expand=True, height=primary_button_height),
                 ], spacing=8)
                 if model.confirm_complete and not model.selected_set_done else
                 ft.Row([make_button(
                     ("撤销本组" if model.selected_set_done else "完成本组") if model.recording_mode == "strength" else ("撤销完成" if model.selected_set_done else "完成动作"),
                     on_click=actions.complete_or_undo if model.selected_set_done else actions.ask_complete,
                     icon=ft.Icons.UNDO if model.selected_set_done else ft.Icons.CHECK_CIRCLE,
-                    bgcolor="#56635F" if model.selected_set_done else "#21A366",
+                    bgcolor="#56635F" if model.selected_set_done else PRIMARY,
                     color="#FFFFFF",
                     expand=True,
                     height=primary_button_height,

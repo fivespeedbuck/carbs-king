@@ -54,6 +54,27 @@ def build_controller(records=None, *, on_records_changed=None, profile=None, tod
 
 
 class DailyRecordControllerTests(unittest.TestCase):
+    def test_loading_a_legacy_rest_placeholder_keeps_rest_without_a_training_session(self):
+        records = {
+            "2026-08-11": {
+                "training": {
+                    "targets": [{"target": "休息", "detail": "今日休息", "intensity": "恢复"}],
+                    "session": {
+                        "id": "legacy-rest", "date": "2026-08-11", "status": "completed",
+                        "exercises": [{"name": "今日休息", "body_part": "休息", "sets": []}],
+                    },
+                    "sessions": [],
+                },
+            },
+        }
+        controller, state, _, _ = build_controller(records)
+
+        controller.load("2026-08-11")
+
+        self.assertEqual(state["training"]["targets"][0]["target"], "休息")
+        self.assertIsNone(state["training"]["session"])
+        self.assertEqual(state["training"]["sessions"], [])
+
     def test_every_record_persistence_notifies_goal_progress_refresh(self):
         notifications = []
         controller, state, _, _ = build_controller(

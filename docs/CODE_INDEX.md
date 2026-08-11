@@ -2,7 +2,7 @@
 
 本索引用于接管、定位回归和发布，不替代源码。默认从 `src/main.py` 的路由和控制器装配开始，再沿功能表查找控制器、视图和服务。
 
-Build 101 为全模块冻结基线。定位 BUG 时先查本索引和 `FROZEN_BASELINE.md`，只有用户明确授权的对应模块允许最小修改。数据页选择器位于 `src/analytics_page.py`、`src/analytics_ui.py`、`src/analytics_trend_views.py`；训练追加与评分位于 `src/training_controller.py`；后台提醒位于 `src/rest_notification.py` 和 Android 原生插件。
+Build 111 为当前发布版，V3.3 计算模型仍为冻结基线。定位 BUG 时先查本索引和 `FROZEN_BASELINE.md`，只有用户明确授权的对应模块允许最小修改。食物库与添加饮食位于 `src/diet_controller.py`；训练追加、动作筛选与评分位于 `src/training_controller.py`；后台提醒位于 `src/rest_notification.py` 和 Android 原生插件。
 
 ## 运行与基础层
 

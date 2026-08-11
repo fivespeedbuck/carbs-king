@@ -25,7 +25,7 @@ from training_picker_views import (  # noqa: E402
     training_parameter_mode_state,
 )
 from training_views import _segmented_progress  # noqa: E402
-from ui_components import mobile_dropdown, page_card  # noqa: E402
+from ui_components import macro_progress_bar, mobile_dropdown, page_card  # noqa: E402
 
 
 MAIN_SOURCE = (Path(__file__).parents[1] / "src" / "main.py").read_text(encoding="utf-8-sig")
@@ -56,6 +56,13 @@ PROFILE_DETAILS_SOURCE = (Path(__file__).parents[1] / "src" / "profile_details_v
 
 
 class UiContractsTests(unittest.TestCase):
+    def test_equal_macro_targets_render_as_a_single_value(self):
+        equal_target = macro_progress_bar("碳水", 0, target_min=200, target_max=200)
+        range_target = macro_progress_bar("碳水", 0, target_min=200, target_max=220)
+
+        self.assertEqual(equal_target.controls[0].content.controls[1].value, "0 / 200g")
+        self.assertEqual(range_target.controls[0].content.controls[1].value, "0 / 200-220g")
+
     def test_automatic_training_target_write_never_overrides_custom_or_manual_mode(self):
         self.assertTrue(automatic_day_write_allowed("auto", "auto"))
         self.assertFalse(automatic_day_write_allowed("custom", "auto"))
@@ -199,11 +206,54 @@ class UiContractsTests(unittest.TestCase):
         self.assertIn('CARD = "#FFFFFF"', UI_SOURCE)
         self.assertIn("PRIMARY_SOFT = ft.Colors.PRIMARY_CONTAINER", UI_SOURCE)
 
-    def test_date_picker_uses_simplified_chinese_labels(self):
-        self.assertIn('locale=ft.Locale("zh", "CN")', TODAY_CONTROLLER_SOURCE)
-        self.assertIn('help_text="选择日期"', TODAY_CONTROLLER_SOURCE)
-        self.assertIn('cancel_text="取消"', TODAY_CONTROLLER_SOURCE)
-        self.assertIn('confirm_text="确定"', TODAY_CONTROLLER_SOURCE)
+    def test_home_date_picker_reuses_the_marked_calendar_grid(self):
+        self.assertIn("from analytics_calendar_views import _render_calendar", TODAY_CONTROLLER_SOURCE)
+        self.assertIn("build_data_page_model(", TODAY_CONTROLLER_SOURCE)
+        self.assertIn("active_tab=\"月历\"", TODAY_CONTROLLER_SOURCE)
+        self.assertIn("compact=True", TODAY_CONTROLLER_SOURCE)
+        self.assertIn("show_legend=False", TODAY_CONTROLLER_SOURCE)
+        self.assertIn("show_footer=False", TODAY_CONTROLLER_SOURCE)
+        self.assertIn("self.deps.daily_records.load(chosen, show=True)", TODAY_CONTROLLER_SOURCE)
+        self.assertIn("scroll_mode=ft.ScrollMode.HIDDEN", TODAY_CONTROLLER_SOURCE)
+
+    def test_training_primary_completion_and_category_sidebar_follow_mobile_theme_contracts(self):
+        self.assertNotIn('bgcolor="#21A366"', TRAINING_SOURCE)
+        self.assertIn('bgcolor=PRIMARY, color="#FFFFFF", expand=True, height=primary_button_height', TRAINING_SOURCE)
+        self.assertIn('category_panel_width = 64', TRAINING_CONTROLLER_SOURCE)
+        self.assertIn('category_rows = ft.ListView(spacing=3, width=category_panel_width, padding=0, scroll=_SCROLL_HIDDEN)', TRAINING_CONTROLLER_SOURCE)
+        self.assertIn('ft.Container(content=category_rows, width=category_panel_width, padding=ft.Padding(left=0, top=0, right=0, bottom=0))', TRAINING_CONTROLLER_SOURCE)
+
+    def test_exercise_picker_moves_subgroups_to_the_left_rail_and_removes_its_header(self):
+        start = TRAINING_CONTROLLER_SOURCE.index("    def open_add_exercise_dialog")
+        end = TRAINING_CONTROLLER_SOURCE.index("    def planned_exercise", start)
+        section = TRAINING_CONTROLLER_SOURCE[start:end]
+        self.assertIn("build_category_sidebar(categories, selected[\"category\"], choose_category, subgroups", section)
+        self.assertNotIn("subgroup_rows", section)
+        self.assertIn('mobile_text_field("", "", expand=True, hint_text="搜索动作名称、器械或目标肌群").field', section)
+        self.assertIn('ft.Row([search, add_custom_action], spacing=8, vertical_alignment="center")', section)
+        self.assertIn("icon=ft.Icons.ADD_CIRCLE_OUTLINE", section)
+        self.assertIn("show_header=False", section)
+        self.assertIn("scroll_mode=None", section)
+
+    def test_food_library_uses_one_compact_search_and_add_row(self):
+        start = DIET_CONTROLLER_SOURCE.index("    def render_food_library():")
+        end = DIET_CONTROLLER_SOURCE.index("    return DietController(", start)
+        section = DIET_CONTROLLER_SOURCE[start:end]
+
+        self.assertIn('mobile_text_field("", value="", expand=True, hint_text="搜索食物").field', section)
+        self.assertIn('card(ft.Row([search, add_food_action], spacing=8, vertical_alignment="center"), padding=10)', section)
+        self.assertIn("icon=ft.Icons.ADD_CIRCLE_OUTLINE", section)
+        self.assertIn('tooltip="新增食物"', section)
+        self.assertNotIn('section_title("食物库")', section)
+        self.assertNotIn("card(search, padding=10)", section)
+
+    def test_calendar_marks_today_and_uses_a_shorter_compact_grid(self):
+        self.assertIn('cell_height = 92 if compact else CALENDAR_CELL_HEIGHT', ANALYTICS_SOURCE)
+        self.assertIn('data="calendar-today"))', ANALYTICS_SOURCE)
+        self.assertNotIn('ft.Text(f"今{day}"', ANALYTICS_SOURCE)
+        self.assertIn('ft.Text("今", size=9', ANALYTICS_SOURCE)
+        self.assertIn('day_header = [ft.Text(day, size=12', ANALYTICS_SOURCE)
+        self.assertIn('绿=记录 · 黄=休息 · 紫=选中 · 灰=空白 · 今=今天', ANALYTICS_SOURCE)
 
     def test_primary_surfaces_use_theme_tokens_instead_of_fixed_green(self):
         self.assertNotIn('PRIMARY = "#116E59"', DIET_SOURCE)
@@ -278,7 +328,7 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertEqual(progress.content.height, 8)
         self.assertEqual(len(progress.content.controls), 4)
         self.assertEqual(progress.content.controls[0].bgcolor, "#FFD166")
-        self.assertEqual(progress.content.controls[1].bgcolor, "#21A366")
+        self.assertEqual(progress.content.controls[1].bgcolor, ft.Colors.PRIMARY)
         self.assertEqual(progress.content.controls[2].bgcolor, "#31413C")
         self.assertIn('color="#DCE9E4"', self.training_section)
 
@@ -292,7 +342,7 @@ class TrainingUiContractTests(unittest.TestCase):
         segments = progress.content.controls
         self.assertEqual(
             [segment.bgcolor for segment in segments],
-            ["#31413C", "#31413C", "#21A366", "#FFD166"],
+            ["#31413C", "#31413C", ft.Colors.PRIMARY, "#FFD166"],
         )
         self.assertEqual(segments[2].data, "active-progress-completed")
         self.assertEqual(segments[3].data, "active-progress-current")
@@ -319,7 +369,9 @@ class TrainingUiContractTests(unittest.TestCase):
         self.assertIn('ft.Text("今天训练状态"', finish_section)
         self.assertIn("for value in range(1, 6)", finish_section)
         self.assertIn("alignment=ft.MainAxisAlignment.CENTER", finish_section)
-        self.assertIn("spacing=12", finish_section)
+        self.assertIn("width=36", finish_section)
+        self.assertIn("height=36", finish_section)
+        self.assertIn("spacing=8", finish_section)
         self.assertIn("全部训练项目已完成。", finish_section)
 
     def test_active_training_owns_the_full_screen_background(self):
@@ -567,10 +619,12 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         def persist_session(_record_date, updated_session):
             state["training"]["session"] = copy.deepcopy(updated_session)
 
+        records = {}
+        self._test_records = records
         controller = create_training_controller(TrainingControllerDependencies(
             state=state,
             repositories=SimpleNamespace(),
-            records={},
+            records=records,
             runtime=runtime,
             persist_daily=lambda *args, **kwargs: None,
             persist_training_session=persist_session,
@@ -669,6 +723,72 @@ class ActiveTrainingRuntimeRegressionTests(unittest.TestCase):
         self.assertEqual(model.weight_text, "")
         self.assertEqual(model.duration_seconds, 2400)
         self.assertEqual(model.cardio_metrics[0][2], "4")
+
+    def test_explicit_rest_renders_a_rest_day_instead_of_an_empty_completed_session(self):
+        legacy_rest = {
+            "id": "legacy-rest", "date": "2026-07-23", "status": "completed",
+            "exercises": [{"name": "今日休息", "body_part": "休息", "sets": []}],
+        }
+        controller, state = self.build_controller(legacy_rest)
+        state["training"]["targets"] = [{"target": "休息", "detail": "今日休息"}]
+
+        view = controller.render_page()
+        texts = [item.value for item in self.controls_of_type(view, ft.Text)]
+
+        self.assertIn("今日休息", texts)
+        self.assertIn("今天没有安排训练，按低碳日执行。", texts)
+        self.assertNotIn("训练完成", texts)
+        self.assertNotIn("0/0", texts)
+
+    def test_home_rest_marks_the_current_calendar_day_as_explicit_rest(self):
+        controller, state = self.build_controller(None)
+
+        controller.mark_today_rest()
+
+        self.assertEqual(
+            self._test_records["2026-07-23"]["calendar_event"],
+            {"type": "rest", "text": "休息"},
+        )
+
+    def test_completing_appended_cardio_marks_the_final_work_item_complete(self):
+        strength = self.strength_exercise("back", "高位下拉", [True] * 20)
+        cardio = {
+            "id": "incline", "name": "跑步机爬坡", "body_part": "有氧",
+            "recording_mode": "cardio", "duration_seconds": 1200,
+            "distance_km": None, "sets": [], "completed": False,
+        }
+        controller, state = self.build_controller(
+            self.active_session([strength, cardio]),
+            exercise_index=1,
+        )
+        captures = []
+
+        with self.capture_render(controller, captures), patch.object(training_controller_module, "is_rapid_repeat", return_value=False):
+            controller.render_page()
+            actions = captures[-1][1]
+            actions.ask_complete(None)
+            actions.complete_or_undo(None)
+            controller.render_page()
+
+        saved_cardio = state["training"]["session"]["exercises"][1]
+        self.assertTrue(saved_cardio["completed"])
+        self.assertTrue(saved_cardio["completed_at"])
+        model = captures[-1][0]
+        self.assertEqual((model.completed_sets, model.planned_sets), (21, 21))
+        self.assertEqual(model.work_completed, tuple([True] * 21))
+
+    def test_appending_work_after_all_existing_work_is_done_focuses_the_new_item(self):
+        custom_start = TRAINING_CONTROLLER_SOURCE.index("            def confirm(e):")
+        custom_end = TRAINING_CONTROLLER_SOURCE.index("            setup_dlg = full_form_sheet(", custom_start)
+        custom_add = TRAINING_CONTROLLER_SOURCE[custom_start:custom_end]
+        library_start = TRAINING_CONTROLLER_SOURCE.index("        def add_selected_exercises(e=None):")
+        library_end = TRAINING_CONTROLLER_SOURCE.index("        def rebuild_categories(", library_start)
+        library_add = TRAINING_CONTROLLER_SOURCE[library_start:library_end]
+
+        for section in (custom_add, library_add):
+            self.assertIn("was_complete = not has_pending_work(session)", section)
+            self.assertIn("if was_complete:", section)
+            self.assertIn("move_cursor_to_pending(normalized_session_exercises(session))", section)
 
     def test_bodyweight_strength_session_renders_without_zero_weight_error(self):
         bodyweight = self.strength_exercise("pushup", "俯卧撑", [False])

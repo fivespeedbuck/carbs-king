@@ -671,9 +671,9 @@ def _weekly_review(records: Mapping[str, Any], end: date) -> dict[str, Any]:
         "sleep": {
             "recorded_days": len(sleep_values),
             "avg_hours": avg_sleep,
-            "target_gap_hours": None if avg_sleep is None else round(avg_sleep - 7.0, 2),
+            "target_gap_hours": None if avg_sleep is None else round(avg_sleep - 8.0, 2),
             "label": "暂无足够数据" if avg_sleep is None else f"平均 {avg_sleep:g} 小时",
-            "detail": f"{len(sleep_values)} 天记录" if avg_sleep is None else f"距 7 小时目标 {avg_sleep - 7:+g} 小时",
+            "detail": f"{len(sleep_values)} 天记录" if avg_sleep is None else f"较目标 {avg_sleep - 8:+g} 小时",
         },
     }
 

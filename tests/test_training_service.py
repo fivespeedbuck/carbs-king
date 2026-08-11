@@ -165,6 +165,15 @@ class TrainingCalculationTests(unittest.TestCase):
 
 
 class LegacyMigrationTests(unittest.TestCase):
+    def test_explicit_rest_target_is_not_migrated_into_a_completed_session(self):
+        rest = {
+            "targets": [{"target": "休息", "detail": "今日休息", "intensity": "恢复"}],
+            "session": None,
+            "sessions": [],
+        }
+
+        self.assertIsNone(migrate_legacy_training(rest, "2026-08-11"))
+
     def test_empty_training_shells_do_not_create_completed_sessions(self):
         empty_shells = [
             {},

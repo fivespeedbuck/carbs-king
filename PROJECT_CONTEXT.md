@@ -1,9 +1,9 @@
-# Build 101 发布状态（2026-08-04）
+# Build 111 发布状态（2026-08-11）
 
-- 当前正式发布线为 `1.2.3 / Build 101`，APK SHA-256 为 `8BC9DE0B9489288D2F8B630D7FD3E1289BE272018E6BA2A4C42C1A0167B59DE9`。
-- Build 101 是全模块冻结基线。只有用户提交明确 BUG 并授权对应模块后，才能最小范围修改；禁止顺带重构或修改其他已确认模块。
+- 当前正式发布线为 `1.2.3 / Build 111`，APK SHA-256 为 `06497F6AB208A49493A368E3057855B6CDB82657FE8B60A72B924CF79B03ED1F`。
+- Build 111 在 Build 101 的冻结基线上完成用户验收的 UI 修复；只有用户提交明确 BUG 并授权对应模块后，才能最小范围修改。
 
-> 2026-08-04 状态门禁：Build 101 已正式发布并成为全模块冻结基线；历史候选仅作审计留档。
+> 2026-08-11 状态门禁：Build 111 已正式发布；V3.3 计算模型仍为冻结基线，历史候选仅作审计留档。
 
 # 碳水大王：项目上下文
 
@@ -20,8 +20,8 @@
 
 ## 当前版本与发布
 
-- 当前发布线：`1.2.3 / Build 101`；完整阶段结果见 `CURRENT_HANDOFF.md`、`CHANGELOG.md` 和 `docs/BUILD101_FINAL_SUMMARY_2026-08-04.md`。
-- `pyproject.toml` 与 `src/app_version.py` 固定为 Build 101，与正式 APK 和冻结源码一致。
+- 当前发布线：`1.2.3 / Build 111`；完整阶段结果见 `CURRENT_HANDOFF.md`、`CHANGELOG.md` 和 `docs/BUILD111_FINAL_SUMMARY_2026-08-11.md`。
+- `pyproject.toml` 与 `src/app_version.py` 已预备为下一 Build 112；正式 APK 是 Build 111。
 - Build 96 候选：`release_candidates/carbs-king-v1.2.3-build96-candidate.apk`，SHA-256 `967609BF409D8E0ECFA8CF5BD3626376E9FACE87B55B5D87E2FCE4D94960793B`；修复数据页固定栏布局/闪动、自重提示、确认后碳档常驻与安全目标预览；未安装、未发布。
 - Build 95 候选：`release_candidates/carbs-king-v1.2.3-build95-candidate.apk`，SHA-256 `424E75EE172B0325D86C79D1CF18C61553B728F74B6F3539F61FD63A0F1DCA89`；包名、版本、v2 签名连续性、ZIP 对齐、资源与原生运行时门禁通过，未安装、未发布。
 - Build 89：添加饮食使用底部向上展开的不透明白色选择面板；动作选择页收窄左侧部位栏、加宽动作卡并显示 GIF；“我”页体重/体脂编辑写入当天明确趋势测量。APK 和 iQOO 11S 真机验收通过。

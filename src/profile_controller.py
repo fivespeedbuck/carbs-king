@@ -64,7 +64,7 @@ from profile_theme_views import build_theme_panel
 from profile_update_views import build_update_panel
 from repositories import AppRepositories
 from training_experience_service import exercise_usage_stats, sort_exercises
-from training_recycle_service import load_recycled_training_sessions, remove_recycled_training_session
+from training_recycle_service import load_recycled_training_sessions, recycle_expiry_label, remove_recycled_training_session
 from update_service import fetch_latest_release, update_available
 from training_picker_views import (
     build_category_sidebar, build_exercise_card, build_exercise_help, build_sort_row,
@@ -231,7 +231,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
                     content=ft.Column([
                         ft.Text(date_text, size=15, weight="bold", color=TEXT),
                         small_text(" + ".join(names) or "训练记录"),
-                        small_text(f"删除于 {str(entry.get('deleted_at') or '')[:16]} · 15 天后自动清除"),
+                        small_text(f"删除于 {str(entry.get('deleted_at') or '')[:16]} · {recycle_expiry_label(entry.get('deleted_at'))}"),
                         ft.Row([
                             make_button("恢复", on_click=restore, bgcolor=PRIMARY_SOFT, color=GREEN, expand=True),
                             make_button("彻底删除", on_click=request_erase, bgcolor="#FDECEC", color="#D93025", expand=True),
@@ -1360,6 +1360,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
         )
 
     macro_goal_preview = {"value": None}
+    macro_details_expanded = {"value": False}
 
     def render_me():
         targets = get_targets()
@@ -1482,6 +1483,10 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             )
             open_control(confirm_dlg)
 
+        def toggle_macro_details(event=None):
+            macro_details_expanded["value"] = not macro_details_expanded["value"]
+            refresh()
+
         def open_macro_settings_dialog(e=None):
             dialog_width = responsive_width()
             fields = {}
@@ -1585,6 +1590,9 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             on_goal_apply=apply_macro_goal,
             profile_ready=bool(targets["is_ready"]),
             profile_message=str(targets.get("profile_message", "")),
+            detail_metrics=build_profile_metrics(targets),
+            details_expanded=macro_details_expanded["value"],
+            on_toggle_details=toggle_macro_details,
         )
         stored_circumference = state.get("circumference")
         stored_circumference = dict(stored_circumference) if isinstance(stored_circumference, dict) else {}
@@ -1626,7 +1634,7 @@ def create_profile_controller(deps: ProfileControllerDependencies) -> ProfileCon
             on_toggle_circumference=toggle_circumference,
             on_sex_change=set_sex,
             on_activity_change=set_activity,
-            metrics=build_profile_metrics(targets),
+            metrics=None,
             macro_panel=macro_box,
             theme_panel=build_theme_panel(state.get("theme_color", "green"), set_theme),
             feature_panels=[

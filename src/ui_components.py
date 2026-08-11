@@ -410,7 +410,8 @@ def macro_progress_bar(label, current, target_value=None, target_min=None, targe
     if target_min is not None and target_max is not None:
         min_target = _to_float(target_min)
         max_target = _to_float(target_max)
-        target_text = f"{current:g} / {min_target:g}-{max_target:g}{unit}"
+        target_label = f"{min_target:g}" if min_target == max_target else f"{min_target:g}-{max_target:g}"
+        target_text = f"{current:g} / {target_label}{unit}"
         ratio = current / min_target if current < min_target and min_target > 0 else 1
         warn_gap = 20 if kind == "carb" else 25 if kind == "protein" else 10
         color = GREEN if current <= max_target else YELLOW if current <= max_target + warn_gap else RED

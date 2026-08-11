@@ -239,7 +239,7 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
 
         dialog_body = opened[-1].content.content.controls[1].content
         shortcut_panel = dialog_body.controls[0]
-        shortcut_item = shortcut_panel.controls[1].controls[0]
+        shortcut_item = shortcut_panel.controls[1].controls[0].controls[0]
         meal_input = dialog_body.controls[1].controls[0].content
         quantity_input = dialog_body.controls[1].controls[1].content
         search_input = dialog_body.controls[3].controls[0].content
@@ -373,8 +373,16 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
         self.assertIn('selected_unit = resolve_food_unit(fields["unit"].value, fields["custom_unit"].value)', DIET_CONTROLLER_SOURCE)
         self.assertIn('two_field_grid(fields["name"], fields["category"]', DIET_CONTROLLER_SOURCE)
         self.assertIn('three_field_grid(fields["carb"], fields["protein"], fields["fat"]', DIET_CONTROLLER_SOURCE)
-        self.assertIn('width=dialog_width if key == "method" else None', DIET_CONTROLLER_SOURCE)
+        self.assertIn('width=max(260, int(to_float(getattr(page, "width", None), 430)) - 32) if key == "method" else None', DIET_CONTROLLER_SOURCE)
         self.assertIn('expand=key != "method"', DIET_CONTROLLER_SOURCE)
+
+    def test_food_form_groups_sections_compactly_without_shrinking_inputs(self):
+        start = DIET_CONTROLLER_SOURCE.index("    def open_food_library_dialog")
+        end = DIET_CONTROLLER_SOURCE.index("    def delete_meal_item", start)
+        section = DIET_CONTROLLER_SOURCE[start:end]
+
+        self.assertEqual(section.count("], spacing=6, tight=True)"), 3)
+        self.assertIn('three_field_grid(fields["carb"], fields["protein"], fields["fat"]', section)
 
     def test_custom_food_unit_resolves_without_losing_existing_presets(self):
         self.assertEqual(resolve_food_unit("g", "杯"), "g")
@@ -445,6 +453,14 @@ class ResponsiveFieldLayoutTests(unittest.TestCase):
     def test_add_diet_form_pairs_meal_quantity_and_search_food(self):
         self.assertIn("two_field_grid(meal_dd, qty, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
         self.assertIn("two_field_grid(search, food_dd, viewport_width=dialog_width)", DIET_CONTROLLER_SOURCE)
+        self.assertIn("measurement_box", DIET_CONTROLLER_SOURCE)
+        self.assertIn("def update_measurement():", DIET_CONTROLLER_SOURCE)
+        self.assertIn('measurement_text.value = method', DIET_CONTROLLER_SOURCE)
+        self.assertIn("food_shortcuts(meal_dd.value or default_meal, limit=9)", DIET_CONTROLLER_SOURCE)
+        self.assertIn("def shortcut_metrics(label):", DIET_CONTROLLER_SOURCE)
+        self.assertIn('0.18 if char.isspace() else 0.55 if ord(char) < 128 else 1', DIET_CONTROLLER_SOURCE)
+        self.assertIn("if len(rows) == 3:", DIET_CONTROLLER_SOURCE)
+        self.assertIn("max_lines=1", DIET_CONTROLLER_SOURCE)
         self.assertIn("for control in (meal_dd, qty, search, food_dd):", DIET_CONTROLLER_SOURCE)
         self.assertIn("field.height = INPUT_FIELD_HEIGHT", DIET_CONTROLLER_SOURCE)
         self.assertIn("field.border = ft.InputBorder.NONE", DIET_CONTROLLER_SOURCE)
