@@ -1,9 +1,14 @@
-# Build 111 发布状态（2026-08-11）
+# Build 113 V3.4 正式发布状态（2026-08-17）
 
-- 当前正式发布线为 `1.2.3 / Build 111`，APK SHA-256 为 `06497F6AB208A49493A368E3057855B6CDB82657FE8B60A72B924CF79B03ED1F`。
-- Build 111 在 Build 101 的冻结基线上完成用户验收的 UI 修复；只有用户提交明确 BUG 并授权对应模块后，才能最小范围修改。
+- Build 113 已完成 V3.4 Wiki 个人微周期模型、全量回归、无线覆盖安装 V2304A、GitHub 推送和正式 Release；是当前正式发布线。
+- V3.4 合同：减脂四练、保持 4.5 练插值、控制增肌五练；男女分支；`2高+2中+3低`；体脂不参与宏量；普通力量训练按主部位而非组数判档；V3.3 历史展示快照不可变。
+- APK：201,902,579 字节，SHA-256 `65C59624A5754BCA048BFD075BC88EC5458E23A5C8BD83D5453D4540DC2A87E6`；系统确认 `versionCode=112`。源码已预备 Build 113。
+- 全量验证：`566 passed, 454 subtests passed`；真实备份 14 天只读回放零违规；包名、v2 签名、资源和原生提醒门禁通过。
 
-> 2026-08-11 状态门禁：Build 111 已正式发布；V3.3 计算模型仍为冻结基线，历史候选仅作审计留档。
+- 当前正式发布线为 `1.2.3 / Build 113`，APK SHA-256 为 `42724D5BA29840D16DCB5CFDE5BADE034584C684A08EE1D8FB86602A00E831E7`。
+- Build 113 在用户一周真实使用确认后正式发布；月历图例只把“紫=选中”更正为“主题色=选中”，不改变实际主题或交互。只有用户提交明确 BUG 并授权对应模块后，才能最小范围修改。
+
+> 2026-08-17 状态门禁：Build 113 已正式发布；V3.3 历史快照保持冻结，V3.4 只作用于新阶段，历史候选仅作审计留档。
 
 # 碳水大王：项目上下文
 
@@ -20,8 +25,8 @@
 
 ## 当前版本与发布
 
-- 当前发布线：`1.2.3 / Build 111`；完整阶段结果见 `CURRENT_HANDOFF.md`、`CHANGELOG.md` 和 `docs/BUILD111_FINAL_SUMMARY_2026-08-11.md`。
-- `pyproject.toml` 与 `src/app_version.py` 已预备为下一 Build 112；正式 APK 是 Build 111。
+- 当前发布线：`1.2.3 / Build 113`；完整阶段结果见 `CURRENT_HANDOFF.md`、`CHANGELOG.md` 和 `docs/BUILD113_FINAL_SUMMARY_2026-08-17.md`。
+- `pyproject.toml` 与 `src/app_version.py` 已预备为下一 Build 114；正式 APK 是 Build 113。
 - Build 96 候选：`release_candidates/carbs-king-v1.2.3-build96-candidate.apk`，SHA-256 `967609BF409D8E0ECFA8CF5BD3626376E9FACE87B55B5D87E2FCE4D94960793B`；修复数据页固定栏布局/闪动、自重提示、确认后碳档常驻与安全目标预览；未安装、未发布。
 - Build 95 候选：`release_candidates/carbs-king-v1.2.3-build95-candidate.apk`，SHA-256 `424E75EE172B0325D86C79D1CF18C61553B728F74B6F3539F61FD63A0F1DCA89`；包名、版本、v2 签名连续性、ZIP 对齐、资源与原生运行时门禁通过，未安装、未发布。
 - Build 89：添加饮食使用底部向上展开的不透明白色选择面板；动作选择页收窄左侧部位栏、加宽动作卡并显示 GIF；“我”页体重/体脂编辑写入当天明确趋势测量。APK 和 iQOO 11S 真机验收通过。

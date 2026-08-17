@@ -2,13 +2,13 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 111**
+- 当前版本：**1.2.3 / Build 113**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-> Build 111 已发布；V3.3-final 的计算规则仍是冻结基线。没有用户针对具体问题的明确授权，不得修改任何已发布模块。
+> Build 113 为正式版：V3.4 仅作用于之后新签发的自动阶段，既有 V3.3 展示快照保持不变。
 
-[![下载 Build 111 APK](https://img.shields.io/badge/下载-Build_111_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+[![下载 Build 113 APK](https://img.shields.io/badge/下载-Build_113_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -26,7 +26,29 @@
 
 ## 界面预览
 
-以下图片来自实际运行界面，使用隔离的无隐私中文演示数据，以约 `430 × 860` 的移动视口截取。
+以下图片来自已安装的 Build 113 真机运行界面（用户已授权公开真实使用数据），以约 `430 × 860` 的移动视口截取。
+
+| 今日 | 训练 |
+| --- | --- |
+| ![Build 113 今日](docs/screenshots/build113/today.png) | ![Build 113 训练](docs/screenshots/build113/training.png) |
+
+| 饮食 | 数据 |
+| --- | --- |
+| ![Build 113 饮食](docs/screenshots/build113/diet.png) | ![Build 113 数据](docs/screenshots/build113/data.png) |
+
+| 训练中 | 动作选择 |
+| --- | --- |
+| ![Build 113 训练中](docs/screenshots/build113/training-active-dark.png) | ![Build 113 动作选择](docs/screenshots/build113/exercise-picker.png) |
+
+| 训练月历 |
+| --- |
+| ![Build 113 训练月历](docs/screenshots/build113/data-calendar.png) |
+
+| 个人资料与备份 |
+| --- |
+| ![Build 113 个人资料与备份](docs/screenshots/build113/profile.png) |
+
+以下为隔离演示数据截图，用于展示其他页面状态：
 
 | 今日总览 | 当前训练 |
 | --- | --- |
@@ -49,10 +71,10 @@
 ### 今日与碳循环
 
 - 默认打开今日总览，集中显示当日摄入、宏量营养进度、训练状态和恢复摘要。
-- 支持高碳、中碳、低碳目标，以及碳水、蛋白质、脂肪目标区间。
-- 可自动计算或自定义三类碳日的宏量倍数。
-- v90 测试架构不再按训练部位固定碳档：抗阻训练按有效工作组、单一主要肌群集中组数、时长和同日多场分类；有氧与混合训练使用各自的需求分类器。
-- 训练需求先给出碳水候选区间，再在目标能量、固定蛋白和脂肪边界内求出可执行目标；31/60/90 天长期能量校准目前只在后台影子模式生成候选值，不会自动改写用户目标。
+- 支持高碳、中碳、低碳目标，以及碳水、蛋白质、脂肪目标区间；也可切换为自定义三类碳日倍率。
+- 自动模式采用 V3.4 Wiki 个人微周期：减脂使用四练参数，保持采用四练和五练参数的 50% 插值，控制增肌使用五练参数；男女分别计算。
+- 每周按 `2 高 + 2 中 + 3 低` 安排，三档碳水为 `高=A+0.5、中=A、低=A−1/3`；同一目标的蛋白质和脂肪固定，体脂不参与 V3.4 宏量计算。
+- 常规力量训练按主训练部位判档：腿／臀／背为高碳，胸／肩为中碳，手臂／核心为低碳；明确双练或高强度／长有氧仍可升级。既有 V3.3 历史展示快照不回写。
 - “休息”和“没有记录”分开处理，不会把漏记误判成休息日。
 
 ### 训练
@@ -215,7 +237,7 @@ carbs-king/
 ## 版本与 Release
 
 - [v1.2.3 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
-- [Build 111 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+- [Build 113 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 

@@ -145,8 +145,6 @@ def replay_real_backup(path: Path) -> dict[str, Any]:
         macro = result["recommended_macros"]
         if macro["status"] != "ok" or abs(float(macro.get("energy_closure_error") or 0)) > 1e-6:
             violations.append(f"{date_key}:macro")
-        elif not 0.20 - 1e-9 <= float(macro["fat_energy_share"]) <= 0.30 + 1e-9:
-            violations.append(f"{date_key}:fat_share_outside_automatic_range")
         else:
             displayed = macro["display"]
             displayed_kcal = 4 * displayed["carb_g"] + 4 * displayed["protein_g"] + 9 * displayed["fat_g"]

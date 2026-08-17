@@ -36,7 +36,7 @@ class TrainingRecycleServiceTests(unittest.TestCase):
                 entry = recycle.recycle_training_session(
                     {"id": "session-1", "status": "completed"},
                     original_date="2026-07-31",
-                    deleted_at="2026-08-01T08:00:00+08:00",
+                    deleted_at=dt.datetime.now().astimezone().isoformat(),
                 )
                 removed = recycle.remove_recycled_training_session(entry["id"])
 

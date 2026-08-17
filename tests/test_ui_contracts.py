@@ -253,7 +253,8 @@ class UiContractsTests(unittest.TestCase):
         self.assertNotIn('ft.Text(f"今{day}"', ANALYTICS_SOURCE)
         self.assertIn('ft.Text("今", size=9', ANALYTICS_SOURCE)
         self.assertIn('day_header = [ft.Text(day, size=12', ANALYTICS_SOURCE)
-        self.assertIn('绿=记录 · 黄=休息 · 紫=选中 · 灰=空白 · 今=今天', ANALYTICS_SOURCE)
+        self.assertIn('绿=记录 · 黄=休息 · 主题色=选中 · 灰=空白 · 今=今天', ANALYTICS_SOURCE)
+        self.assertNotIn('紫=选中', ANALYTICS_SOURCE)
 
     def test_primary_surfaces_use_theme_tokens_instead_of_fixed_green(self):
         self.assertNotIn('PRIMARY = "#116E59"', DIET_SOURCE)

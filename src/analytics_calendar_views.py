@@ -277,7 +277,7 @@ def _render_calendar(
         ft.Container(
             content=ft.Column([
                 ft.Row(weekdays, spacing=1),
-                *([ft.Text("绿=记录 · 黄=休息 · 紫=选中 · 灰=空白 · 今=今天", size=12, color=SUB, text_align="center")] if show_legend else []),
+                *([ft.Text("绿=记录 · 黄=休息 · 主题色=选中 · 灰=空白 · 今=今天", size=12, color=SUB, text_align="center")] if show_legend else []),
                 *rows,
             ], spacing=1),
         ),

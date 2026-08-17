@@ -15,21 +15,21 @@ import json
 from typing import Any, Mapping, Sequence
 
 
-ENGINE_VERSION = "CK-DCE-v3.3-rc2-r3-final-candidate"
-PARAMETER_SET_VERSION = "CK-DCE-params-2026-08-03-v3.3-rc2-r3-final"
-EVIDENCE_VERSION = "CK-DCE-evidence-2026-08-03-v3.3-rc2-r3-final"
-MODEL_DOCUMENT_SHA256 = "790ABE73F2B34F48FD9B2DFAF938F685A1D4242DA161CA6350AB1CE0B4C3D16B"
-SCHEMA_VERSION = 3
+ENGINE_VERSION = "CK-DCE-v3.4-wiki-goal-microcycle-r8"
+PARAMETER_SET_VERSION = "CK-DCE-params-2026-08-11-v3.4-r8"
+EVIDENCE_VERSION = "CK-DCE-evidence-2026-08-11-exercise-wiki-r8"
+MODEL_DOCUMENT_SHA256 = "8C680ABD0F34EC73C1D4B21D96D3345A4DD480B6B73491638F76EC9A1A3E79B4"
+SCHEMA_VERSION = 4
 UI_CONTRACT_VERSION = 2
 CALIBRATION_MODEL_VERSION = "hall-linearized-2015-v2"
 CALIBRATION_RHO_KCAL_PER_KG = 8840.0
 CALIBRATION_EPSILON_KCAL_PER_KG_DAY = 25.8
 DISPLAY_FAT_SHARE_ROUNDING_TOLERANCE = 0.002
-REFERENCE_DISTRIBUTION_VERSION = "ref-dist-2026-08-03-r1"
-SOLVER_VERSION = "ordered-waterline-display-v2"
-BOUNDARY_VERSION = "rc2-r3-final-ordered-display-bounds-2026-08-03"
+REFERENCE_DISTRIBUTION_VERSION = "wiki-microcycle-2h2m3l-2026-08-11-r1"
+SOLVER_VERSION = "wiki-goal-gkg-direct-v1"
+BOUNDARY_VERSION = "wiki-goal-baseline-2026-08-11-r1"
 INPUT_CONTRACT_VERSION = "input-contract-2026-08-03-r1"
-REFERENCE_COUNTS = {"low": 35, "mid": 45, "high": 20}
+REFERENCE_COUNTS = {"low": 3, "mid": 2, "high": 2}
 TIER_OFFSETS = {"low": -0.06, "mid": 0.0, "high": 0.08}
 TIERS = ("low", "mid", "high")
 TIER_TO_DAY = {"low": "低碳日", "mid": "中碳日", "high": "高碳日"}
@@ -64,6 +64,15 @@ TARGET_CONFIG = {
     "gain_controlled": {"requested_speed": 0.0025, "max_positive_delta": 400.0, "max_negative_delta": -500.0},
     "recomp": {"requested_speed": 0.0, "max_positive_delta": 400.0, "max_negative_delta": -500.0},
     "cut_standard": {"requested_speed": -0.005, "max_positive_delta": 400.0, "max_negative_delta": -500.0},
+}
+
+WIKI_GOAL_BASELINES = {
+    ("male", "cut_standard"): {"carb": 3.0, "protein": 1.7, "fat": 1.0, "training_days": 4.0},
+    ("male", "recomp"): {"carb": 3.25, "protein": 1.75, "fat": 1.0, "training_days": 4.5},
+    ("male", "gain_controlled"): {"carb": 3.5, "protein": 1.8, "fat": 1.0, "training_days": 5.0},
+    ("female", "cut_standard"): {"carb": 2.5, "protein": 1.7, "fat": 1.1, "training_days": 4.0},
+    ("female", "recomp"): {"carb": 2.75, "protein": 1.75, "fat": 1.15, "training_days": 4.5},
+    ("female", "gain_controlled"): {"carb": 3.0, "protein": 1.8, "fat": 1.2, "training_days": 5.0},
 }
 
 INPUT_LIMITS = {
@@ -252,7 +261,7 @@ def classify_training(training: Mapping[str, Any] | None) -> dict[str, Any]:
     resistance = facts.get("resistance") if isinstance(facts.get("resistance"), Mapping) else None
     cardio = facts.get("cardio") if isinstance(facts.get("cardio"), Mapping) else None
     medium_or_higher_sessions = max(0, int(_number(facts.get("medium_or_higher_sessions"), 0) or 0))
-    resistance_key = _classify_resistance(resistance) if resistance else None
+    resistance_key = _classify_resistance_by_body_part(facts.get("body_parts")) if resistance else None
     cardio_key = _classify_cardio(cardio) if cardio else None
     if not resistance_key and not cardio_key:
         return _classification("provisional_low", formal=False, sample=False, reasons=["confirmed_training_has_no_valid_work"])
@@ -379,6 +388,37 @@ def _classify_resistance(facts: Mapping[str, Any]) -> str | None:
     return "resistance_medium"
 
 
+def _classify_resistance_by_body_part(values: Any) -> str:
+    parts = values if isinstance(values, (list, tuple, set)) else []
+    normalized = {_normalize_body_part(item) for item in parts}
+    normalized.discard("")
+    if normalized.intersection({"腿", "背"}):
+        return "resistance_high"
+    if normalized.intersection({"胸", "肩"}):
+        return "resistance_medium"
+    return "resistance_low"
+
+
+def _normalize_body_part(value: Any) -> str:
+    text = str(value or "").strip().casefold()
+    aliases = {
+        "胸": "胸", "胸部": "胸", "胸大肌": "胸", "chest": "胸", "pec": "胸", "pecs": "胸",
+        "背": "背", "背部": "背", "背阔肌": "背", "back": "背", "lat": "背", "lats": "背",
+        "肩": "肩", "肩部": "肩", "三角肌": "肩", "shoulder": "肩", "shoulders": "肩",
+        "腿": "腿", "腿部": "腿", "下肢": "腿", "臀": "腿", "臀部": "腿", "leg": "腿", "legs": "腿",
+        "glute": "腿", "glutes": "腿",
+        "二头": "二头", "肱二头": "二头", "肱二头肌": "二头", "bicep": "二头", "biceps": "二头",
+        "三头": "三头", "肱三头": "三头", "肱三头肌": "三头", "tricep": "三头", "triceps": "三头",
+        "腹": "腹", "腹部": "腹", "核心": "腹", "core": "腹", "abs": "腹",
+    }
+    if text in aliases:
+        return aliases[text]
+    for alias in sorted(aliases, key=len, reverse=True):
+        if alias in text:
+            return aliases[alias]
+    return text
+
+
 def _classify_cardio(facts: Mapping[str, Any]) -> str | None:
     duration = _number(facts.get("duration_min"))
     if duration is None or duration <= 0:
@@ -411,8 +451,6 @@ def calculate_body_energy(profile: Mapping[str, Any]) -> dict[str, Any]:
     if not INPUT_LIMITS["weight_kg"][0] <= baseline_weight <= INPUT_LIMITS["weight_kg"][1]:
         raise ValueError("phase baseline weight is outside the supported adult range")
     bodyfat = _number(profile.get("bodyfat_percent", profile.get("bodyfat")))
-    if bodyfat is not None and not INPUT_LIMITS["bodyfat_percent"][0] <= bodyfat <= INPUT_LIMITS["bodyfat_percent"][1]:
-        raise ValueError("bodyfat is outside the supported adult range")
 
     rmr = 10 * weight + 6.25 * height - 5 * age + (5 if sex == "male" else -161)
     maintenance_override = _number(profile.get("phase_maintenance_kcal", profile.get("maintenance_kcal")))
@@ -435,25 +473,17 @@ def calculate_body_energy(profile: Mapping[str, Any]) -> dict[str, Any]:
     if not INPUT_LIMITS["maintenance_kcal"][0] <= maintenance <= INPUT_LIMITS["maintenance_kcal"][1]:
         raise ValueError("maintenance energy is outside the supported range")
 
-    target_spec = TARGET_CONFIG[goal]
-    requested_speed = float(target_spec["requested_speed"])
-    raw_delta = _hall_energy_change_for_28_days(baseline_weight, requested_speed)
-    guarded_delta = min(
-        float(target_spec["max_positive_delta"]),
-        max(float(target_spec["max_negative_delta"]), raw_delta),
-    )
-    raw_budget = maintenance + raw_delta
-    guarded_budget = maintenance + guarded_delta
-    budget_reasons = ["hall_delta_raw"]
-    if abs(guarded_delta - raw_delta) > 1e-9:
-        budget_reasons.extend(["hall_delta_capped", "target_speed_clamped_energy_guard"])
-
-    protein, protein_method, protein_lean_mass, protein_reasons = _protein_anchor(
-        profile, baseline_weight, height, age, goal
-    )
-    fat_anchor = _number(profile.get("phase_fat_anchor_g"), 0.8 * baseline_weight) or 0.8 * baseline_weight
-    display_lean_mass = weight * (1 - bodyfat / 100) if bodyfat is not None else protein_lean_mass
+    wiki = WIKI_GOAL_BASELINES[(sex, goal)]
+    carb_average_gkg = float(wiki["carb"])
+    protein_gkg = float(wiki["protein"])
+    fat_gkg = float(wiki["fat"])
+    protein = protein_gkg * baseline_weight
+    fat_anchor = fat_gkg * baseline_weight
+    guarded_budget = baseline_weight * (4.0 * carb_average_gkg + 4.0 * protein_gkg + 9.0 * fat_gkg)
+    guarded_delta = guarded_budget - maintenance
+    display_lean_mass = weight * (1 - bodyfat / 100) if bodyfat is not None and 0 < bodyfat < 100 else None
     return {
+        "model_family": "wiki_goal_microcycle_v34",
         "weight_kg": weight,
         "phase_baseline_weight_kg": baseline_weight,
         "height_cm": height,
@@ -462,22 +492,26 @@ def calculate_body_energy(profile: Mapping[str, Any]) -> dict[str, Any]:
         "goal": goal,
         "rmr_kcal": rmr,
         "maintenance_kcal": maintenance,
-        "requested_speed": requested_speed,
-        "raw_delta_kcal_day": raw_delta,
+        "requested_speed": float(TARGET_CONFIG[goal]["requested_speed"]),
+        "raw_delta_kcal_day": guarded_delta,
         "guarded_delta_kcal_day": guarded_delta,
-        "raw_budget_kcal_day": raw_budget,
+        "raw_budget_kcal_day": guarded_budget,
         "guarded_budget_kcal_day": guarded_budget,
         "goal_energy_kcal": guarded_budget,
-        "target_speed_guarded": guarded_delta / (4.0 * baseline_weight * _hall_k28()),
+        "target_speed_guarded": None,
+        "training_days_baseline": float(wiki["training_days"]),
+        "carb_average_g_per_kg": carb_average_gkg,
+        "protein_g_per_kg": protein_gkg,
+        "fat_g_per_kg": fat_gkg,
         "protein_g": protein,
         "fat_anchor_g": fat_anchor,
         "lean_mass_kg": display_lean_mass,
         "activity_category": activity_category,
         "energy_method": energy_method,
-        "goal_energy_method": "hall_28d_guarded_budget",
-        "protein_method": protein_method,
-        "protein_reason_codes": protein_reasons,
-        "budget_reason_codes": budget_reasons,
+        "goal_energy_method": "wiki_training_volume_goal_baseline",
+        "protein_method": "wiki_goal_bodyweight_fixed",
+        "protein_reason_codes": ["wiki_goal_protein_fixed", "bodyfat_not_used_for_macros"],
+        "budget_reason_codes": ["wiki_goal_baseline", "wiki_2high_2mid_3low"],
         "phase_id": profile.get("phase_id"),
     }
 
@@ -502,7 +536,7 @@ def create_phase_baseline(profile: Mapping[str, Any], effective_date: str | date
         "baseline_weight_kg": body["weight_kg"],
         "maintenance_kcal": body["maintenance_kcal"],
         "protein_g": body["protein_g"],
-        "fat_anchor_g": 0.8 * body["weight_kg"],
+        "fat_anchor_g": body["fat_anchor_g"],
     }
     return {
         "phase_id": f"phase-{_canonical_sha(identity)[:16].lower()}",
@@ -515,7 +549,7 @@ def create_phase_baseline(profile: Mapping[str, Any], effective_date: str | date
         "protein_route": body["protein_method"],
         "protein_reason_codes": list(body.get("protein_reason_codes", [])),
         "ffm_kg": body.get("lean_mass_kg") if body["protein_method"] != "bodyweight" else None,
-        "fat_anchor_g": 0.8 * body["weight_kg"],
+        "fat_anchor_g": body["fat_anchor_g"],
         "algorithm_version": ENGINE_VERSION,
         "parameter_set_version": PARAMETER_SET_VERSION,
         "evidence_version": EVIDENCE_VERSION,
@@ -693,6 +727,89 @@ def _v33_macros(energy: float, protein: float, fat_anchor: float) -> dict[str, A
         "display_macro_energy_error_vs_internal": display_energy_exact - energy,
         "reason_codes": reasons,
     }
+
+
+def _v34_macro(weight: float, carb_gkg: float, protein_gkg: float, fat_gkg: float) -> dict[str, Any]:
+    carb = weight * carb_gkg
+    protein = weight * protein_gkg
+    fat = weight * fat_gkg
+    energy = 4.0 * carb + 4.0 * protein + 9.0 * fat
+    protein_display = _round_step(protein, 5.0)
+    carb_display = _round_step(carb, 5.0)
+    fat_display = _round_step(fat, 0.1)
+    display_energy_exact = 4.0 * protein_display + 4.0 * carb_display + 9.0 * fat_display
+    return {
+        "status": "feasible",
+        "energy_internal_kcal": energy,
+        "protein_internal_g": protein,
+        "carb_internal_g": carb,
+        "fat_internal_g": fat,
+        "protein_display_g": protein_display,
+        "carb_display_g": carb_display,
+        "fat_display_g": fat_display,
+        "energy_from_display_macros_exact": display_energy_exact,
+        "energy_display_kcal": _round_step(display_energy_exact, 1.0),
+        "display_macro_energy_error_vs_internal": display_energy_exact - energy,
+        "reason_codes": ["wiki_goal_g_per_kg", "bodyfat_not_used_for_macros", "fat_fixed_across_tiers"],
+    }
+
+
+def _v34_distribution(
+    body: Mapping[str, Any], counts: Mapping[str, int], mode: str
+) -> dict[str, Any]:
+    normalized_counts = {tier: max(0, int(counts.get(tier, 0))) for tier in TIERS}
+    total_days = sum(normalized_counts.values())
+    guarded_budget = float(body["guarded_budget_kcal_day"])
+    if total_days == 0:
+        return {
+            "mode": mode,
+            "counts": normalized_counts,
+            "feasible": False,
+            "guarded_budget_kcal_day": guarded_budget,
+            "reason_codes": ["no_formal_days", "phase_budget_infeasible"],
+            "user_prompt": "周期内没有可计算的正式日。",
+        }
+
+    average_carb = float(body["carb_average_g_per_kg"])
+    carb_by_tier = {
+        "low": average_carb - 1.0 / 3.0,
+        "mid": average_carb,
+        "high": average_carb + 0.5,
+    }
+    weight = float(body["phase_baseline_weight_kg"])
+    protein_gkg = float(body["protein_g_per_kg"])
+    fat_gkg = float(body["fat_g_per_kg"])
+    macros = {
+        tier: _v34_macro(weight, carb_by_tier[tier], protein_gkg, fat_gkg)
+        for tier in TIERS
+    }
+    energies = {tier: float(macros[tier]["energy_internal_kcal"]) for tier in TIERS}
+    applied_budget = sum(normalized_counts[tier] * energies[tier] for tier in TIERS) / total_days
+    closure_error = applied_budget - guarded_budget
+    reasons = ["wiki_goal_microcycle_direct", "carb_tier_by_bodyweight"]
+    if normalized_counts == REFERENCE_COUNTS:
+        reasons.append("reference_2high_2mid_3low_closed")
+    elif abs(closure_error) > 1e-8:
+        reasons.append("period_mix_differs_from_reference")
+    result = {
+        "mode": mode,
+        "counts": normalized_counts,
+        "feasible": True,
+        "guarded_budget_kcal_day": guarded_budget,
+        "applied_budget_kcal_day": applied_budget,
+        "target_speed_applied": None,
+        "daily_energy_by_tier_kcal": energies,
+        "daily_macros_by_tier": macros,
+        "remaining_budget_kcal": -closure_error * total_days,
+        "period_closure_error_kcal": closure_error,
+        "reason_codes": reasons,
+        "display_tier_contract": _display_tier_contract(macros),
+        "carb_g_per_kg_by_tier": carb_by_tier,
+    }
+    if mode == "period_preview_constrained":
+        result["applied_budget_kcal_total"] = applied_budget * total_days
+        result["period_total_closure_error_kcal"] = closure_error * total_days
+    return result
 
 
 def _macro_min_energy(protein: float, fat_anchor: float) -> float:
@@ -940,13 +1057,7 @@ def _macro_compat(row: Mapping[str, Any], extra_reasons: Sequence[str] = ()) -> 
 
 
 def solve_macros(body: Mapping[str, Any], classification: Mapping[str, Any]) -> dict[str, Any]:
-    runtime = solve_distribution(
-        str(body["goal"]), REFERENCE_COUNTS, float(body["guarded_budget_kcal_day"]),
-        maintenance=float(body["maintenance_kcal"]),
-        baseline_weight=float(body["phase_baseline_weight_kg"]),
-        protein=float(body["protein_g"]), fat_anchor=float(body["fat_anchor_g"]),
-        mode="runtime_fixed_day",
-    )
+    runtime = _v34_distribution(body, REFERENCE_COUNTS, "runtime_fixed_day")
     if not runtime.get("feasible"):
         return {
             "status": "macro_infeasible", "energy_kcal": None, "protein_g": body.get("protein_g"),
@@ -984,13 +1095,7 @@ def calculate_daily_target(
 ) -> dict[str, Any]:
     body = calculate_body_energy(profile)
     classification = classify_training(training)
-    runtime = solve_distribution(
-        str(body["goal"]), REFERENCE_COUNTS, float(body["guarded_budget_kcal_day"]),
-        maintenance=float(body["maintenance_kcal"]),
-        baseline_weight=float(body["phase_baseline_weight_kg"]),
-        protein=float(body["protein_g"]), fat_anchor=float(body["fat_anchor_g"]),
-        mode="runtime_fixed_day",
-    )
+    runtime = _v34_distribution(body, REFERENCE_COUNTS, "runtime_fixed_day")
     recommended_tier = DAY_TO_TIER.get(str(classification.get("day_type")), "low")
     recommended_day = str(classification.get("day_type") or "暂定低碳")
     applied_tier = recommended_tier
@@ -1066,13 +1171,7 @@ def solve_period_preview(profile: Mapping[str, Any], counts: Mapping[str, int]) 
     """Solve a complete submitted period without mutating any shown snapshot."""
 
     body = calculate_body_energy(profile)
-    result = solve_distribution(
-        str(body["goal"]), counts, float(body["guarded_budget_kcal_day"]),
-        maintenance=float(body["maintenance_kcal"]),
-        baseline_weight=float(body["phase_baseline_weight_kg"]),
-        protein=float(body["protein_g"]), fat_anchor=float(body["fat_anchor_g"]),
-        mode="period_preview_constrained",
-    )
+    result = _v34_distribution(body, counts, "period_preview_constrained")
     result.update({
         "algorithm_version": ENGINE_VERSION,
         "parameter_set_version": PARAMETER_SET_VERSION,

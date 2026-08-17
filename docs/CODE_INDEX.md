@@ -2,7 +2,7 @@
 
 本索引用于接管、定位回归和发布，不替代源码。默认从 `src/main.py` 的路由和控制器装配开始，再沿功能表查找控制器、视图和服务。
 
-Build 111 为当前发布版，V3.3 计算模型仍为冻结基线。定位 BUG 时先查本索引和 `FROZEN_BASELINE.md`，只有用户明确授权的对应模块允许最小修改。食物库与添加饮食位于 `src/diet_controller.py`；训练追加、动作筛选与评分位于 `src/training_controller.py`；后台提醒位于 `src/rest_notification.py` 和 Android 原生插件。
+Build 113 为当前正式版。V3.3 历史快照保持冻结，V3.4 只作用于之后新签发阶段。定位 BUG 时先查本索引和 `FROZEN_BASELINE.md`，只有用户明确授权的对应模块允许最小修改。食物库与添加饮食位于 `src/diet_controller.py`；训练追加、动作筛选与评分位于 `src/training_controller.py`；后台提醒位于 `src/rest_notification.py` 和 Android 原生插件。
 
 ## 运行与基础层
 
@@ -44,8 +44,8 @@ Build 111 为当前发布版，V3.3 计算模型仍为冻结基线。定位 BUG 
 - “我”页体重/体脂保存同步当天趋势：`src/profile_controller.py` 调用 `src/analytics_service.py` 的明确测量合并逻辑，再由 `src/daily_record_controller.py` 写入当天记录。
 - 动作选择卡 GIF、帮助/选择按钮与左侧部位栏：`src/training_picker_views.py`；动作浏览区宽度和分页布局：`src/training_controller.py`。
 - 现行营养入口：`src/nutrition_service.py`。自动宏量模式调用动态碳循环，自定义宏量模式只读取用户倍率，不调用动态引擎。
-- 动态碳循环：`src/dynamic_carb_engine.py` 负责确定性计算，`src/dynamic_carb_adapter.py` 负责 App 数据语义、快照持久化和 UI 投影，`src/carb_cycle_views.py` 负责首页与饮食页共用的简化详情。旧 `src/carb_cycle_service.py` 已删除。
-- 动态碳循环回放：`tools/replay_dynamic_carb_fixture.py`（100 天 golden）、`tools/simulate_dynamic_carb_personas.py`（长期画像与 shadow 校准）、`tools/replay_dynamic_carb_edge_cases.py`（不可协商边界）；输出位于 `release_candidates/dynamic-carb-*.json`。
+- 动态碳循环：`src/dynamic_carb_engine.py` 负责 V3.4 Wiki 三目标男女参数、`2高+2中+3低` 直接求解和按主训练部位判档；`src/dynamic_carb_adapter.py` 负责训练部位归一化、阶段版本迁移、快照持久化和 UI 投影；`src/carb_cycle_views.py` 仍只负责现有简化详情，Build 113 未改 UI。
+- 动态碳循环回放：`tools/replay_dynamic_carb_fixture.py`（100 天 golden）、`tools/simulate_dynamic_carb_personas.py`（长期画像与 shadow 校准）、`tools/replay_dynamic_carb_edge_cases.py`（不可协商边界）、`tools/replay_dynamic_carb_real_backup.py`（真实备份只读回放）；V3.4 专项为 `tests/test_dynamic_carb_v34.py`。
 - V3.3 实现差分与封闭 P0 审计：`tools/verify_dynamic_carb_v33_implementation.py`、`tools/audit_dynamic_carb_v33_closed.py`；输出位于 `release_candidates/dynamic-carb-v33-*.json`。
 - Release 版本检查：`src/app_version.py`、`src/update_service.py`、`src/profile_update_views.py`；GitHub API 不可用时读取根目录 `update_manifest.json`。
 - 版本配置：`pyproject.toml`；构建后由 `build_apk_update.ps1` 同步预备下一 Build。

@@ -46,23 +46,23 @@ class DynamicCarbEngineTests(unittest.TestCase):
         self.assertTrue(rest["formal"])
         self.assertEqual(rest["day_type"], "低碳日")
 
-    def test_resistance_thresholds_use_sets_peak_and_duration(self):
-        low = classify_training({"status": "completed", "resistance": {"work_sets_total": 7, "peak_body_part_sets": 5, "duration_min": 40}})
-        medium = classify_training({"status": "completed", "resistance": {"work_sets_total": 11, "peak_body_part_sets": 8, "duration_min": 60}})
-        high = classify_training({"status": "completed", "resistance": {"work_sets_total": 22, "peak_body_part_sets": 11, "duration_min": 85}})
+    def test_resistance_tiers_use_primary_body_part(self):
+        low = classify_training({"status": "completed", "body_parts": ["二头"], "resistance": {"work_sets_total": 24}})
+        medium = classify_training({"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 4}})
+        high = classify_training({"status": "completed", "body_parts": ["背"], "resistance": {"work_sets_total": 4}})
         self.assertEqual([low["demand_key"], medium["demand_key"], high["demand_key"]], ["resistance_low", "resistance_medium", "resistance_high"])
 
     def test_two_low_sessions_do_not_upgrade_but_two_medium_sessions_do(self):
         aggregated_low = classify_training({
             "status": "completed", "sessions": 2, "medium_or_higher_sessions": 0,
-            "resistance": {"work_sets_total": 8, "peak_body_part_sets": 4, "duration_min": 40},
+            "body_parts": ["二头"], "resistance": {"work_sets_total": 8, "peak_body_part_sets": 4, "duration_min": 40},
         })
         two_medium = classify_training({
             "status": "completed", "sessions": 2, "medium_or_higher_sessions": 2,
-            "resistance": {"work_sets_total": 16, "peak_body_part_sets": 8, "duration_min": 80},
+            "body_parts": ["胸"], "resistance": {"work_sets_total": 16, "peak_body_part_sets": 8, "duration_min": 80},
         })
 
-        self.assertEqual(aggregated_low["demand_key"], "resistance_medium")
+        self.assertEqual(aggregated_low["demand_key"], "resistance_low")
         self.assertEqual(two_medium["demand_key"], "mixed_high")
 
     def test_combining_sessions_or_modalities_never_downgrades_higher_cardio_demand(self):
@@ -140,28 +140,27 @@ class DynamicCarbEngineTests(unittest.TestCase):
     def test_macro_solver_closes_energy_and_keeps_fat_floor(self):
         for training in (
             {"status": "explicit_rest"},
-            {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}},
-            {"status": "completed", "resistance": {"work_sets_total": 22, "peak_body_part_sets": 11, "duration_min": 85}},
+            {"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 14}},
+            {"status": "completed", "body_parts": ["背"], "resistance": {"work_sets_total": 22}},
         ):
             with self.subTest(training=training):
                 macro = calculate_daily_target(BASE_PROFILE, training)["recommended_macros"]
                 self.assertEqual(macro["status"], "ok")
                 self.assertAlmostEqual(macro["energy_closure_error"], 0, places=6)
-                self.assertGreaterEqual(macro["fat_energy_share"], 0.20)
-                self.assertLessEqual(macro["fat_energy_share"], 0.30 + 1e-9)
+                self.assertAlmostEqual(macro["fat_g"] / BASE_PROFILE["weight"], 1.0)
 
     def test_automatic_low_medium_high_distribution_is_distinct(self):
         trainings = (
             {"status": "explicit_rest"},
-            {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}},
-            {"status": "completed", "resistance": {"work_sets_total": 22, "peak_body_part_sets": 11, "duration_min": 85}},
+            {"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 14}},
+            {"status": "completed", "body_parts": ["背"], "resistance": {"work_sets_total": 22}},
         )
         macros = [calculate_daily_target(BASE_PROFILE, training)["recommended_macros"] for training in trainings]
 
         self.assertLess(macros[0]["carb_g"], macros[1]["carb_g"])
         self.assertLess(macros[1]["carb_g"], macros[2]["carb_g"])
         self.assertEqual(len({round(item["protein_g"], 8) for item in macros}), 1)
-        self.assertTrue(all(item["fat_g"] <= 0.8 * BASE_PROFILE["weight"] + 1e-9 for item in macros))
+        self.assertTrue(all(abs(item["fat_g"] - BASE_PROFILE["weight"]) < 1e-9 for item in macros))
         for macro in macros:
             self.assertAlmostEqual(macro["energy_closure_error"], 0, places=6)
 
@@ -172,8 +171,7 @@ class DynamicCarbEngineTests(unittest.TestCase):
         )["recommended_macros"]
 
         self.assertEqual(macro["status"], "ok")
-        self.assertGreaterEqual(macro["fat_energy_share"], 0.20 - 1e-9)
-        self.assertLessEqual(macro["fat_energy_share"], 0.30 + 1e-9)
+        self.assertAlmostEqual(macro["fat_g"] / BASE_PROFILE["weight"], 1.0)
 
     def test_supported_scope_starts_at_nineteen(self):
         with self.assertRaises(ValueError):
@@ -188,9 +186,9 @@ class DynamicCarbEngineTests(unittest.TestCase):
     def test_obesity_without_bodyfat_uses_estimated_lean_mass_guard(self):
         profile = {"sex": "女", "age": 39, "height": 160, "weight": 96, "goal": "减脂", "activity_habit": "偶尔运动"}
         body = calculate_body_energy(profile)
-        self.assertEqual(body["protein_method"], "janmahasatian_ffm")
-        self.assertIsNotNone(body["lean_mass_kg"])
-        self.assertLess(body["protein_g"], 96 * 1.8)
+        self.assertEqual(body["protein_method"], "wiki_goal_bodyweight_fixed")
+        self.assertIsNone(body["lean_mass_kg"])
+        self.assertAlmostEqual(body["protein_g"], 96 * 1.7)
 
     def test_stale_bodyfat_remains_displayable_but_does_not_anchor_protein(self):
         body = calculate_body_energy({
@@ -201,7 +199,7 @@ class DynamicCarbEngineTests(unittest.TestCase):
         })
 
         self.assertAlmostEqual(body["lean_mass_kg"], 58.5)
-        self.assertEqual(body["protein_method"], "bodyweight")
+        self.assertEqual(body["protein_method"], "wiki_goal_bodyweight_fixed")
 
     def test_elderly_obesity_fallback_does_not_reinflate_protein_by_actual_weight(self):
         body = calculate_body_energy({
@@ -209,8 +207,8 @@ class DynamicCarbEngineTests(unittest.TestCase):
             "goal": "保持", "activity_habit": "偶尔运动",
         })
 
-        self.assertLess(body["protein_g"], 140)
-        self.assertEqual(body["protein_method"], "janmahasatian_ffm")
+        self.assertEqual(body["protein_g"], 175)
+        self.assertEqual(body["protein_method"], "wiki_goal_bodyweight_fixed")
 
     def test_manual_day_changes_applied_but_not_recommended_result(self):
         result = calculate_daily_target(BASE_PROFILE, {"status": "explicit_rest"}, manual_day_type="高碳日")
@@ -229,43 +227,40 @@ class DynamicCarbEngineTests(unittest.TestCase):
             self.assertEqual(acknowledged["applied_macros"][key], automatic["recommended_macros"][key])
         self.assertIn("manual_day_override", acknowledged["applied_macros"]["reason_codes"])
 
-    def test_hall_28_day_budget_and_energy_guard_are_reproducible(self):
-        k28 = 25.8 / (1 - math.exp(-25.8 * 28 / 8840))
+    def test_wiki_goal_budgets_are_reproducible(self):
         gain = calculate_body_energy({**BASE_PROFILE, "goal": "增肌"})
         cut = calculate_body_energy(BASE_PROFILE)
 
-        self.assertAlmostEqual(gain["raw_delta_kcal_day"], 4 * 0.0025 * 78 * k28, places=9)
-        self.assertAlmostEqual(cut["raw_delta_kcal_day"], 4 * -0.005 * 78 * k28, places=9)
-        self.assertEqual(cut["guarded_delta_kcal_day"], -500)
-        self.assertIn("target_speed_clamped_energy_guard", cut["budget_reason_codes"])
+        self.assertAlmostEqual(gain["guarded_budget_kcal_day"], 78 * (4 * 3.5 + 4 * 1.8 + 9 * 1.0))
+        self.assertAlmostEqual(cut["guarded_budget_kcal_day"], 78 * (4 * 3.0 + 4 * 1.7 + 9 * 1.0))
+        self.assertIn("wiki_goal_baseline", cut["budget_reason_codes"])
 
     def test_runtime_uses_versioned_reference_distribution_and_strict_display_order(self):
         result = calculate_daily_target({**BASE_PROFILE, "goal": "保持"}, {"status": "explicit_rest"})
         runtime = result["runtime_distribution"]
 
         self.assertEqual(result["mode"], "runtime_fixed_day")
-        self.assertEqual(runtime["counts"], {"low": 35, "mid": 45, "high": 20})
+        self.assertEqual(runtime["counts"], {"low": 3, "mid": 2, "high": 2})
         self.assertTrue(runtime["feasible"])
         self.assertTrue(runtime["display_tier_contract"]["ordered"])
         self.assertTrue(runtime["display_tier_contract"]["distinct_macro_signatures"])
         self.assertAlmostEqual(runtime["period_closure_error_kcal"], 0, places=8)
 
-    def test_period_preview_uses_actual_counts_or_returns_explicit_infeasible(self):
+    def test_period_preview_reports_actual_mix_deviation_from_reference(self):
         preview = solve_period_preview({**BASE_PROFILE, "goal": "保持"}, {"low": 2, "mid": 2, "high": 1})
         blocked = solve_period_preview(BASE_PROFILE, {"low": 0, "mid": 0, "high": 7})
 
         self.assertEqual(preview["mode"], "period_preview_constrained")
         self.assertTrue(preview["feasible"])
-        self.assertAlmostEqual(preview["period_total_closure_error_kcal"], 0, places=7)
-        self.assertFalse(blocked["feasible"])
-        self.assertIn("phase_budget_infeasible", blocked["reason_codes"])
-        self.assertTrue(blocked["user_prompt"])
-        self.assertNotIn("daily_macros_by_tier", blocked)
+        self.assertNotAlmostEqual(preview["period_total_closure_error_kcal"], 0, places=7)
+        self.assertIn("period_mix_differs_from_reference", preview["reason_codes"])
+        self.assertTrue(blocked["feasible"])
+        self.assertIn("period_mix_differs_from_reference", blocked["reason_codes"])
 
     def test_phase_baseline_binds_the_frozen_model_document_hash(self):
         phase = create_phase_baseline(BASE_PROFILE, "2026-08-03")
         self.assertEqual(phase["model_document_sha256"], MODEL_DOCUMENT_SHA256)
-        self.assertEqual(MODEL_DOCUMENT_SHA256, "790ABE73F2B34F48FD9B2DFAF938F685A1D4242DA161CA6350AB1CE0B4C3D16B")
+        self.assertEqual(MODEL_DOCUMENT_SHA256, "8C680ABD0F34EC73C1D4B21D96D3345A4DD480B6B73491638F76EC9A1A3E79B4")
 
     def test_baseline_refresh_is_order_independent_and_only_effective_next_day(self):
         as_of = date(2026, 8, 3)
@@ -302,7 +297,7 @@ class DynamicCarbEngineTests(unittest.TestCase):
     def test_ui_projection_hides_internal_model_details(self):
         snapshot = calculate_daily_target(
             BASE_PROFILE,
-            {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}},
+            {"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 14}},
             effective_date="2025-02-01",
         )
         payload = project_daily_target_for_ui(snapshot)
@@ -329,9 +324,7 @@ class DynamicCarbEngineTests(unittest.TestCase):
             + 9 * macros["fat"]["center_g"]
         )
         self.assertAlmostEqual(visible_kcal, payload["energy_kcal"], delta=0.5)
-        visible_fat_share = 9 * macros["fat"]["center_g"] / payload["energy_kcal"]
-        self.assertGreaterEqual(visible_fat_share, 0.20 - DISPLAY_FAT_SHARE_ROUNDING_TOLERANCE)
-        self.assertLessEqual(visible_fat_share, 0.30 + DISPLAY_FAT_SHARE_ROUNDING_TOLERANCE)
+        self.assertAlmostEqual(macros["fat"]["center_g"], 46.0)
 
     def test_manual_switch_prompt_only_appears_for_a_difference(self):
         snapshot = calculate_daily_target(BASE_PROFILE, {"status": "explicit_rest"})
@@ -423,10 +416,10 @@ class DynamicCarbEngineTests(unittest.TestCase):
     def test_canonical_100_day_fixture_replays_through_reference_engine(self):
         report = replay_fixture(DEFAULT_INPUT)
         self.assertEqual(report["record_days"], 100)
-        self.assertEqual(report["new_day_types"], {"中碳日": 58, "低碳日": 14, "暂定低碳": 28})
+        self.assertEqual(report["new_day_types"], {"中碳日": 29, "高碳日": 29, "低碳日": 14, "暂定低碳": 28})
         self.assertEqual(
             report["recommendation_states"],
-            {"formal_medium": 58, "formal_low": 14, "provisional_low": 28},
+            {"formal_medium": 29, "formal_high": 29, "formal_low": 14, "provisional_low": 28},
         )
         self.assertEqual(report["demand_types"]["cardio_light"], 14)
         self.assertEqual(report["demand_types"]["provisional_low"], 28)
