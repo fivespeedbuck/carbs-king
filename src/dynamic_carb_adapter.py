@@ -11,6 +11,7 @@ from datetime import date, datetime
 from typing import Any
 
 from dynamic_carb_engine import (
+    ENGINE_VERSION,
     calculate_daily_target,
     classify_training,
     create_phase_baseline,
@@ -21,7 +22,7 @@ from training_models import SessionExercise, TrainingSession
 from training_service import raw_training_sessions
 
 
-APP_SNAPSHOT_VERSION = 3
+APP_SNAPSHOT_VERSION = 4
 FORMAL_DAY_TYPES = {"低碳日", "中碳日", "高碳日"}
 
 
@@ -92,6 +93,8 @@ def _goal_key(value: Any) -> str:
 
 
 def _phase_matches(phase: Mapping[str, Any], profile: Mapping[str, Any], target: date | None) -> bool:
+    if phase.get("algorithm_version") != ENGINE_VERSION:
+        return False
     if _goal_key(phase.get("goal")) != _goal_key(profile.get("goal")):
         return False
     effective = _iso_date(phase.get("effective_from", phase.get("started_at")))
@@ -131,6 +134,7 @@ def normalize_training(training: Mapping[str, Any] | None, *, completed_only: bo
 
     resistance_sets = 0
     muscle_sets: Counter[str] = Counter()
+    body_parts: list[str] = []
     cardio_duration = 0.0
     cardio_effective_minutes = 0.0
     cardio_intensities: list[str] = []
@@ -197,10 +201,13 @@ def normalize_training(training: Mapping[str, Any] | None, *, completed_only: bo
                 ]
                 count = len(selected_sets)
                 if count:
+                    body_part = str(exercise.body_part or exercise.name or "未分类").strip()
                     resistance_sets += count
-                    muscle_sets[exercise.body_part or exercise.name or "未分类"] += count
+                    muscle_sets[body_part] += count
                     session_resistance_sets += count
-                    session_muscle_sets[exercise.body_part or exercise.name or "未分类"] += count
+                    session_muscle_sets[body_part] += count
+                    if body_part not in body_parts:
+                        body_parts.append(body_part)
                     session_has_work = True
             elif exercise.recording_mode == "cardio":
                 duration = max(0.0, float(exercise.duration_seconds or 0) / 60)
@@ -218,6 +225,7 @@ def normalize_training(training: Mapping[str, Any] | None, *, completed_only: bo
             has_planned_work = has_planned_work or (not completed_session and not active_session)
             session_facts: dict[str, Any] = {"status": "completed" if completed_session else "planned_confirmed"}
             if session_resistance_sets:
+                session_facts["body_parts"] = list(session_muscle_sets)
                 session_facts["resistance"] = {
                     "work_sets_total": session_resistance_sets,
                     "peak_body_part_sets": max(session_muscle_sets.values(), default=0),
@@ -272,6 +280,7 @@ def normalize_training(training: Mapping[str, Any] | None, *, completed_only: bo
     if medium_or_higher_sessions:
         result["medium_or_higher_sessions"] = medium_or_higher_sessions
     if resistance_sets:
+        result["body_parts"] = body_parts
         result["resistance"] = {
             "work_sets_total": resistance_sets,
             "peak_body_part_sets": max(muscle_sets.values(), default=0),

@@ -146,8 +146,8 @@ class DynamicCarbAdapterTests(unittest.TestCase):
 
     def test_adapter_counts_only_medium_or_higher_individual_sessions_for_upgrade(self):
         two_low = normalize_training({"sessions": [
-            completed_strength_session("卧推", "胸", 4),
             completed_strength_session("弯举", "二头", 4),
+            completed_strength_session("卷腹", "腹", 4),
         ]})
         two_medium = normalize_training({"sessions": [
             completed_strength_session("卧推", "胸", 8),
@@ -157,9 +157,9 @@ class DynamicCarbAdapterTests(unittest.TestCase):
         self.assertNotIn("medium_or_higher_sessions", two_low)
         self.assertEqual(two_medium["medium_or_higher_sessions"], 2)
         self.assertEqual(calculate_app_snapshot(state({"sessions": [
-            completed_strength_session("卧推", "胸", 4),
             completed_strength_session("弯举", "二头", 4),
-        ]}))["engine_snapshot"]["recommended_day"], "中碳日")
+            completed_strength_session("卷腹", "腹", 4),
+        ]}))["engine_snapshot"]["recommended_day"], "低碳日")
 
     def test_unknown_cardio_intensity_is_conservative_and_segments_do_not_use_maximum(self):
         unknown = normalize_training({"session": {
@@ -190,7 +190,7 @@ class DynamicCarbAdapterTests(unittest.TestCase):
         snapshot = calculate_app_snapshot(current)
 
         self.assertIsNone(snapshot["training_facts"]["resistance"]["duration_min"])
-        self.assertEqual(snapshot["engine_snapshot"]["recommended_day"], "低碳日")
+        self.assertEqual(snapshot["engine_snapshot"]["recommended_day"], "高碳日")
 
     def test_timed_strength_or_mobility_work_is_not_counted_as_cardio(self):
         facts = normalize_training({"session": {
@@ -206,7 +206,7 @@ class DynamicCarbAdapterTests(unittest.TestCase):
         self.assertEqual(facts["status"], "outcome_unknown")
         self.assertNotIn("cardio", facts)
 
-    def test_confirmed_ten_peak_sets_produce_formal_medium_day_snapshot(self):
+    def test_confirmed_leg_training_produces_formal_high_day_snapshot(self):
         training = {
             "carb_mode": "auto",
             "session": {
@@ -216,7 +216,7 @@ class DynamicCarbAdapterTests(unittest.TestCase):
             },
         }
         snapshot = calculate_app_snapshot(state(training), calculated_at="2026-08-02T08:00:00")
-        self.assertEqual(snapshot["engine_snapshot"]["recommended_day"], "中碳日")
+        self.assertEqual(snapshot["engine_snapshot"]["recommended_day"], "高碳日")
         self.assertEqual(snapshot["ui_projection"]["status"], "auto")
         self.assertIsNotNone(targets_from_snapshot(snapshot))
 
@@ -232,9 +232,9 @@ class DynamicCarbAdapterTests(unittest.TestCase):
         current = state(training)
         current["day_type"] = "低碳日"
         snapshot = calculate_app_snapshot(current, calculated_at="2026-08-02T08:00:00")
-        self.assertEqual(snapshot["engine_snapshot"]["recommended_day"], "中碳日")
+        self.assertEqual(snapshot["engine_snapshot"]["recommended_day"], "高碳日")
         self.assertEqual(snapshot["engine_snapshot"]["applied_day"], "低碳日")
-        self.assertEqual(snapshot["ui_projection"]["recommended_difference"], "中碳日")
+        self.assertEqual(snapshot["ui_projection"]["recommended_difference"], "高碳日")
 
     def test_historical_recompute_keeps_the_original_shown_target(self):
         original = calculate_app_snapshot(state(), calculated_at="2026-08-02T08:00:00")
@@ -253,7 +253,7 @@ class DynamicCarbAdapterTests(unittest.TestCase):
             calculated_at="2026-08-05T08:00:00",
         )
         self.assertEqual(recomputed["shown_target_snapshot"], original["shown_target_snapshot"])
-        self.assertEqual(recomputed["ui_projection"]["day_label"], "中碳日")
+        self.assertEqual(recomputed["ui_projection"]["day_label"], "高碳日")
         self.assertEqual(
             targets_from_snapshot(recomputed)["carb"],
             original["shown_target_snapshot"]["projection"]["macro_targets"]["carb"]["center_g"],

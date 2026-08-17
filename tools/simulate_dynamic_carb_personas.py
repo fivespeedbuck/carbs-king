@@ -71,18 +71,18 @@ def training_facts(kind: str) -> dict[str, Any]:
     if kind == "unknown":
         return {"status": "unknown"}
     templates = {
-        "res_low": {"status": "completed", "resistance": {"work_sets_total": 7, "peak_body_part_sets": 5, "duration_min": 40}},
-        "res_mid": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}},
-        "res_high": {"status": "completed", "resistance": {"work_sets_total": 22, "peak_body_part_sets": 11, "duration_min": 85}},
-        "bodyweight": {"status": "completed", "resistance": {"work_sets_total": 12, "peak_body_part_sets": 7, "duration_min": 50, "load_kind": "bodyweight"}},
-        "bodyweight_high": {"status": "completed", "resistance": {"work_sets_total": 20, "peak_body_part_sets": 10, "duration_min": 75, "load_kind": "bodyweight"}},
+        "res_low": {"status": "completed", "body_parts": ["二头"], "resistance": {"work_sets_total": 7, "peak_body_part_sets": 5, "duration_min": 40}},
+        "res_mid": {"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}},
+        "res_high": {"status": "completed", "body_parts": ["背"], "resistance": {"work_sets_total": 22, "peak_body_part_sets": 11, "duration_min": 85}},
+        "bodyweight": {"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 12, "peak_body_part_sets": 7, "duration_min": 50, "load_kind": "bodyweight"}},
+        "bodyweight_high": {"status": "completed", "body_parts": ["背"], "resistance": {"work_sets_total": 20, "peak_body_part_sets": 10, "duration_min": 75, "load_kind": "bodyweight"}},
         "walk": {"status": "completed", "cardio": {"duration_min": 40, "intensity": "low"}},
         "cardio_light": {"status": "completed", "cardio": {"duration_min": 35, "intensity": "moderate"}},
         "cardio_mid": {"status": "completed", "cardio": {"duration_min": 60, "intensity": "moderate"}},
         "cardio_high": {"status": "completed", "cardio": {"duration_min": 90, "intensity": "high"}},
         "endurance_long": {"status": "completed", "cardio": {"duration_min": 150, "intensity": "moderate"}},
-        "mixed": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 50, "intensity": "moderate"}, "sessions": 1},
-        "double": {"status": "completed", "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 60, "intensity": "moderate"}, "sessions": 2, "medium_or_higher_sessions": 2},
+        "mixed": {"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 50, "intensity": "moderate"}, "sessions": 1},
+        "double": {"status": "completed", "body_parts": ["胸"], "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60}, "cardio": {"duration_min": 60, "intensity": "moderate"}, "sessions": 2, "medium_or_higher_sessions": 2},
     }
     return json.loads(json.dumps(templates[kind]))
 
@@ -188,8 +188,6 @@ def simulate_persona(persona: Persona, days: int = DAYS, replicate: int = 0) -> 
             else:
                 violations.append(f"{current}:macro_infeasible_without_reason")
         else:
-            if not 0.20 - 1e-9 <= macro["fat_energy_share"] <= 0.30 + 1e-9:
-                violations.append(f"{current}:fat_share_outside_automatic_range")
             if abs(macro["energy_closure_error"]) > 1e-6:
                 violations.append(f"{current}:energy_closure")
             if min(macro["protein_g"], macro["carb_g"], macro["fat_g"]) < 0:

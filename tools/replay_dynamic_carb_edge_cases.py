@@ -87,18 +87,20 @@ def run_edge_replay() -> dict[str, Any]:
                 for index, item in enumerate(_history(100))
             ]], start + timedelta(days=10)
         )["eligible"]),
-        _case("stale_bodyfat_is_not_treated_as_observed_ffm", lambda: "janmahasatian" in calculate_body_energy({
+        _case("bodyfat_does_not_select_the_protein_route", lambda: calculate_body_energy({
             "sex": "女", "age": 39, "height": 160, "weight": 96, "bodyfat": 35,
             "bodyfat_status": "carried", "bodyfat_age_days": 120,
             "goal": "减脂", "activity_habit": "偶尔运动",
-        })["protein_method"]),
+        })["protein_method"] == "wiki_goal_bodyweight_fixed"),
         _case("second_session_upgrades_medium_resistance", lambda: classify_training({
             "status": "completed", "sessions": 2,
             "medium_or_higher_sessions": 2,
+            "body_parts": ["胸"],
             "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60},
         })["demand_key"] == "mixed_high"),
         _case("added_cardio_combines_without_double_counting", lambda: classify_training({
             "status": "completed", "sessions": 1,
+            "body_parts": ["胸"],
             "resistance": {"work_sets_total": 14, "peak_body_part_sets": 8, "duration_min": 60},
             "medium_or_higher_sessions": 2,
             "cardio": {"duration_min": 60, "intensity": "moderate"},
@@ -106,7 +108,8 @@ def run_edge_replay() -> dict[str, Any]:
         _case("ordinary_resistance_never_exceeds_maintenance", lambda: (
             lambda result: result["recommended_macros"]["energy_kcal"] <= result["body"]["maintenance_kcal"] + 1e-9
         )(calculate_daily_target(BASE_PROFILE, {
-            "status": "completed", "resistance": {"work_sets_total": 25, "peak_body_part_sets": 12, "duration_min": 90},
+            "status": "completed", "body_parts": ["背"],
+            "resistance": {"work_sets_total": 25, "peak_body_part_sets": 12, "duration_min": 90},
         }))),
         _case("long_endurance_never_exceeds_maintenance", lambda: (
             lambda result: result["recommended_macros"]["energy_kcal"]
