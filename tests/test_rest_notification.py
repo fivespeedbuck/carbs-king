@@ -117,6 +117,7 @@ class FakeAlarmScheduler:
         self.schedules = []
         self.cancels = []
         self.delivered = []
+        self.delivered_ids = set()
 
     def schedule(self, *, cycle_id, delay_seconds, request_code, title, body):
         self.schedules.append(
@@ -144,7 +145,11 @@ class FakeAlarmScheduler:
 
     def mark_delivered(self, *, cycle_id):
         self.delivered.append(cycle_id)
+        self.delivered_ids.add(cycle_id)
         return True
+
+    def has_delivered(self, *, cycle_id):
+        return cycle_id in self.delivered_ids
 
 
 class FakeOverlayController:
@@ -265,8 +270,27 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.sound_played)
         self.assertEqual(notifier.audio.play_count, 1)
         self.assertEqual(system.posts, [])
-        self.assertEqual(alarm.delivered, [])
+        self.assertEqual(alarm.delivered, ["rest-visible"])
         self.assertEqual(len(alarm.cancels), 1)
+
+    async def test_foreground_tick_does_not_replay_after_native_receiver_claimed(self):
+        page = FakePage()
+        alarm = FakeAlarmScheduler()
+        alarm.delivered_ids.add("rest-native-won")
+        notifier = RestNotifier(
+            page,
+            audio_factory=FakeAudio,
+            haptic_factory=FakeHaptic,
+            system_factory=None,
+            alarm_scheduler_factory=lambda: alarm,
+        )
+        notifier.trigger_after("rest-native-won", 90)
+
+        result = await notifier.trigger_foreground("rest-native-won")
+
+        self.assertTrue(result.sound_played)
+        self.assertEqual(notifier.audio.play_count, 0)
+        self.assertEqual(alarm.delivered, [])
 
     async def test_hidden_app_does_not_play_foreground_cue(self):
         page = FakePage()
@@ -683,10 +707,10 @@ class RestNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("verify-mirror", build_script)
         self.assertIn("verify-apk", build_script)
         self.assertIn("apk_runtime_gate.py", build_script)
-        self.assertEqual(len(native_sound.read_bytes()), 81546)
+        self.assertGreater(len(native_sound.read_bytes()), 0)
         self.assertEqual(
             hashlib.sha256(native_sound.read_bytes()).hexdigest().upper(),
-            "8E943111B1F3AF5AC259EFD3B42148526505365273E97974AAC7A562CE354E5A",
+            "8F732DE8D36241FF8B431DDF8317B2E33F14CBA0A1BAB830BAE3C30E03D6E32A",
         )
 
 

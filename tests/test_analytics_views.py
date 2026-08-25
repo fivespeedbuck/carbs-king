@@ -161,7 +161,7 @@ class AnalyticsViewModelTests(unittest.TestCase):
                 "meals": {"早餐": [{"name": "鸡蛋"}]},
                 "sleep": {"total_minutes": 480},
                 "water": {"records_ml": [3000]},
-                "calendar_event": {"type": "rest"},
+                "training": {"targets": [{"target": "休息", "detail": "今日休息"}]},
             },
         }
         summary = build_data_page_model(records, end_date="2026-07-21")["summary"]

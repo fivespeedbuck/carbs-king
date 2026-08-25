@@ -29,6 +29,10 @@ class RestAlarmReceiver : BroadcastReceiver() {
             // happen in the native receiver rather than depend on Flet's
             // background lifecycle. USAGE_ALARM follows the alarm stream.
             context.stopService(Intent(context, RestOverlayService::class.java))
+            // Claim the cycle before starting MediaPlayer. The foreground
+            // Python callback writes the same marker before its own playback;
+            // whichever path claims first owns the one audible delivery.
+            if (!deliveries.edit().putBoolean(cycleId, true).commit()) return
             val pendingResult = goAsync()
             val audioStarted = playBundledAlarm(context) { pendingResult.finish() }
             var notificationPosted = false
@@ -72,12 +76,6 @@ class RestAlarmReceiver : BroadcastReceiver() {
 
                 manager.notify(notificationId, builder.build())
                 notificationPosted = true
-            }
-            // Only suppress redelivery after at least one native delivery path
-            // has been started; notification permission is not a prerequisite
-            // for the bundled alarm audio.
-            if (audioStarted || notificationPosted) {
-                deliveries.edit().putBoolean(cycleId, true).commit()
             }
             if (!audioStarted) pendingResult.finish()
         }

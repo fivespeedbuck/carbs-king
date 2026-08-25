@@ -758,7 +758,13 @@ def build_data_page_model(
         for key, _ in CIRCUMFERENCE_KEYS
     }
     training_days = [point for point in series if point.get("training")]
-    rest_days = [item for item in calendar_items if item.get("record_state") == "rest"]
+    # Count explicit rest days inside the selected 7/30/90-day window. Older
+    # records may carry only the legacy training target ("休息") without a
+    # calendar_event; calendar_day_summary normalizes both representations.
+    rest_days = [
+        point for point in series
+        if calendar_day_summary(source.get(point["date"]), point["date"]).get("activity_type") == "rest"
+    ]
     unrecorded_days = [item for item in calendar_items if item.get("record_state") == "unrecorded"]
 
     def period_change(values: list[float | None]) -> float | None:

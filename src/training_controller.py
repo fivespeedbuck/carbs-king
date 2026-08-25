@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import datetime
 import json
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -452,6 +453,12 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             "蝴蝶机", "器械", "自重",
         )
         selected_names: list[str] = []
+        # A picker card owns both a full-card tap target and an add/check
+        # button. On Android/Flet one physical tap can arrive through both
+        # handlers while the focus-transfer task is still being scheduled.
+        # Keep a short per-action debounce so an accidental bubbling event or
+        # touch replay cannot toggle the same action twice.
+        toggle_debounce_until: dict[str, float] = {}
         custom_exercises = load_custom_exercises()
         catalog = exercise_catalog(custom_exercises)
         categories = tuple(dict.fromkeys([*EXERCISE_CATEGORIES, *(item.get("category", "其他") for item in custom_exercises)]))
@@ -954,8 +961,15 @@ def create_training_controller(deps: TrainingControllerDependencies) -> Training
             )
 
         def toggle_exercise(exercise):
+            exercise_name = str(exercise.get("name") or "").strip()
+            if not exercise_name:
+                return
+            now = time.monotonic()
+            if now < toggle_debounce_until.get(exercise_name, 0.0):
+                return
+            toggle_debounce_until[exercise_name] = now + 0.35
+
             def apply_toggle():
-                exercise_name = str(exercise.get("name") or "")
                 if exercise_name in selected_names:
                     selected_names.remove(exercise_name)
                 elif exercise_name:

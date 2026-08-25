@@ -192,6 +192,11 @@ def _legacy_training_summary(training: Any) -> dict[str, Any] | None:
     for target in targets:
         if not isinstance(target, Mapping):
             continue
+        if str(target.get("target") or "").strip().casefold() in {"休息", "rest"}:
+            # A legacy rest target is a calendar activity, not a workout.
+            # Counting it here makes the data-page summary report a training
+            # day and hides the rest day from the selected-period counter.
+            continue
         part = normalize_body_part(target.get("target"))
         name = str(target.get("detail") or target.get("target") or "").strip()
         if not (part or name or str(target.get("note") or "").strip()):
@@ -597,11 +602,16 @@ def calendar_day_summary(record: Any, record_date: str = "") -> dict[str, Any]:
     event = _mapping(rec.get("calendar_event"))
     event_type = str(event.get("type") or "").strip().lower()
     event_text = str(event.get("text") or "").strip()
+    legacy_rest_target = any(
+        str(item.get("target") or "").strip().casefold() in {"休息", "rest"}
+        for item in _list(_mapping(rec.get("training")).get("targets"))
+        if isinstance(item, Mapping)
+    )
 
     if training["has_training"]:
         activity_type = "training"
         activity = format_body_parts(training["body_parts"], compact=True)
-    elif event_type == "rest":
+    elif event_type == "rest" or legacy_rest_target:
         activity_type = "rest"
         activity = "休息"
     elif event_type == "custom" and event_text:

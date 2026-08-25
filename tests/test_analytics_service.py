@@ -330,10 +330,13 @@ class CalendarTests(unittest.TestCase):
 
     def test_explicit_rest_and_custom_event_are_distinct_from_empty(self):
         rest = calendar_day_summary({"profile": {"day_type": "低碳日"}, "calendar_event": {"type": "rest"}})
+        legacy_rest = calendar_day_summary({"training": {"targets": [{"target": "休息", "detail": "今日休息"}]}})
         custom = calendar_day_summary({"calendar_event": {"type": "custom", "text": "出差开会超过六字"}})
         empty = calendar_day_summary({"profile": {"weight_kg": "70"}})
 
         self.assertEqual(rest["lines"], ["低碳日", "休息"])
+        self.assertEqual(legacy_rest["activity_type"], "rest")
+        self.assertEqual(legacy_rest["activity"], "休息")
         self.assertEqual(custom["activity"], "出差开会超过")
         self.assertIsNone(empty["activity_type"])
         self.assertIsNone(empty["day_type"])

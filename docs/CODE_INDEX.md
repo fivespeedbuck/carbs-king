@@ -2,7 +2,7 @@
 
 本索引用于接管、定位回归和发布，不替代源码。默认从 `src/main.py` 的路由和控制器装配开始，再沿功能表查找控制器、视图和服务。
 
-Build 113 为当前正式版。V3.3 历史快照保持冻结，V3.4 只作用于之后新签发阶段。定位 BUG 时先查本索引和 `FROZEN_BASELINE.md`，只有用户明确授权的对应模块允许最小修改。食物库与添加饮食位于 `src/diet_controller.py`；训练追加、动作筛选与评分位于 `src/training_controller.py`；后台提醒位于 `src/rest_notification.py` 和 Android 原生插件。
+Build 115 为当前正式版。V3.3 历史快照保持冻结，V3.4 只作用于之后新签发阶段。定位 BUG 时先查本索引和 `FROZEN_BASELINE.md`，只有用户明确授权的对应模块允许最小修改。食物库与添加饮食位于 `src/diet_controller.py`；训练追加、动作筛选与评分位于 `src/training_controller.py`；后台提醒位于 `src/rest_notification.py` 和 Android 原生插件。
 
 ## 运行与基础层
 

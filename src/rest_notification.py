@@ -410,6 +410,12 @@ class AndroidAlarmScheduler:
         )
         return bool(preferences.edit().putBoolean(str(cycle_id), True).commit())
 
+    def has_delivered(self, *, cycle_id: str) -> bool:
+        preferences = self.activity.getSharedPreferences(
+            "carbs_king_rest_alarm_deliveries", self.Context.MODE_PRIVATE
+        )
+        return bool(preferences.getBoolean(str(cycle_id), False))
+
 
 class AndroidRestOverlayController:
     """Drive the native foreground countdown and optional overlay."""
@@ -770,6 +776,35 @@ class RestNotifier:
         system_notification_succeeded = False
         vibration_attempted = self.haptic is not None
         vibration_succeeded = False
+
+        # AlarmManager and the visible Flet callback can become due on the
+        # same frame. Share the native delivery marker before starting the
+        # foreground player so the native receiver drops its pending copy.
+        # If the native receiver won the race, treat that delivery as already
+        # satisfied and do not play the cue a second time.
+        native_owned = False
+        with self._lock:
+            native_owned = cycle_id in self._native_owned_cycle_ids
+        if native_owned and self.alarm_scheduler is not None:
+            has_delivered = getattr(self.alarm_scheduler, "has_delivered", None)
+            mark_delivered = getattr(self.alarm_scheduler, "mark_delivered", None)
+            try:
+                if callable(has_delivered) and bool(has_delivered(cycle_id=cycle_id)):
+                    return RestNotificationResult(
+                        cycle_id=cycle_id,
+                        claimed=True,
+                        sound_played=True,
+                        vibration_attempted=False,
+                        vibration_succeeded=False,
+                        errors=tuple(errors),
+                    )
+                if callable(mark_delivered) and not bool(mark_delivered(cycle_id=cycle_id)):
+                    errors.append("native delivery marker could not be committed")
+            except Exception as exc:
+                # Foreground playback remains the safe fallback if the marker
+                # bridge is unavailable on a particular Android runtime.
+                errors.append(f"native delivery marker: {exc}")
+
         if self.audio is not None:
             try:
                 try:

@@ -2,13 +2,13 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 113**
+- 当前版本：**1.2.3 / Build 115**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-> Build 113 为正式版：V3.4 仅作用于之后新签发的自动阶段，既有 V3.3 展示快照保持不变。
+> Build 115 为正式版：V3.4 仅作用于之后新签发的自动阶段，既有 V3.3 展示快照保持不变。本版修复动作选择偶发双触发和组间休息提醒偶发双响。
 
-[![下载 Build 113 APK](https://img.shields.io/badge/下载-Build_113_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+[![下载 Build 115 APK](https://img.shields.io/badge/下载-Build_115_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -86,7 +86,7 @@
 - 支持同一天保存多场训练，以及复用历史复合训练组合。
 - 支持超级组和复合组，安排页按整组拖动，训练中显示组内进度和下一个动作。
 - 动作库可按常练、最近和名称排序，练过的动作可优先显示。
-- 组间休息支持 `-10 秒`、`+10 秒`、暂停/继续和跳过。
+- 组间休息支持 `-10 秒`、`+10 秒`、暂停/继续和跳过；前台与后台提醒共享周期送达标记，避免同一周期重复播放。
 - 每个力量动作可单独设置休息时间，默认 90 秒；切后台、锁屏或息屏后继续显示悬浮倒计时并在到点时提醒。
 - 删除的完成训练进入 15 天回收站，可恢复到原日期的“当日已练”。
 - 训练结束统一二次确认，避免误触丢失尚未完成的训练。

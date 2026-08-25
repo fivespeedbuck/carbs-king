@@ -1,23 +1,23 @@
-# 当前状态：V3.4 Build 113 已正式发布（2026-08-17）
+# 当前状态：V3.4 Build 115 已正式发布（2026-08-25）
 
 更新时间：2026-08-11
 
 > [!warning] 当前最高优先级
-> V3.4 已按用户明确授权完成代码、回归、打包、真机覆盖安装和正式发布。Build 113 是当前公开版本；源码已预备下一 Build 114。
+> V3.4 已按用户明确授权完成代码、回归、打包和正式发布。Build 115 是当前公开版本；源码已预备下一 Build 116。Build 115 修复动作选择双触发与组间休息提醒双响。
 >
 > V3.4 模型规范绑定 SHA-256 `8C680ABD0F34EC73C1D4B21D96D3345A4DD480B6B73491638F76EC9A1A3E79B4`；V3.3 历史快照保持不可变。
 
 ## 当前会话优先事实（高于下方历史 Build 101 记录）
 
-- 正式版：`1.2.3 / Build 113` 已无线覆盖安装 V2304A，系统确认 `versionCode=113`、`versionName=1.2.3`，原首次安装时间保留。
-- Build 113 APK：`build/apk/carbs_king.apk`，201,902,635 bytes，SHA-256 `42724D5BA29840D16DCB5CFDE5BADE034584C684A08EE1D8FB86602A00E831E7`；v2 签名证书 SHA-256 `172A8B5C7A909A79FB483F83CF9FEA71FE6567937C900C1D47EAF0FD67AD75CE`。
+- 正式版：`1.2.3 / Build 115` 已完成 APK 构建与 GitHub Release 更新；包名 `com.chenyang.carbs_king`，versionCode `115`。
+- Build 115 APK：`build/apk/carbs_king.apk`，201,848,183 bytes，SHA-256 `D6A36090317A780DC6E70AA787FFE02D8BA916FE8344B42B0BB034D264B1ED37`；v2 签名证书 SHA-256 `172A8B5C7A909A79FB483F83CF9FEA71FE6567937C900C1D47EAF0FD67AD75CE`。
 - V3.4：减脂=Wiki 四练、保持=4.5 练插值、控制增肌=Wiki 五练；男女分支；`2高+2中+3低`；体脂不参与宏量；腿/臀/背高、胸/肩中、手臂/核心低；不改 UI，不回写旧 V3.3 展示快照。
 - 验证：专项 `5 passed + 6 subtests`；相关回归 `108 passed + 28 subtests`；全量 `566 passed + 454 subtests`；真实备份 14 天只读回放零违规；编译与差异检查通过。
-- 构建资源：1326 GIF、1326 JPG、2 MP3，根资源与内嵌资源一致；原生提醒运行时门禁通过。构建脚本已把源码预备为 Build 113。
-- GitHub：Build 113 的主页资料、Release 清单和 APK 已同步；Build 112 保留为本地测试历史。
-- APK：`build/apk/carbs_king.apk`，201,898,707 bytes，SHA-256 `06497F6AB208A49493A368E3057855B6CDB82657FE8B60A72B924CF79B03ED1F`；包名、v2 签名、1326 GIF、1326 JPG、2 MP3 和原生提醒门禁通过。
+- 构建资源：1326 GIF、1326 JPG、2 MP3，根资源与内嵌资源一致；原生提醒运行时门禁通过。构建脚本已把源码预备为 Build 116。
+- GitHub：Build 115 的主页资料、Release 清单和 APK 已同步；Build 114 保留为本地测试历史。
+- 本批修复：动作选择同动作 350ms 去抖；前台／原生休息提醒共享送达标记，原生先认领后播放；UI 未改版。
 - 本批完成：搜索与新增控件对齐、动作主部位栏可读、动作参数窄屏显示、食物计量口径全宽/只读展示、常用食物流式标签及长名处理。
-- 完整自动化 `566 passed, 454 subtests passed`；源码版本已预备为 Build 114。除用户明确授权的缺陷外，不再修改已发布模块。
+- 完整自动化 `567 passed, 454 subtests passed`；源码版本已预备为 Build 116。除用户明确授权的缺陷外，不再修改已发布模块。
 
 ## 历史 Build 101 基线说明
 
