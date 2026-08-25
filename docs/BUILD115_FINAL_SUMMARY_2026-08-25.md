@@ -25,7 +25,7 @@
 
 - `update_manifest.json` 已同步 Build 115、APK 大小与 SHA-256。
 - README、CHANGELOG、CURRENT_HANDOFF、PROJECT_CONTEXT、代码索引已同步。
-- GitHub 主线已提交并推送，Release `v1.2.3` 的 `carbs_king.apk` 已替换为 Build 115；远端资产大小、digest 和上传状态需在发布命令完成后复核。
+- GitHub 主线已提交并推送，Release `v1.2.3` 的 `carbs_king.apk` 已替换为 Build 115；远端资产状态为 `uploaded`，大小为 201,848,183 bytes，digest 与本地 SHA-256 一致。
 - Build 115 真机覆盖安装待 iQOO 15U 重新连接后完成最终复验；在此之前不宣称真机复验通过。
 
 ## 边界
