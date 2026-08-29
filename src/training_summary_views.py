@@ -113,6 +113,16 @@ def _strength_set_detail_controls(exercise) -> list[ft.Control]:
     ]
 
 
+def _summary_metric_number_size(values: Sequence[str]) -> int:
+    """Keep four summary numbers visually aligned on a compact phone row."""
+    longest = max(sum(1 if char.isdigit() else 0.5 for char in value) for value in values)
+    if longest <= 4.5:
+        return 26
+    if longest <= 5.5:
+        return 20
+    return 18
+
+
 def _exercise_result_value(exercise) -> str:
     if exercise.recording_mode == "cardio":
         if not exercise.completed:
@@ -298,14 +308,18 @@ def build_training_summary(
     rows = _training_result_blocks(session, show_value=True)
     cardio_exercises = [exercise for exercise in session.exercises if exercise.recording_mode == "cardio"]
     cardio_duration_minutes = sum(max(0, exercise.duration_seconds or 0) for exercise in cardio_exercises) / 60
+    metric_values = [f"{duration_minutes:g}", f"{completed_sets}/{planned_sets}", f"{volume_kg:g}"]
+    if cardio_exercises:
+        metric_values.append(f"{cardio_duration_minutes:g}")
+    number_size = _summary_metric_number_size(metric_values) if cardio_exercises else 26
     metrics: list[ft.Control] = [
-        ft.Column([ft.Text(f"{duration_minutes:g}", size=26, weight="bold", color="#FFFFFF"), ft.Text("分钟", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
-        ft.Column([ft.Text(f"{completed_sets}/{planned_sets}", size=26, weight="bold", color="#FFFFFF", no_wrap=True), ft.Text("完成项目", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
-        ft.Column([ft.Text(f"{volume_kg:g}", size=26, weight="bold", color="#FFFFFF"), ft.Text("总容量 kg", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
+        ft.Column([ft.Text(metric_values[0], size=number_size, weight="bold", color="#FFFFFF", no_wrap=True), ft.Text("分钟", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
+        ft.Column([ft.Text(metric_values[1], size=number_size, weight="bold", color="#FFFFFF", no_wrap=True), ft.Text("完成项目", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
+        ft.Column([ft.Text(metric_values[2], size=number_size, weight="bold", color="#FFFFFF", no_wrap=True), ft.Text("总容量 kg", size=12, color="#EAFBF5", weight="bold")], horizontal_alignment="center", expand=True),
     ]
     if cardio_exercises:
         metrics.append(ft.Column([
-            ft.Text(f"{cardio_duration_minutes:g}", size=26, weight="bold", color="#FFFFFF"),
+            ft.Text(metric_values[3], size=number_size, weight="bold", color="#FFFFFF", no_wrap=True),
             ft.Text("有氧时间", size=12, color="#EAFBF5", weight="bold"),
         ], horizontal_alignment="center", expand=True))
     return ft.Column([

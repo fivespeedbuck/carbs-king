@@ -156,6 +156,42 @@ class ActiveTrainingViewTests(unittest.TestCase):
         completion_text = next(item for item in _walk(result) if isinstance(item, ft.Text) and item.value == "20/21")
         self.assertTrue(completion_text.no_wrap)
 
+    def test_four_metric_summary_uses_one_adaptive_single_line_number_size(self):
+        session = TrainingSession(
+            date="2026-08-29",
+            exercises=[SessionExercise(
+                name="跑步机爬坡",
+                body_part="有氧",
+                order=1,
+                recording_mode="cardio",
+                duration_seconds=1200,
+                completed=True,
+            )],
+        )
+
+        for volume_kg, expected_size in ((4471.5, 20), (10000.5, 18), (99999.9, 18)):
+            with self.subTest(volume_kg=volume_kg):
+                result = build_training_summary(
+                    session,
+                    title="训练完成",
+                    duration_minutes=94.2,
+                    completed_sets=21,
+                    planned_sets=21,
+                    volume_kg=volume_kg,
+                    advice="训练成绩已计入今天记录。",
+                    actions=TrainingSummaryActions(repeat=_noop, create_new=_noop),
+                )
+
+                metric_values = {"94.2", "21/21", f"{volume_kg:g}", "20"}
+                metric_numbers = [
+                    item for item in _walk(result)
+                    if isinstance(item, ft.Text) and item.value in metric_values
+                ]
+
+                self.assertEqual({item.value for item in metric_numbers}, metric_values)
+                self.assertEqual({item.size for item in metric_numbers}, {expected_size})
+                self.assertTrue(all(item.no_wrap for item in metric_numbers))
+
     def test_completion_actions_follow_the_active_theme_primary_color(self):
         result = build_active_training(_model(confirm_complete=True), _actions())
         controls = [item for item in _walk(result.control) if getattr(item, "bgcolor", None) == PRIMARY]
