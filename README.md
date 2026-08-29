@@ -2,13 +2,13 @@
 
 面向个人健身记录的 Android 应用，将碳循环饮食、力量训练、身体与恢复数据放进同一套每日记录中。默认打开今日页面，可独立进入训练、饮食、数据和个人页面。
 
-- 当前版本：**1.2.3 / Build 115**
+- 当前版本：**1.2.3 / Build 117**
 - Android 包名：`com.chenyang.carbs_king`
 - 框架：Flet `0.85.3`
 
-> Build 115 为正式版：V3.4 仅作用于之后新签发的自动阶段，既有 V3.3 展示快照保持不变。本版修复动作选择偶发双触发和组间休息提醒偶发双响。
+> Build 117 为正式版：V3.4 仅作用于之后新签发的自动阶段，既有 V3.3 展示快照保持不变。本版修复训练总结含有氧时四项统计数字在窄屏上的自适应字号与单行裁切问题。
 
-[![下载 Build 115 APK](https://img.shields.io/badge/下载-Build_115_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+[![下载 Build 117 APK](https://img.shields.io/badge/下载-Build_117_APK-147D64?style=for-the-badge&logo=android&logoColor=white)](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 
 [查看 v1.2.3 Release 与更新说明](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
 
@@ -237,7 +237,7 @@ carbs-king/
 ## 版本与 Release
 
 - [v1.2.3 Release](https://github.com/fivespeedbuck/carbs-king/releases/tag/v1.2.3)
-- [Build 113 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
+- [Build 117 APK 直接下载](https://github.com/fivespeedbuck/carbs-king/releases/download/v1.2.3/carbs_king.apk)
 - [完整更新记录](CHANGELOG.md)
 - [全部 GitHub Releases](https://github.com/fivespeedbuck/carbs-king/releases)
 
